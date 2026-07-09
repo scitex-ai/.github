@@ -1,0 +1,41 @@
+name: quality-audit
+
+# REUSABLE WORKFLOW — org-level pilot (scitex-stats, 2026-07-10).
+# Mechanically extracted from the `audit` job in scitex-ai/scitex-stats
+# `.github/workflows/ci.yml`.
+#
+# JUDGMENT CALL: the task brief assumed this job runs
+# `scitex-dev ecosystem audit-all <pkg> --new-only` with the package name
+# passed in, and therefore needs an `inputs:` parameter. The ACTUAL current
+# job computes `DIST` itself from `pyproject.toml` in the checkout
+# (`scitex-dev ecosystem audit-all "$DIST" --path "$PWD"`, no --new-only
+# flag) — so no per-repo input is needed today. Left input-free to match
+# the real source exactly; add an input later only if a caller needs to
+# override the derived package name.
+
+on:
+  workflow_call: {}
+
+jobs:
+  audit:
+    name: audit
+    runs-on: [self-hosted, Linux, X64, spartan-cpu]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          cache-dependency-glob: pyproject.toml
+      - name: Install + audit the workspace
+        run: |
+          set -euo pipefail
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python -e ".[all,dev]" \
+            || uv pip install --python .venv/bin/python -e ".[dev]" \
+            || uv pip install --python .venv/bin/python -e .
+          uv pip install --python .venv/bin/python scitex-dev
+          # .venv/bin on PATH so audit-all's spawned `scitex-dev` subcommands resolve.
+          export PATH="$PWD/.venv/bin:$PATH"
+          DIST=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['name'])")
+          # --path . audits the CHECKOUT (PR code), not the runner's shared state.
+          scitex-dev ecosystem audit-all "$DIST" --path "$PWD"

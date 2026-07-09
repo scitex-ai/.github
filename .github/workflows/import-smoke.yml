@@ -1,0 +1,27 @@
+name: import-smoke
+
+# REUSABLE WORKFLOW — org-level pilot (scitex-stats, 2026-07-10).
+# Mechanically extracted from the `import-smoke` job in
+# scitex-ai/scitex-stats `.github/workflows/ci.yml`. No inputs: the package
+# name is auto-derived from `src/<pkg>` in the checkout, same as source.
+
+on:
+  workflow_call: {}
+
+jobs:
+  import-smoke:
+    name: import-smoke-on-ubuntu-py3-12
+    runs-on: [self-hosted, Linux, X64, spartan-cpu]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          cache-dependency-glob: pyproject.toml
+      - name: Install (no extras) + import
+        run: |
+          set -euo pipefail
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python -e .
+          PKG=$(basename "$(find src -maxdepth 1 -mindepth 1 -type d ! -name '*.egg-info' | sort | head -1)")
+          .venv/bin/python -c "import importlib; importlib.import_module('$PKG'); print('import OK:', '$PKG')"
