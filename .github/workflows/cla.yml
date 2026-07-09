@@ -1,0 +1,82 @@
+name: cla
+
+# REUSABLE WORKFLOW — org-level pilot (scitex-stats, 2026-07-10).
+# Extracted from scitex-ai/scitex-stats `.github/workflows/cla.yml`.
+#
+# JUDGMENT CALL (not purely mechanical): the source file hardcodes the CLA
+# document URL and PR-comment link to `ywatanabe1989/scitex-stats`
+# (pre-org-transfer, and repo-specific — a latent bug in the source file
+# independent of this migration, since scitex-stats now lives under
+# scitex-ai). To make this callable from any repo, the doc URL is rebuilt
+# from `${{ github.repository }}`, which for a `workflow_call` run resolves
+# to the CALLING repository (not this .github repo) — verified against
+# GitHub's reusable-workflow context docs. `default_branch` is an input
+# (defaults to `main`) since the CLA.md path assumes the doc lives on the
+# repo's default branch. `owner_allowlist` is an input so each repo can
+# keep its own allowlisted owner login(s); defaults to the current value.
+# Needs `secrets: inherit` on the caller (GH_PERSONAL_ACCESS_TOKEN for the
+# CLA-signature-storage PAT; GITHUB_TOKEN is provided automatically).
+
+on:
+  workflow_call:
+    inputs:
+      default_branch:
+        description: "Branch the CLA.md document lives on"
+        required: false
+        type: string
+        default: main
+      owner_allowlist:
+        description: "CLA-assistant allowlist (comma-separated logins/globs)"
+        required: false
+        type: string
+        default: "bot*,ywatanabe1989"
+      owner_login:
+        description: "Login allowed to direct-push-bypass the CLA check"
+        required: false
+        type: string
+        default: "ywatanabe1989"
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+  statuses: write
+
+jobs:
+  owner-bypass:
+    if: github.event_name == 'push' && github.actor == inputs.owner_login
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+    steps:
+      - name: Mark CLAssistant=success on this SHA (owner-allowlisted direct push)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${REPO}/statuses/${SHA}" \
+            -f state=success \
+            -f context=CLAssistant \
+            -f description="Owner-triggered direct push (CLA bypass per repo allowlist)"
+
+  CLAssistant:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: CLA Assistant
+        uses: contributor-assistant/github-action@v2.6.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PERSONAL_ACCESS_TOKEN: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
+        with:
+          path-to-signatures: "signatures/cla.json"
+          path-to-document: "https://github.com/${{ github.repository }}/blob/${{ inputs.default_branch }}/CLA.md"
+          branch: "cla-signatures"
+          allowlist: ${{ inputs.owner_allowlist }}
+          custom-allsigned-prcomment: |
+            Thank you for signing the SciTeX CLA. Your contribution can now be reviewed.
+          custom-notsigned-prcomment: |
+            Please sign the [SciTeX CLA](https://github.com/${{ github.repository }}/blob/${{ inputs.default_branch }}/CLA.md) before your contribution can be merged.
+            Comment `I have read and agree to the SciTeX CLA.` to sign.
