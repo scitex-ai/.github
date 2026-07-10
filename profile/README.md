@@ -1,8 +1,16 @@
-# SciTeX
+<p align="center">
+  <a href="https://scitex.ai">
+    <img src="assets/scitex-logo.png" alt="SciTeX" width="400">
+  </a>
+</p>
 
-**Open-source platform for reproducible scientific research, from data to manuscript.**
+<p align="center"><b>Open-source platform for reproducible scientific research, from data to manuscript.</b></p>
 
-[scitex.ai](https://scitex.ai) &nbsp;|&nbsp; `uv pip install scitex[all]` &nbsp;|&nbsp; [Demos](https://scitex.ai/demos/)
+<p align="center">
+  <a href="https://scitex.ai">scitex.ai</a> &middot;
+  <code>uv pip install scitex[all]</code> &middot;
+  <a href="https://scitex.ai/demos/">Demos</a>
+</p>
 
 ---
 
@@ -121,9 +129,15 @@ similar small utility leaves) are listed in each package's own README and in the
 
 ## License
 
-Packages are individually licensed — check each repository. Core SciTeX packages are
-open source: use, learn from, redistribute, and modify freely.
+SciTeX packages are mainly licensed under AGPL-3.0 — check each repository's own
+LICENSE file, as a small number of peripheral tools differ.
 
 ## Contact
 
 info@scitex.ai
+
+---
+
+<p align="center">
+  <a href="https://scitex.ai"><img src="assets/scitex-icon.png" alt="SciTeX" width="40"/></a>
+</p>
