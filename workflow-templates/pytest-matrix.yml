@@ -1,0 +1,38 @@
+name: tests
+
+# CANONICAL CALLER STUB — copy this verbatim. Do not rename the job.
+#
+# The job id `pytest-matrix` is NOT cosmetic. GitHub names the status check of a
+# reusable-workflow call:
+#
+#     "<caller job id> / <job name inside the reusable workflow>"
+#
+# so the job id below IS the branch-protection context prefix. With `pytest-matrix`
+# every repo in the ecosystem emits exactly:
+#
+#     pytest-matrix / pytest-matrix-on-ubuntu-py3.11
+#     pytest-matrix / pytest-matrix-on-ubuntu-py3.12
+#     pytest-matrix / pytest-matrix-on-ubuntu-py3.13
+#
+# One required-status-check list then serves every repo. Rename the job to
+# `test`, `call`, `ci`, … and that repo emits `test / pytest-matrix-on-ubuntu-py3.11`
+# instead — a bespoke protection list for that repo, forever, and a merge that
+# blocks silently until someone hand-reads the new names off a real PR.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    - cron: "0 17 * * *"  # nightly, off-peak
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  pytest-matrix:            # <-- DO NOT RENAME (see above)
+    uses: scitex-ai/.github/.github/workflows/pytest-matrix.yml@main
+    secrets: inherit
