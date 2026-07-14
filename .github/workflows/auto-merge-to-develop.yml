@@ -20,7 +20,10 @@ permissions:
 jobs:
   automerge:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.check_suite.conclusion == 'success' }}
-    runs-on: ubuntu-latest
+    # ZERO GitHub-hosted runners (operator mandate 2026-07-14). The org pool
+    # (scitex-ai: spartan-cpu-org-01/-02, spartan-pooled-cpu-01) serves every
+    # repo in the org; do NOT use per-repo runner labels here.
+    runs-on: [self-hosted, Linux, X64, spartan-cpu]
     steps:
       - name: merge green PRs targeting develop
         env:
