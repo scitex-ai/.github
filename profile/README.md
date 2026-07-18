@@ -33,6 +33,10 @@ manuscripts, and agent orchestration. Around 70 small packages; adopt one, or al
 | [**scitex-writer**](https://github.com/scitex-ai/scitex-writer) | LaTeX manuscripts, versioned |
 | [**scitex-hub**](https://github.com/scitex-ai/scitex-hub) | the web app — live at [scitex.ai](https://scitex.ai) |
 
-Everything else is listed below. Each package documents and licenses itself.
+**[Browse all repositories →](https://github.com/orgs/scitex-ai/repositories)**
+&nbsp;each package documents and licenses itself.
 
-<p align="center"><sub>info@scitex.ai</sub></p>
+<p align="center">
+  <a href="https://scitex.ai"><img src="assets/scitex-icon.png" alt="SciTeX" width="40"></a>
+  <br><sub>info@scitex.ai</sub>
+</p>
