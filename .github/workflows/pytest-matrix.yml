@@ -26,8 +26,8 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           cache-dependency-glob: pyproject.toml
       - name: Install (.[all,dev]) + pytest
