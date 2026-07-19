@@ -37,10 +37,33 @@ jobs:
           uv pip install --python .venv/bin/python -e ".[all,dev]" \
             || uv pip install --python .venv/bin/python -e ".[dev]" \
             || uv pip install --python .venv/bin/python -e .
+          # pytest-xdist is installed EXPLICITLY, not relied on transitively.
+          # scitex-dev declares it, but only under its OWN [dev] extra — and a
+          # package depending on plain `scitex-dev` does NOT get that extra, so
+          # `-n` was silently unavailable in most repos. Installing it here makes
+          # the flag below work for every caller regardless of its extras.
+          uv pip install --python .venv/bin/python "pytest-xdist>=3.0.0"
           # kaleido/plotly image export needs Chrome; install best-effort (no-op for non-plotly repos)
           yes | .venv/bin/plotly_get_chrome >/dev/null 2>&1 || true
           PKG=$(basename "$(find src -maxdepth 1 -mindepth 1 -type d ! -name '*.egg-info' | sort | head -1)")
-          .venv/bin/python -m pytest tests/ --cov="src/$PKG" --cov-report=xml --cov-report=term
+          # -n auto: the suite ran SINGLE-PROCESS on a multi-core Spartan lease,
+          # so the runner's cores sat idle while wall-clock grew with the suite.
+          # Operator ruling 2026-07-19: 「全てのレポジトリで xdist 並列です、
+          # あたりまえですけど」.
+          #
+          # Measured on scitex-cards (3179 tests, contended 16-core box):
+          #   single-process    8m39s
+          #   -n auto (16 wk)   6m37s   and 0 failures — the suite is xdist-safe
+          # The gap is far larger on a quiet dedicated runner: the same suite was
+          # taking 17-21 min per leg here, and after a test-quality pass grew it
+          # to 4462 tests the legs got slower still. That is what motivated this.
+          #
+          # IF YOUR SUITE IS NOT XDIST-SAFE (order-dependent, or sharing on-disk
+          # state across tests) this surfaces as FAILURES here, not as silence.
+          # Fix the shared state, or pin `-p no:xdist` in that repo's own pytest
+          # config — do not drop the flag for every other repo.
+          .venv/bin/python -m pytest tests/ -n auto \
+            --cov="src/$PKG" --cov-report=xml --cov-report=term
       - name: Upload coverage to Codecov
         if: always() && matrix.python-version == '3.12'
         uses: codecov/codecov-action@v5
