@@ -40,6 +40,14 @@ jobs:
             [ "$base" = "develop" ] || { echo "skip #$pr (base=$base, not develop)"; continue; }
             draft=$(gh pr view "$pr" --repo "$REPO" --json isDraft --jq .isDraft 2>/dev/null || echo true)
             [ "$draft" = "true" ] && continue
+            # SAFETY GATE (2026-07-22): admin-merge is opt-in via the
+            # `automerge-ok` label. Without it, an ungated body would merge
+            # ANY green develop-PR the moment a third-party check suite
+            # fires — the only thing preventing that historically was
+            # GitHub's GITHUB_TOKEN check_suite recursion prevention,
+            # which is incidental, not a designed guard.
+            has_label=$(gh pr view "$pr" --repo "$REPO" --json labels --jq '[.labels[].name] | index("automerge-ok") != null' 2>/dev/null || echo false)
+            [ "$has_label" = "true" ] || { echo "skip #$pr (no automerge-ok label — opt-in required)"; continue; }
             pending=$(gh pr view "$pr" --repo "$REPO" --json statusCheckRollup --jq '
               [ .statusCheckRollup[]
                 | select(((.name // .context // "") | ascii_downcase | test("codecov|readthedocs")) | not)
