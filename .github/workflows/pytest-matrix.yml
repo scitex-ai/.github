@@ -86,6 +86,27 @@ jobs:
           # state across tests) this surfaces as FAILURES here, not as silence.
           # Fix the shared state, or pin `-p no:xdist` in that repo's own pytest
           # config — do not drop the flag for every other repo.
+          #
+          # ...but `auto` ALONE OVERSUBSCRIBES ~2.7x on these runners. Measured on
+          # spartan-bm155 inside a live 48-CPU lease cgroup (job_27144058/step_extern):
+          #   os.sched_getaffinity(0)         -> 48   (the actual allocation)
+          #   os.cpu_count()                  -> 128
+          #   psutil.cpu_count(logical=False) -> 128  <- what `auto` resolves to
+          # xdist's pytest_xdist_auto_num_workers consults psutil FIRST and returns
+          # immediately (xdist/plugin.py 3.8.0); only if psutil is ABSENT does it fall
+          # back to sched_getaffinity, which would have been correct. So `auto` is
+          # right without psutil and wrong with it. Corroborated in scitex-hub CI:
+          # worker ids reached gw121 on a 48-CPU lease.
+          #
+          # PYTEST_XDIST_AUTO_NUM_WORKERS is consulted AHEAD of psutil, so this
+          # corrects `auto` without hardcoding a worker count.
+          #
+          # Do NOT key this on $SLURM_CPUS_PER_TASK / $SLURM_JOB_CPUS_PER_NODE: both
+          # are EMPTY here. The runner is ssh-adopted into the lease cgroup, so it
+          # inherits the cpuset but NOT the step environment. sched_getaffinity reads
+          # the cpuset directly and is the only thing that works. (ADR-0004 P1(b)
+          # prescribed the SLURM-var form and was wrong; corrected in scitex-dev.)
+          export PYTEST_XDIST_AUTO_NUM_WORKERS="$(.venv/bin/python -c 'import os; print(len(os.sched_getaffinity(0)))')"
           .venv/bin/python -m pytest tests/ -n auto \
             --cov="src/$PKG" --cov-report=xml --cov-report=term
       - name: Upload coverage to Codecov
