@@ -45,7 +45,8 @@ permissions:
 jobs:
   owner-bypass:
     if: github.event_name == 'push' && github.actor == inputs.owner_login
-    runs-on: ubuntu-latest
+    # ZERO GitHub-hosted runners (operator mandate 2026-07-14). Org pool.
+    runs-on: [self-hosted, Linux, X64, spartan-cpu]
     permissions:
       statuses: write
     steps:
@@ -63,7 +64,8 @@ jobs:
 
   CLAssistant:
     if: github.event_name != 'push'
-    runs-on: ubuntu-latest
+    # ZERO GitHub-hosted runners (operator mandate 2026-07-14). Org pool.
+    runs-on: [self-hosted, Linux, X64, spartan-cpu]
     steps:
       - name: CLA Assistant
         # Upstream v2.6.1 still declares node20. This SciTeX fork changes only
