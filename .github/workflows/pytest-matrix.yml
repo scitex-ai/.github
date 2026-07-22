@@ -7,17 +7,23 @@ name: pytest-matrix
 # original), and the python-version matrix / runner label are identical
 # across every caller today, so nothing needs to be parameterized yet.
 # CODECOV_TOKEN must be available to the caller (secrets: inherit).
+#
+# CALLERS MUST USE THE JOB ID `pytest-matrix`. Copy the stub from
+# workflow-templates/pytest-matrix.yml; do not write your own. The check name
+# GitHub renders is "<caller job id> / <this job's name>", so the caller's job id
+# IS the branch-protection context prefix: name it anything else and that repo
+# emits a check name no other repo emits, which means a bespoke required-check
+# list for it forever. See the README's "Caller job ids" section.
 
 on:
   workflow_call: {}
 
 jobs:
   pytest-matrix:
-    # Job name is a REQUIRED status check on scitex-stats' develop/main
-    # branch protection today (as "pytest-matrix-on-ubuntu-py3.11" etc,
-    # no caller-job prefix). Under workflow_call the check name GitHub
-    # renders is "<caller-job-id> / <this-name>" — branch protection
-    # required-check strings will need updating post-migration (see PR).
+    # This name is the SECOND half of the required status check. The full context
+    # a caller emits is "pytest-matrix / pytest-matrix-on-ubuntu-py3.11" (given the
+    # mandated caller job id above). Renaming this breaks branch protection in
+    # every repo at once — reconcile protection in the same change if you ever do.
     name: pytest-matrix-on-ubuntu-py${{ matrix.python-version }}
     runs-on: [self-hosted, Linux, X64, spartan-cpu]
     timeout-minutes: 30

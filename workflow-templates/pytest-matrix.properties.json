@@ -1,0 +1,7 @@
+{
+  "name": "SciTeX pytest-matrix (Spartan)",
+  "description": "Canonical caller for the org reusable pytest-matrix workflow. Runs pytest on the self-hosted Spartan runners across py3.11/3.12/3.13. Do not rename the job id — it is the branch-protection context prefix.",
+  "iconName": "octicon check-circle",
+  "categories": ["Continuous integration", "Python"],
+  "filePatterns": ["pyproject.toml$"]
+}
