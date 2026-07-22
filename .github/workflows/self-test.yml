@@ -18,13 +18,21 @@ permissions:
 
 jobs:
   pytest:
-    runs-on: ubuntu-latest
+    # ZERO GitHub-hosted runners (operator mandate 2026-07-14, enforced as
+    # PS-169). This file was added after #4 was cut, so #4 could not fix it —
+    # which left the repo that DEFINES the rule as the only one breaking it.
+    runs-on: [self-hosted, Linux, X64, spartan-cpu]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - uses: actions/checkout@v5
+      # uv, not actions/setup-python: setup-python wants a runner tool-cache
+      # that the Spartan image does not populate. Every other workflow here
+      # already builds its interpreter with uv, so this follows the pattern
+      # that is proven to work on this pool rather than inventing a new one.
+      - uses: astral-sh/setup-uv@v7
       - name: install
-        run: python -m pip install --upgrade pip pytest pyyaml
+        run: |
+          set -euo pipefail
+          uv venv --seed --python 3.12 .venv
+          uv pip install --python .venv/bin/python pytest pyyaml
       - name: run workflow contract tests
-        run: python -m pytest tests/ -v
+        run: .venv/bin/python -m pytest tests/ -v
