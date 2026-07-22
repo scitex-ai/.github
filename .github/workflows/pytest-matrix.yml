@@ -33,7 +33,16 @@ jobs:
       - name: Install (.[all,dev]) + pytest
         run: |
           set -euo pipefail
-          uv venv --python ${{ matrix.python-version }} .venv
+          # --seed puts pip/setuptools/wheel IN the venv. A bare `uv venv`
+          # ships none of them, so any test that shells out to
+          # `sys.executable -m pip ...` gets "No module named pip". That is
+          # a regression against the per-repo workflows this reusable
+          # replaced: they all built the env with actions/setup-python +
+          # `pip install`, so pip was always present.
+          # Caught by scitex-hub PR #433 — its pip-install e2e gate proves
+          # the production `pip_install_user_app` argv shape and went red
+          # on exactly this.
+          uv venv --seed --python ${{ matrix.python-version }} .venv
           uv pip install --python .venv/bin/python -e ".[all,dev]" \
             || uv pip install --python .venv/bin/python -e ".[dev]" \
             || uv pip install --python .venv/bin/python -e .
