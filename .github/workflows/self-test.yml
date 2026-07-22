@@ -1,0 +1,30 @@
+name: self-test
+
+# The reusable workflows in this repo are the org's shared CI implementation.
+# A defect here is a defect in every repo that calls it — so the workflows
+# themselves get tests, and those tests run on every change to this repo.
+#
+# tests/test_auto_merge_dispatch.py is file-only (parses the YAML, asserts on
+# the shell body). No network, no gh, cannot flake.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install
+        run: python -m pip install --upgrade pip pytest pyyaml
+      - name: run workflow contract tests
+        run: python -m pytest tests/ -v

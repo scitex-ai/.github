@@ -9,13 +9,65 @@ name: auto-merge-to-develop
 # check_suite-triggered workflows from the DEFAULT branch, so the CALLER
 # stub in each leaf repo must live on that repo's default branch (main) —
 # same requirement the original file had.
+#
+# *** A github.token MERGE FIRES NOTHING ON develop. *** GitHub suppresses
+# workflow triggers for pushes made with the default workflow token
+# (recursive-run protection), and `gh pr merge` below pushes the merge commit
+# with exactly that token — so every commit this sweep lands arrives on
+# develop with ZERO check runs. Measured across the scitex-ai org
+# (2026-07-22, 74 repos enumerated): 58 repos carry at least one bot-merged
+# develop head whose `GET /commits/<sha>/check-runs` returns
+# `total_count: 0` while their user-pushed neighbours on the same branch
+# carry 5-19 each. Examples: figrecipe 3ebb01c0 -> 0 vs b33a8ed3 -> 19;
+# scitex-io 49d709be -> 0 (4 of 4 sampled bot heads at 0) vs f9fe3dd5 -> 8;
+# scitex-app 0e69dfd5 -> 0 (5 of 5) vs 827b75c9 -> 16. Runners were online
+# and idle — not a capacity problem.
+#
+# WHY THAT IS WORSE THAN A RED BUILD: a downstream develop-health gate reads
+# "no checks present" as "no red signal to honour" and keeps merging.
+# Green-by-absence — the hole conceals itself, so a repo can sit in this
+# state for months and look healthy.
+#
+# `workflow_dispatch` IS exempt from the suppression, so after a successful
+# merge this workflow explicitly DISPATCHES develop's post-merge gates —
+# ONCE per call, not once per merged PR, skipped on dry-run, and
+# `::error::`-loud + red if a dispatch fails (an un-CI'd develop head is
+# exactly the silence this block exists to end). Deliberately NO PAT and no
+# bot token: explicit dispatch is the sanctioned workaround.
+#
+# Reference implementation this mirrors: scitex-ai/scitex-agent-container
+# PR #809 (merged e947b450), carried to main via #811.
 
 on:
-  workflow_call: {}
+  workflow_call:
+    inputs:
+      dry_run:
+        description: >-
+          Report what would be merged/dispatched without doing it.
+        type: boolean
+        default: false
+        required: false
+      post_merge_gates:
+        description: >-
+          Space-separated workflow FILENAMES to dispatch on develop after a
+          merge (e.g. "pytest-matrix-on-ubuntu-py3-11-3-12-3-13.yml
+          quality-audit-on-ubuntu-latest.yml"). Leave empty to auto-discover
+          every active workflow on develop that accepts workflow_dispatch,
+          minus the deny-list below. Auto-discovery is the default because
+          leaf repos genuinely differ (scitex-io ships
+          scitex-io-quality-audit-on-ubuntu-latest.yml, scitex-writer ships
+          quality-audit-on-ubuntu-latest.yml) — a hardcoded org-wide list
+          would 404 on half the org and red every sweep.
+        type: string
+        default: ""
+        required: false
 
 permissions:
   contents: write
   pull-requests: write
+  # gh workflow run — without this every dispatch 403s and the sweep is
+  # right back to landing un-CI'd commits on develop.
+  actions: write
 
 jobs:
   automerge:
@@ -27,8 +79,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.check_suite.head_sha }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          POST_MERGE_GATES: ${{ inputs.post_merge_gates }}
+          # Workflows that must NEVER be auto-dispatched after a merge:
+          # the sweep itself (recursion), release/publish paths (they cut
+          # real artifacts), and the CLA bot (needs PR context).
+          GATE_DENY_RE: '^(auto-merge-to-develop|autobump-release-sweep|cla|pypi-publish|.*release.*|.*publish.*)'
         run: |
           set -uo pipefail
+
+          merges=0
+
           if [ -n "${HEAD_SHA:-}" ]; then
             prs=$(gh api "repos/$REPO/commits/$HEAD_SHA/pulls" --jq '.[] | select(.state=="open") | .number' 2>/dev/null || true)
           else
@@ -54,8 +115,78 @@ jobs:
                 | (.conclusion // .state // "")
                 | select(. != "SUCCESS" and . != "NEUTRAL" and . != "SKIPPED" and . != "") ] | length' 2>/dev/null || echo 1)
             if [ "$pending" = "0" ]; then
-              gh pr merge "$pr" --repo "$REPO" --merge --admin --delete-branch && echo "MERGED #$pr -> develop" || echo "blocked #$pr"
+              if [ "$DRY_RUN" = "true" ]; then
+                echo "DRY RUN: would merge #$pr -> develop"
+                merges=$((merges + 1))
+              elif gh pr merge "$pr" --repo "$REPO" --merge --admin --delete-branch; then
+                echo "MERGED #$pr -> develop"
+                merges=$((merges + 1))
+              else
+                echo "blocked #$pr"
+              fi
             else
               echo "PR #$pr not green ($pending) — skip"
             fi
           done
+
+          echo "sweep complete: $merges merge(s) this run"
+
+          # ---------------------------------------------------------------
+          # POST-MERGE CI DISPATCH — a github.token merge fires NOTHING.
+          # ---------------------------------------------------------------
+          # The merge commit we just pushed carries the default workflow
+          # token, so GitHub suppresses every push-triggered workflow on it
+          # (see header). Without this block develop's new head has ZERO
+          # check runs, and a develop-health gate reads that absence as "no
+          # red signal" — green-by-absence. workflow_dispatch is exempt from
+          # the suppression, so fire the gates explicitly. ONCE per call
+          # (merges is this call's total), never per PR.
+          if [ "$merges" -gt 0 ]; then
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "DRY RUN: would dispatch post-merge gates on develop"
+            else
+              gates="$POST_MERGE_GATES"
+              if [ -z "$gates" ]; then
+                # Auto-discover: active workflows that exist ON develop and
+                # accept a bare workflow_dispatch. Reading the file from the
+                # develop ref (not main) is the point — a gate that only
+                # exists on main cannot check the head we just landed.
+                candidates=$(gh api "repos/$REPO/actions/workflows?per_page=100" \
+                  --jq '.workflows[] | select(.state=="active") | .path | sub("^\\.github/workflows/"; "")' \
+                  2>/dev/null || true)
+                for wf in $candidates; do
+                  echo "$wf" | grep -Eq "$GATE_DENY_RE" && continue
+                  body=$(gh api "repos/$REPO/contents/.github/workflows/$wf?ref=develop" \
+                    --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || true)
+                  [ -z "$body" ] && continue
+                  echo "$body" | grep -q 'workflow_dispatch' || continue
+                  gates="$gates $wf"
+                done
+              fi
+
+              if [ -z "$(echo "$gates" | tr -d '[:space:]')" ]; then
+                # A merge landed and NOTHING can check it. That is the
+                # green-by-absence state itself, not a clean result.
+                echo "::error::merged $merges PR(s) onto develop but found NO dispatchable post-merge gate. develop's new head is UN-CHECKED. Add a workflow_dispatch trigger to this repo's CI, or pass post_merge_gates explicitly."
+                exit 1
+              fi
+
+              echo "post-merge gates: $gates"
+              dispatch_failures=0
+              for wf in $gates; do
+                if gh workflow run "$wf" --repo "$REPO" --ref develop; then
+                  echo "dispatched $wf on develop"
+                else
+                  # LOUD, never silent: an undispatched gate leaves develop's
+                  # new head UN-CHECKED — the exact hole this block closes.
+                  echo "::error::failed to dispatch $wf on develop — the merged head has NO CI of its own until something fires it"
+                  dispatch_failures=$((dispatch_failures + 1))
+                fi
+              done
+              if [ "$dispatch_failures" -gt 0 ]; then
+                echo "::error::$dispatch_failures post-merge gate dispatch(es) failed. The merge itself LANDED; this run is red ON PURPOSE so an un-CI'd develop head cannot pass unnoticed."
+                exit 1
+              fi
+              echo "post-merge gates dispatched on develop"
+            fi
+          fi
