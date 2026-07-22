@@ -4,11 +4,49 @@ name: rtd-sphinx-build
 # Mechanically extracted from the `docs-sphinx` job in
 # scitex-ai/scitex-stats `.github/workflows/ci.yml` (this is a local
 # `sphinx-build` smoke check, not a ReadTheDocs.org webhook trigger — RTD
-# itself builds independently from its own webhook). No inputs: the
-# conf.py location is auto-discovered.
+# itself builds independently from its own webhook).
+#
+# 2026-07-22 — GREEN NO-OP FIX. The original probed only docs/conf.py,
+# docs/source/conf.py and docs/src/conf.py, and `exit 0`d when it found
+# none. Measured across the org that day: 66 of 74 repos keep conf.py at
+# `docs/sphinx/conf.py` and ZERO repos use ANY of the three probed paths —
+# so in every one of the 15 repos already calling this reusable the gate
+# matched nothing and exited 0. Fifteen repos were passing green while
+# building no documentation at all, and the `exit 0` made that
+# indistinguishable from a real build.
+#
+# Two changes close it:
+#   1. `docs_dir` is now an INPUT (default `docs/sphinx`, the org
+#      convention). The zero-input design of these reusables is the
+#      documented root cause of the rtd-sphinx variant sprawl — a repo that
+#      keeps conf.py elsewhere overrides the input instead of forking the
+#      workflow.
+#   2. A missing conf.py is now a HARD FAILURE by default. `required: false`
+#      is the explicit, auditable opt-out for repos that genuinely ship no
+#      docs — and it says so LOUDLY in the log rather than looking like a
+#      pass. A gate that cannot fail is not a gate.
 
 on:
-  workflow_call: {}
+  workflow_call:
+    inputs:
+      docs_dir:
+        description: >-
+          Directory holding the sphinx conf.py. Defaults to the org
+          convention `docs/sphinx`. The legacy layouts (docs, docs/source,
+          docs/src) are still probed as fallbacks, so setting this is only
+          necessary for a genuinely unusual layout
+          (e.g. `docs/sphinx/source`).
+        type: string
+        required: false
+        default: docs/sphinx
+      required:
+        description: >-
+          When true (the default), a missing conf.py FAILS the job. Set to
+          false only for repos that genuinely ship no sphinx docs — the skip
+          is then reported loudly instead of silently passing.
+        type: boolean
+        required: false
+        default: true
 
 jobs:
   docs-sphinx:
@@ -21,16 +59,39 @@ jobs:
         with:
           cache-dependency-glob: pyproject.toml
       - name: Build sphinx HTML (satisfies PS-122; RTD bundle stays fresh)
+        env:
+          DOCS_DIR: ${{ inputs.docs_dir }}
+          DOCS_REQUIRED: ${{ inputs.required }}
         run: |
           set -euo pipefail
+          # The caller's docs_dir is probed FIRST, then the legacy layouts.
+          CANDIDATES="$DOCS_DIR/conf.py docs/sphinx/conf.py docs/conf.py docs/source/conf.py docs/src/conf.py"
           CONF=""
-          for c in docs/conf.py docs/source/conf.py docs/src/conf.py; do
+          for c in $CANDIDATES; do
             [ -f "$c" ] && CONF="$c" && break
           done
           if [ -z "$CONF" ]; then
-            echo "no sphinx conf.py (checked docs[/source|/src]) — skipping; PS-122 satisfied by workflow content"
-            exit 0
+            # A skip must NEVER be reported as a pass. Either this repo
+            # declared it ships no docs, or the gate just failed to find the
+            # docs it was pointed at — those are different outcomes and they
+            # get different exit codes.
+            echo "::error::no sphinx conf.py found. Searched, in order:"
+            for c in $CANDIDATES; do echo "::error::  $c"; done
+            if [ "$DOCS_REQUIRED" = "false" ]; then
+              echo "::warning::SKIPPING the sphinx build — this caller passes \`required: false\`, so NO DOCUMENTATION WAS BUILT and this job's green does NOT mean the docs compile."
+              exit 0
+            fi
+            echo "::error::To point the gate at your docs, pass the directory holding conf.py:"
+            echo "::error::    uses: scitex-ai/.github/.github/workflows/rtd-sphinx-build.yml@main"
+            echo "::error::    with:"
+            echo "::error::      docs_dir: path/to/your/docs"
+            echo "::error::If this repo genuinely ships no sphinx docs, opt out explicitly:"
+            echo "::error::    uses: scitex-ai/.github/.github/workflows/rtd-sphinx-build.yml@main"
+            echo "::error::    with:"
+            echo "::error::      required: false"
+            exit 1
           fi
+          echo "found sphinx conf.py at $CONF"
           uv venv --python 3.12 .venv
           uv pip install --python .venv/bin/python -e ".[docs]" \
             || uv pip install --python .venv/bin/python -e ".[all,dev]" \
