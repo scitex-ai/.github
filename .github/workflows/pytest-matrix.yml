@@ -36,6 +36,42 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           cache-dependency-glob: pyproject.toml
+        env:
+          # PER-RUNNER TOOL CACHE. Every runner on the Spartan lease inherited
+          # RUNNER_TOOL_CACHE=~/.runner-toolcache from the supervisor, so ~80
+          # runners shared ONE mutable cache on GPFS. @actions/tool-cache's
+          # writer is destructive, not additive:
+          #
+          #   _createToolPath():  rmRF(<ver>/<arch>)      <- deletes the tree
+          #                       rmRF(<ver>/<arch>.complete)
+          #                       mkdirP(<ver>/<arch>)
+          #   ...copy files in...
+          #   _completeToolPath(): write <arch>.complete
+          #
+          # and the reader, find(), treats dir + `.complete` as a HIT and puts
+          # it on PATH WITHOUT checking that the binary is inside. So when a new
+          # uv release makes every concurrent job a cache MISS at once, each one
+          # deletes the tree the others are using or filling. Two observed faces,
+          # same cause:
+          #   ENOENT copying into the toolcache  (two writers collide)
+          #   "Added .../uv/<ver>/x86_64 to the path" then
+          #   ".../uv: No such file or directory" -> exit 127
+          #     (a reader's hit gets deleted under it — figrecipe main, run
+          #      29945387939, 2026-07-22: all three matrix legs, three runners)
+          #
+          # Scoping the cache per runner removes the sharing, so no job can
+          # destroy another's tree. This is why PRE-SEEDING the image does NOT
+          # fix it: _createToolPath rmRF's a pre-seeded tree exactly the same.
+          #
+          # /tmp is node-local and may be cleared: that degrades to a cache MISS
+          # (re-download, slower), never a dangling path — mkdirP recreates it.
+          # Deliberately NOT on GPFS: punim0264 is at 98.2% of its 8M inode
+          # limit and a per-runner cache there would multiply inode use by ~80.
+          #
+          # Set at STEP level on purpose: the `runner` context is not available
+          # to job-level `env`. setup-uv writes the resolved path to $GITHUB_PATH,
+          # so later steps resolve uv without needing this variable themselves.
+          RUNNER_TOOL_CACHE: /tmp/scitex-ci-runner-work/toolcache/${{ runner.name }}
       - name: Install (.[all,dev]) + pytest
         run: |
           set -euo pipefail
