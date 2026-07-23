@@ -1,0 +1,144 @@
+name: promote-develop-to-main-on-tag
+
+# ============================================================================
+# REUSABLE WORKFLOW A — the tag -> CI -> auto-PR -> auto-merge piece of the
+# release model. Called by a leaf repo's thin `release.yml` on a `v*` tag,
+# BEFORE reusable B (pypi-publish-and-github-release-on-tag.yml) publishes.
+# DRAFT PROPOSAL — not yet adopted by any leaf repo.
+#
+# WHY A REUSABLE (not just documented triggers) — the DECISION, stated:
+#   The leaf caller composes A then B with a single `needs:` edge
+#   (publish needs promote). For `needs` to gate B on A's completion they
+#   must be sibling JOBS in ONE caller workflow, which means BOTH have to be
+#   reusables the caller `uses:`. The promote+auto-merge logic is also
+#   identical across all 68 repos, so it is worth deduplicating exactly once
+#   here rather than re-inlining a `gh pr create && gh pr merge` block per
+#   repo. Hence: A is a reusable, mirroring B.
+#
+# WHAT IT DOES (operator model steps 1-2):
+#   1. ci      — run full CI on the TAGGED commit (calls the org pytest-matrix
+#                reusable). Nothing is promoted unless CI is green on the exact
+#                commit being released.
+#   2. promote — open a develop->main PR at that same commit and auto-merge it
+#                with a MERGE commit (NEVER squash). Merge-not-squash keeps the
+#                tag's sha an ancestor of main, which is the precondition
+#                reusable B's containment guard verifies. If a squash slips
+#                through anyway, B fails RED — this is the belt, B is the
+#                braces.
+#
+# ACTOR FEEDBACK (A->B => B->A): each job writes a repo+stage verdict into the
+# run summary the tag pusher (github.actor) sees; FLEET-HOOK markers show where
+# a scitex-todo card / DM plugs in.
+#
+# RUNNER: `runs-on-json` selects the runner for the promote job (hosted callers
+# pass '"ubuntu-latest"'; sif callers pass the self-hosted label array). NOTE:
+# the CI job delegates to the org pytest-matrix reusable, which is self-hosted
+# by construction — see RELEASE-MODEL.md "human decisions" for the hosted-only
+# CI caveat.
+# ============================================================================
+
+on:
+  workflow_call:
+    inputs:
+      runs-on-json:
+        description: >-
+          JSON for the promote job's runs-on. hosted callers pass
+          '"ubuntu-latest"'; sif callers pass
+          '["self-hosted","Linux","X64","scitex-ci"]'. Consumed via fromJSON.
+        required: false
+        type: string
+        default: '["self-hosted","Linux","X64","scitex-ci"]'
+      develop-branch:
+        description: 'Source branch the tag is cut on.'
+        required: false
+        type: string
+        default: 'develop'
+      main-branch:
+        description: 'Promotion target branch.'
+        required: false
+        type: string
+        default: 'main'
+
+jobs:
+  # --------------------------------------------------------------------------
+  # CI on the tagged commit — org-standard pytest-matrix. Reusable `uses:`
+  # must be a literal (no expressions), so the CI workflow is fixed here.
+  # --------------------------------------------------------------------------
+  ci:
+    uses: scitex-ai/.github/.github/workflows/pytest-matrix.yml@main
+    secrets: inherit
+
+  # --------------------------------------------------------------------------
+  # PROMOTE — open develop->main PR at the tagged commit and auto-merge it
+  # with a MERGE commit. Only runs if `ci` succeeded.
+  # --------------------------------------------------------------------------
+  promote:
+    needs: ci
+    runs-on: ${{ fromJSON(inputs.runs-on-json) }}
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Resolve version from the triggering tag
+        id: ver
+        run: |
+          set -euo pipefail
+          v="${GITHUB_REF#refs/tags/}"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Open + auto-merge develop -> main (MERGE commit, never squash)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DEV: ${{ inputs.develop-branch }}
+          MAIN: ${{ inputs.main-branch }}
+          TAG: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --prune origin "$DEV" "$MAIN"
+
+          # Already contained? (develop already merged, or re-run) -> nothing to do.
+          if git merge-base --is-ancestor "origin/$DEV" "origin/$MAIN"; then
+            echo "origin/$DEV is already contained in origin/$MAIN — no promotion PR needed."
+            echo "### release A / promote — \`SKIP\` ($REPO @ $TAG): $DEV already in $MAIN" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Reuse an open PR if one already exists, else create it.
+          num="$(gh pr list --repo "$REPO" --base "$MAIN" --head "$DEV" --state open --json number --jq '.[0].number // empty')"
+          if [ -z "${num:-}" ]; then
+            num="$(gh pr create --repo "$REPO" --base "$MAIN" --head "$DEV" \
+                    --title "release: promote $DEV -> $MAIN ($TAG)" \
+                    --body "Automated promotion for release **$TAG** (reusable A). Merged with a MERGE commit so the tag's commit stays an ancestor of $MAIN — reusable B asserts exactly that before publishing." \
+                    | sed -nE 's#.*/pull/([0-9]+).*#\1#p')"
+          fi
+          test -n "${num:-}" || { echo "::error::could not resolve a develop->main PR number for $TAG"; exit 1; }
+          echo "promotion PR: #$num"
+
+          # MERGE commit (NOT --squash, NOT --rebase): preserves the tag sha in
+          # $MAIN history so B's containment guard passes. --admin bypasses any
+          # required-review gate for this automated same-commit promotion.
+          gh pr merge "$num" --repo "$REPO" --merge --admin
+
+          # Verify the promotion actually contained the tag commit — loud-fail early.
+          git fetch --no-tags --prune origin "$MAIN"
+          TAG_SHA="$(git rev-list -n1 "refs/tags/$TAG")"
+          if git merge-base --is-ancestor "$TAG_SHA" "origin/$MAIN"; then
+            echo "### release A / promote — \`MERGED\` ($REPO @ $TAG): #$num, tag contained in $MAIN" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::promotion merged PR #$num but tag $TAG ($TAG_SHA) is NOT in $MAIN — a squash/rebase merge policy likely rewrote the sha. Reconfigure the repo to allow merge commits for this PR. @${{ github.actor }}"
+            echo "### release A / promote — \`BAD-MERGE\` ($REPO @ $TAG): tag not in $MAIN after merge" >> "$GITHUB_STEP_SUMMARY"
+            # FLEET-HOOK: DM github.actor — promotion succeeded but broke containment.
+            exit 1
+          fi
+
+      - name: Actor feedback — promote verdict
+        if: always()
+        run: |
+          echo "- release A actor: @${{ github.actor }} · status: ${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"
+          # FLEET-HOOK: report CI+promote result to github.actor here.

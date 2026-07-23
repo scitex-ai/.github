@@ -1,0 +1,7 @@
+{
+  "name": "SciTeX release (tag -> promote -> publish)",
+  "description": "Tag-driven release: CI on the tag, auto-merge develop->main (merge commit), then containment-guarded PyPI publish + GitHub Release. Composes the org reusables A + B. Set publish-backend (hosted|sif) and pypi-project.",
+  "iconName": "package",
+  "categories": ["Deployment", "Python"],
+  "filePatterns": ["pyproject.toml$"]
+}
