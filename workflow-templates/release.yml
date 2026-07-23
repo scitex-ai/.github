@@ -1,0 +1,35 @@
+name: release
+
+# THE THIN CALLER — copy this into a leaf repo as `.github/workflows/release.yml`
+# and adjust the 3 marked values. It composes the two org reusables:
+#   A (promote-develop-to-main-on-tag)  — CI on the tag, then auto-merge
+#                                         develop->main with a MERGE commit.
+#   B (pypi-publish-and-github-release-on-tag) — build + containment guard +
+#                                         publish + GitHub Release, from the tag.
+# `publish` depends on `promote`, so B only runs after A has landed the tag's
+# commit on main. See scitex-ai/.github/RELEASE-MODEL.md.
+#
+# BACKEND: this template is the SELF-HOSTED SIF default (the dominant, no-
+# hosted-runners posture). For a hosted-OIDC repo, swap the two ADJUST lines:
+#   publish-backend: hosted
+#   runs-on-json: '"ubuntu-latest"'   (both jobs)
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  promote:
+    uses: scitex-ai/.github/.github/workflows/promote-develop-to-main-on-tag.yml@main
+    with:
+      runs-on-json: '["self-hosted","Linux","X64","scitex-ci"]'   # ADJUST for hosted: '"ubuntu-latest"'
+    secrets: inherit
+
+  publish:
+    needs: promote
+    uses: scitex-ai/.github/.github/workflows/pypi-publish-and-github-release-on-tag.yml@main
+    with:
+      publish-backend: sif                                        # ADJUST: hosted | sif
+      runs-on-json: '["self-hosted","Linux","X64","scitex-ci"]'   # ADJUST for hosted: '"ubuntu-latest"'
+      pypi-project: REPLACE-with-pypi-project-name                # ADJUST: e.g. scitex-dev
+    secrets: inherit
