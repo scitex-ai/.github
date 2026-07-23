@@ -84,3 +84,13 @@ jobs:
           custom-notsigned-prcomment: |
             Please sign the [SciTeX CLA](https://github.com/${{ github.repository }}/blob/${{ inputs.default_branch }}/CLA.md) before your contribution can be merged.
             Comment `I have read and agree to the SciTeX CLA.` to sign.
+          # MUST stay byte-identical to the phrase quoted just above. Without
+          # this input the action accepts ONLY its own default ("I have read
+          # the CLA Document and I hereby sign the CLA"), so the instruction we
+          # publish is one the system rejects: a contributor who follows it
+          # exactly is told nothing happened, and the check sits stale-FAILURE
+          # with no way for them to discover why. Measured 2026-07-23 on
+          # figrecipe #319/#320 — the contributor commented the quoted phrase
+          # on 07-23 15:56 and both CLA runs that day concluded `failure`.
+          # If you edit either string, edit BOTH. They are one contract.
+          custom-pr-sign-comment: "I have read and agree to the SciTeX CLA."
