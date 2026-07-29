@@ -152,3 +152,31 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.xml
           fail_ci_if_error: false
+        env:
+          # PER-JOB GLOBAL GIT CONFIG. codecov-action runs `git config --global`
+          # internally (its safe.directory / fork-detection preamble). Every
+          # runner on the Spartan lease shares ONE $HOME, so two runners reaching
+          # this step at the same moment contend for git's lockfile and the loser
+          # dies before uploading anything:
+          #
+          #   error: could not lock config file /home/ywatanabe/.gitconfig: File exists
+          #   ##[error]Process completed with exit code 255.
+          #
+          # Observed: scitex-ui PR #109, run 30398799453,
+          # job pytest-matrix-on-ubuntu-py3.12, step __codecov_codecov-action.__run_3
+          # (2026-07-28). Third sighting of the class in eleven days.
+          #
+          # SAME shared-$HOME class as the RUNNER_TOOL_CACHE fix above, different
+          # resource. It is NOT random across the matrix: this step is gated to
+          # py3.12, so the failure always lands on that one leg — which reads like
+          # "3.12 is flaky" and invites a re-run instead of a look at the log. A
+          # re-run does clear it, which is exactly why it survived three sightings.
+          #
+          # actions/checkout already solves this the same way: its post-job step
+          # copies ~/.gitconfig aside and temporarily overrides HOME before
+          # touching the global config. codecov-action does not, so redirect here.
+          #
+          # runner.temp is per-runner, and a runner executes one job at a time, so
+          # this path is unique per concurrent job by construction. git creates the
+          # file on first write and treats a missing one as empty — no seeding.
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/gitconfig-codecov
