@@ -145,6 +145,32 @@ jobs:
           export PYTEST_XDIST_AUTO_NUM_WORKERS="$(.venv/bin/python -c 'import os; print(len(os.sched_getaffinity(0)))')"
           .venv/bin/python -m pytest tests/ -n auto \
             --cov="src/$PKG" --cov-report=xml --cov-report=term
+      - name: Seed the per-job git config for the codecov step
+        if: always() && matrix.python-version == '3.12'
+        run: |
+          set -euo pipefail
+          # GIT_CONFIG_GLOBAL REPLACES the global config, it does not layer on
+          # top of it. So the step below, which redirects writes away from the
+          # shared ~/.gitconfig, ALSO hides user.name / user.email from git —
+          # silently, because nothing in the codecov step reads them today.
+          #
+          # `include.path` restores reads while leaving writes redirected:
+          # identity resolves through the real config, `--add safe.directory`
+          # still lands in the throwaway file.
+          #
+          # Added prophylactically. codecov-action appears not to need identity,
+          # and CI has been green since the redirect landed — but "appears not
+          # to need" is an assumption nobody asserted, and scitex-hpc caught the
+          # same shape in their launcher fix an hour before this was written,
+          # where it WOULD have made every CI commit identity-less.
+          #
+          # This whole block is temporary. The launcher-level fix in the runner
+          # supervisor sets GIT_CONFIG_GLOBAL once, for every runner and every
+          # one of the ~58 per-repo callers this workflow never sees. When that
+          # is deployed and live, revert this and the env: below together.
+          printf '[include]\n\tpath = %s\n' "$HOME/.gitconfig" \
+            > "${{ runner.temp }}/gitconfig-codecov"
+
       - name: Upload coverage to Codecov
         if: always() && matrix.python-version == '3.12'
         uses: codecov/codecov-action@v5
