@@ -36,6 +36,13 @@ on:
         type: string
         default: "ywatanabe1989"
 
+    # Declared so a caller can pass this ONE secret explicitly instead of
+    # `secrets: inherit`, which forwards EVERY secret the calling repo
+    # holds into a job an outsider can start. Backward compatible:
+    # `secrets: inherit` keeps working for callers that have not migrated.
+    secrets:
+      GH_PERSONAL_ACCESS_TOKEN:
+        required: true
 permissions:
   actions: write
   contents: write
@@ -46,6 +53,32 @@ jobs:
   owner-bypass:
     if: github.event_name == 'push' && github.actor == inputs.owner_login
     # ZERO GitHub-hosted runners (operator mandate 2026-07-14). Org pool.
+    # WHY THIS DESTINATION IS NOT OBVIOUSLY CORRECT — read before changing.
+    #
+    # Four facts that are each individually fine and only bite in combination:
+    #   1. `issue_comment` and `pull_request_target` are UNAUTHENTICATED
+    #      triggers on a public repo. A GitHub account is the whole barrier.
+    #   2. The fork-PR approval gate does NOT cover them —
+    #      `pull_request_target` runs in the BASE repo's context and
+    #      `issue_comment` is not gated at all. These two events are the
+    #      documented way AROUND that gate.
+    #   3. Self-hosted runners here are PERSISTENT and share a real $HOME
+    #      that holds the live fleet credential.
+    #   4. This job runs a third-party action.
+    #
+    # Measured 2026-07-30 (scitex-app): no `actions/checkout` of the PR head,
+    # third-party action SHA-pinned, NO code-injection path found. This is a
+    # hardening concern, not an active compromise. Unverified by anyone: the
+    # pinned action's contents, and whether a fork PR actually reaches here.
+    #
+    # sac's own repo REFUSED this shape and keeps its CLA job on
+    # `ubuntu-latest` with a written PS-224 exemption: "the blocker is
+    # SECURITY, not capability, and moving the job to Spartan would be a
+    # REGRESSION". An ephemeral hosted VM is destroyed after the run, so a
+    # compromise costs one disposable runner.
+    #
+    # If you are 'fixing' this to satisfy a no-hosted-runners rule: that rule
+    # does not model who can TRIGGER a workflow. Escalate instead.
     runs-on: [self-hosted, Linux, X64, spartan-cpu]
     permissions:
       statuses: write
@@ -65,6 +98,32 @@ jobs:
   CLAssistant:
     if: github.event_name != 'push'
     # ZERO GitHub-hosted runners (operator mandate 2026-07-14). Org pool.
+    # WHY THIS DESTINATION IS NOT OBVIOUSLY CORRECT — read before changing.
+    #
+    # Four facts that are each individually fine and only bite in combination:
+    #   1. `issue_comment` and `pull_request_target` are UNAUTHENTICATED
+    #      triggers on a public repo. A GitHub account is the whole barrier.
+    #   2. The fork-PR approval gate does NOT cover them —
+    #      `pull_request_target` runs in the BASE repo's context and
+    #      `issue_comment` is not gated at all. These two events are the
+    #      documented way AROUND that gate.
+    #   3. Self-hosted runners here are PERSISTENT and share a real $HOME
+    #      that holds the live fleet credential.
+    #   4. This job runs a third-party action.
+    #
+    # Measured 2026-07-30 (scitex-app): no `actions/checkout` of the PR head,
+    # third-party action SHA-pinned, NO code-injection path found. This is a
+    # hardening concern, not an active compromise. Unverified by anyone: the
+    # pinned action's contents, and whether a fork PR actually reaches here.
+    #
+    # sac's own repo REFUSED this shape and keeps its CLA job on
+    # `ubuntu-latest` with a written PS-224 exemption: "the blocker is
+    # SECURITY, not capability, and moving the job to Spartan would be a
+    # REGRESSION". An ephemeral hosted VM is destroyed after the run, so a
+    # compromise costs one disposable runner.
+    #
+    # If you are 'fixing' this to satisfy a no-hosted-runners rule: that rule
+    # does not model who can TRIGGER a workflow. Escalate instead.
     runs-on: [self-hosted, Linux, X64, spartan-cpu]
     steps:
       - name: CLA Assistant
