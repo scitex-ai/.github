@@ -36,6 +36,13 @@ on:
         type: string
         default: "ywatanabe1989"
 
+    # Declared so a caller can pass this ONE secret explicitly instead of
+    # `secrets: inherit`, which forwards EVERY secret the calling repo
+    # holds into a job an outsider can start. Backward compatible:
+    # `secrets: inherit` keeps working for callers that have not migrated.
+    secrets:
+      GH_PERSONAL_ACCESS_TOKEN:
+        required: true
 permissions:
   actions: write
   contents: write
