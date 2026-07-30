@@ -52,6 +52,30 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           cache-dependency-glob: pyproject.toml
+          # PINNED, and the pin is load-bearing — see the RUNNER_TOOL_CACHE note
+          # below for the hazard it defuses.
+          #
+          # Unpinned, this resolves to `latest`. The moment astral publishes a
+          # release, EVERY concurrent job becomes a tool-cache MISS at the same
+          # instant, and a miss is the only thing that calls the destructive
+          # writer (_createToolPath rmRF's <ver>/<arch> before refilling it).
+          # That is the trigger for the whole failure described below. On a HIT
+          # the action only calls find() + addPath and writes nothing, so no job
+          # can destroy a tree another is reading.
+          #
+          # This does NOT make the shared cache safe — it removes the event that
+          # sets it off. The hazard itself (~80 runners sharing one mutable
+          # directory) is fixed by giving each runner its own
+          # AGENT_TOOLSDIRECTORY in the runner supervisor, which is the only
+          # place it CAN be fixed; see below. Keep both.
+          #
+          # Bumping this pin re-opens the window for one run, so warm the new
+          # version on the pool before bumping, or bump when the pool is idle.
+          #
+          # Independently correct regardless of the race: an unpinned toolchain
+          # silently changes what CI runs whenever an upstream release lands,
+          # which is the opposite of a reproducible build.
+          version: "0.12.0"
         env:
           # PER-RUNNER TOOL CACHE. Every runner on the Spartan lease inherited
           # RUNNER_TOOL_CACHE=~/.runner-toolcache from the supervisor, so ~80
