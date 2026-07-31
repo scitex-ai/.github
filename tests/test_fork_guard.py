@@ -79,10 +79,30 @@ def _runs_on_labels(job: dict) -> list[str]:
     return [str(label) for label in runs_on]
 
 
+def _may_run_self_hosted(job: dict) -> bool:
+    """True when this job CAN land on a self-hosted runner.
+
+    A literal ``self-hosted`` label is the easy case. The hard case is a
+    parameterised ``runs-on: ${{ fromJSON(inputs.runs_on) }}``, whose value is
+    not knowable until a caller supplies it — and whose DEFAULT here is the
+    Spartan pool. Statically it could be either, so this answers YES.
+
+    ERRING TOWARDS GUARDED IS THE ONLY SAFE DIRECTION. A false yes costs one
+    unnecessary guard step on a hosted runner, where it is harmless. A false NO
+    silently drops the job out of :func:`_guarded_jobs`, so the fork guard
+    becomes unenforced AND untested at the same moment — the check keeps
+    passing while the protection is gone. Parameterising ``runs-on`` did
+    exactly that on 2026-07-31, and these tests caught it.
+    """
+    labels = _runs_on_labels(job)
+    if "self-hosted" in labels:
+        return True
+    return any("${{" in label for label in labels)
+
+
 def _checks_out(job: dict) -> bool:
     return any(
-        "actions/checkout" in str(step.get("uses", ""))
-        for step in job.get("steps", [])
+        "actions/checkout" in str(step.get("uses", "")) for step in job.get("steps", [])
     )
 
 
@@ -95,7 +115,7 @@ def _guarded_jobs() -> list[tuple[str, str, dict]]:
     found: list[tuple[str, str, dict]] = []
     for path in sorted(_WORKFLOW_DIR.glob("*.yml")):
         for job_id, job in (_load(path).get("jobs") or {}).items():
-            if "self-hosted" in _runs_on_labels(job) and _checks_out(job):
+            if _may_run_self_hosted(job) and _checks_out(job):
                 found.append((path.name, job_id, job))
     return found
 

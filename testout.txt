@@ -1,0 +1,33 @@
+.............FF......................................................    [100%]
+=================================== FAILURES ===================================
+___________ test_selector_finds_the_known_self_hosted_checkout_jobs ____________
+
+    def test_selector_finds_the_known_self_hosted_checkout_jobs() -> None:
+        # Arrange
+        minimum_known_today = 5
+        # Act
+        found = len(_TARGETS)
+        # Assert
+>       assert found >= minimum_known_today, (
+            f"selector found only {_IDS} — it is broken, not the fleet"
+        )
+E       AssertionError: selector found only ['import-smoke.yml:import-smoke', 'quality-audit.yml:audit', 'rtd-sphinx-build.yml:docs-sphinx', 'self-test.yml:pytest'] — it is broken, not the fleet
+E       assert 4 >= 5
+
+/uvwork/tmp/claude-1000/-home-ywatanabe-proj-scitex-cards/b1ef6bfe-0b6d-4fc5-89e1-ffae43e1d299/scratchpad/orggh/tests/test_fork_guard.py:120: AssertionError
+_________________ test_selector_includes_the_pytest_matrix_job _________________
+
+    def test_selector_includes_the_pytest_matrix_job() -> None:
+        # Arrange
+        expected = "pytest-matrix.yml:pytest-matrix"
+        # Act
+        selected = _IDS
+        # Assert
+>       assert expected in selected
+E       AssertionError: assert 'pytest-matrix.yml:pytest-matrix' in ['import-smoke.yml:import-smoke', 'quality-audit.yml:audit', 'rtd-sphinx-build.yml:docs-sphinx', 'self-test.yml:pytest']
+
+/uvwork/tmp/claude-1000/-home-ywatanabe-proj-scitex-cards/b1ef6bfe-0b6d-4fc5-89e1-ffae43e1d299/scratchpad/orggh/tests/test_fork_guard.py:131: AssertionError
+=========================== short test summary info ============================
+FAILED ../../../../uvwork/tmp/claude-1000/-home-ywatanabe-proj-scitex-cards/b1ef6bfe-0b6d-4fc5-89e1-ffae43e1d299/scratchpad/orggh/tests/test_fork_guard.py::test_selector_finds_the_known_self_hosted_checkout_jobs
+FAILED ../../../../uvwork/tmp/claude-1000/-home-ywatanabe-proj-scitex-cards/b1ef6bfe-0b6d-4fc5-89e1-ffae43e1d299/scratchpad/orggh/tests/test_fork_guard.py::test_selector_includes_the_pytest_matrix_job
+2 failed, 67 passed in 2.00s
