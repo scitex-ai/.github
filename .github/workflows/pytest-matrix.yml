@@ -16,7 +16,35 @@ name: pytest-matrix
 # list for it forever. See the README's "Caller job ids" section.
 
 on:
-  workflow_call: {}
+  workflow_call:
+    inputs:
+      runs_on:
+        description: >-
+          JSON array of runner labels. DEFAULTS TO THE SPARTAN POOL, which is
+          exactly what every caller got before this input existed — adding it
+          changes no repo that does not pass it.
+
+          Pass '["ubuntu-latest"]' to run on GitHub-hosted runners. Operator
+          ruling 2026-07-31: hosted is the DEFAULT CHOICE for new work, because
+          most scitex repositories are public so hosted minutes are free;
+          self-hosted is for jobs where our own machines are genuinely faster
+          (long builds, GPU, large data), not a blanket policy.
+
+          The concrete reason a caller opts out today is the shared tool cache.
+          Every runner on the Spartan lease inherits one mutable
+          ~/.runner-toolcache on GPFS, so runners contend for one directory and
+          jobs fail BOTH reading it (`uv: No such file` -> exit 127) and
+          writing it (ENOENT during copy). Measured on scitex-cards
+          2026-07-31: seven failures across five pull requests in one
+          afternoon, four differently-named runners, every one cleared by a
+          plain rerun. The tell is DURATION — failures finish in 14-30s where
+          passing legs take 62-66s. Until each runner gets its own
+          AGENT_TOOLSDIRECTORY (see #24, which notes the per-runner fix
+          "cannot fire"), a caller that cannot absorb random reruns should pass
+          ubuntu-latest.
+        type: string
+        required: false
+        default: '["self-hosted","Linux","X64","spartan-cpu"]'
 
 jobs:
   pytest-matrix:
@@ -25,7 +53,7 @@ jobs:
     # mandated caller job id above). Renaming this breaks branch protection in
     # every repo at once — reconcile protection in the same change if you ever do.
     name: pytest-matrix-on-ubuntu-py${{ matrix.python-version }}
-    runs-on: [self-hosted, Linux, X64, spartan-cpu]
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
