@@ -35,4 +35,18 @@ concurrency:
 jobs:
   pytest-matrix:            # <-- DO NOT RENAME (see above)
     uses: scitex-ai/.github/.github/workflows/pytest-matrix.yml@main
-    secrets: inherit
+
+    # ONE secret, mapped explicitly. This stub used to say `secrets: inherit`,
+    # which forwards EVERY secret your repo holds into these jobs — measured
+    # 2026-08-03, scitex-ui and scitex-hpc each hold CLAUDE_CODE_CREDENTIALS_JSON
+    # (the fleet Claude credential), which nothing in pytest-matrix touches.
+    # PS-224 flags the pattern.
+    #
+    # IF YOUR REPO HAS NO CODECOV_TOKEN, DELETE THESE TWO LINES ENTIRELY rather
+    # than leaving them — an unset secret maps to empty, and coverage upload
+    # then fails as `Token required because branch is protected` while the step
+    # still reports success (`fail_ci_if_error: false`). Measured across all 50
+    # consumer repos: exactly ONE (scitex-io) holds the token, so for almost
+    # every repo copying this stub, DELETING is the correct action.
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
