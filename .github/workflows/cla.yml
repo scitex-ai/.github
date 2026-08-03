@@ -14,8 +14,13 @@ name: cla
 # (defaults to `main`) since the CLA.md path assumes the doc lives on the
 # repo's default branch. `owner_allowlist` is an input so each repo can
 # keep its own allowlisted owner login(s); defaults to the current value.
-# Needs `secrets: inherit` on the caller (GH_PERSONAL_ACCESS_TOKEN for the
-# CLA-signature-storage PAT; GITHUB_TOKEN is provided automatically).
+# Needs GH_PERSONAL_ACCESS_TOKEN (the CLA-signature-storage PAT) from the
+# caller; GITHUB_TOKEN is provided automatically. Map it EXPLICITLY — see the
+# `secrets:` declaration below. This line used to say `secrets: inherit` was
+# needed, which PR #22 made untrue in this very file and nobody updated, so the
+# header mandated the thing the declaration twelve lines down exists to avoid.
+# A stale comment that contradicts its own file is worse than no comment: a
+# reader who trusts it re-introduces the defect while believing they complied.
 
 on:
   workflow_call:

@@ -6,7 +6,12 @@ name: pytest-matrix
 # name is auto-derived from `src/<pkg>` in the checkout (same as the
 # original), and the python-version matrix / runner label are identical
 # across every caller today, so nothing needs to be parameterized yet.
-# CODECOV_TOKEN must be available to the caller (secrets: inherit).
+# CODECOV_TOKEN is now DECLARED under `workflow_call.secrets` below, so a caller
+# maps it explicitly. This line used to read "CODECOV_TOKEN must be available to
+# the caller (secrets: inherit)" — that advice is WITHDRAWN. `inherit` forwards
+# EVERY secret the calling repo holds into these jobs; measured 2026-08-03,
+# scitex-ui and scitex-hpc each hold CLAUDE_CODE_CREDENTIALS_JSON (the fleet
+# Claude credential), which nothing here touches. PS-224 flags the pattern.
 #
 # CALLERS MUST USE THE JOB ID `pytest-matrix`. Copy the stub from
 # workflow-templates/pytest-matrix.yml; do not write your own. The check name
@@ -45,6 +50,29 @@ on:
         type: string
         required: false
         default: '["self-hosted","Linux","X64","spartan-cpu"]'
+
+    # Declared so a caller can pass this ONE secret explicitly instead of
+    # `secrets: inherit`, which forwards EVERY secret the calling repo holds
+    # into these jobs. Same remedy PR #22 already shipped for cla.yml.
+    #
+    # `required: false`, NOT true, and the distinction is load-bearing:
+    # measured 2026-08-03 across all 50 consumer repos, exactly ONE
+    # (scitex-io) holds a CODECOV_TOKEN. Marking it required would break the
+    # other 49 the moment they stop inheriting.
+    #
+    # WHAT THIS DOES NOT FIX, stated so nobody reads the declaration as a
+    # repair: the coverage upload is ALREADY failing silently wherever the
+    # token is absent. Measured in scitex-ui run 30803831246 and scitex-hpc
+    # run 30793784485 — `Token required because branch is protected`, then
+    # `conclusion=success` one line later, because `fail_ci_if_error: false`
+    # turns the rejection into a log line inside a green leg. That is a failed
+    # STEP inside a passing JOB, so neither per-leg check state nor
+    # `run_attempt` can see it. Making the absence loud is a separate change
+    # and must come AFTER callers have had the chance to map the secret —
+    # flipping it now would turn 49 repos red before any of them could comply.
+    secrets:
+      CODECOV_TOKEN:
+        required: false
 
 jobs:
   pytest-matrix:
