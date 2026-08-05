@@ -25,6 +25,20 @@ name: cla
 on:
   workflow_call:
     inputs:
+      runs_on:
+        description: >-
+          Runner label set for this job, as a JSON ARRAY STRING (it is consumed
+          by fromJSON). Defaults to the Spartan pool, i.e. exactly the value
+          hard-coded here before this input existed -- so a caller that passes
+          nothing lands on the same runner it always did. Override it to move a
+          single repository off Spartan without touching any other consumer.
+          MUST be a JSON string, not a YAML list: a YAML list decodes to
+          something fromJSON rejects, and the resulting label mismatch makes
+          the job QUEUE FOREVER rather than fail, which is indistinguishable
+          from "still waiting" in the run list.
+        type: string
+        required: false
+        default: '["self-hosted","Linux","X64","spartan-cpu"]'
       default_branch:
         description: "Branch the CLA.md document lives on"
         required: false
@@ -84,7 +98,7 @@ jobs:
     #
     # If you are 'fixing' this to satisfy a no-hosted-runners rule: that rule
     # does not model who can TRIGGER a workflow. Escalate instead.
-    runs-on: [self-hosted, Linux, X64, spartan-cpu]
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
     permissions:
       statuses: write
     steps:
@@ -129,7 +143,7 @@ jobs:
     #
     # If you are 'fixing' this to satisfy a no-hosted-runners rule: that rule
     # does not model who can TRIGGER a workflow. Escalate instead.
-    runs-on: [self-hosted, Linux, X64, spartan-cpu]
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
     steps:
       - name: CLA Assistant
         # Upstream v2.6.1 still declares node20. This SciTeX fork changes only

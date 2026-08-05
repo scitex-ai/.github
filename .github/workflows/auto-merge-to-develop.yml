@@ -41,6 +41,20 @@ name: auto-merge-to-develop
 on:
   workflow_call:
     inputs:
+      runs_on:
+        description: >-
+          Runner label set for this job, as a JSON ARRAY STRING (it is consumed
+          by fromJSON). Defaults to the Spartan pool, i.e. exactly the value
+          hard-coded here before this input existed -- so a caller that passes
+          nothing lands on the same runner it always did. Override it to move a
+          single repository off Spartan without touching any other consumer.
+          MUST be a JSON string, not a YAML list: a YAML list decodes to
+          something fromJSON rejects, and the resulting label mismatch makes
+          the job QUEUE FOREVER rather than fail, which is indistinguishable
+          from "still waiting" in the run list.
+        type: string
+        required: false
+        default: '["self-hosted","Linux","X64","spartan-cpu"]'
       dry_run:
         description: >-
           Report what would be merged/dispatched without doing it.
@@ -75,7 +89,7 @@ jobs:
     # ZERO GitHub-hosted runners (operator mandate 2026-07-14). The org pool
     # (scitex-ai: spartan-cpu-org-01/-02, spartan-pooled-cpu-01) serves every
     # repo in the org; do NOT use per-repo runner labels here.
-    runs-on: [self-hosted, Linux, X64, spartan-cpu]
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
     steps:
       - name: merge green PRs targeting develop
         env:
