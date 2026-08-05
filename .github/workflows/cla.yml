@@ -25,6 +25,20 @@ name: cla
 on:
   workflow_call:
     inputs:
+      runs_on:
+        description: >-
+          Runner label set for this job, as a JSON ARRAY STRING (it is consumed
+          by fromJSON). Defaults to the Spartan pool, i.e. exactly the value
+          hard-coded here before this input existed -- so a caller that passes
+          nothing lands on the same runner it always did. Override it to move a
+          single repository off Spartan without touching any other consumer.
+          MUST be a JSON string, not a YAML list: a YAML list decodes to
+          something fromJSON rejects, and the resulting label mismatch makes
+          the job QUEUE FOREVER rather than fail, which is indistinguishable
+          from "still waiting" in the run list.
+        type: string
+        required: false
+        default: '["self-hosted","Linux","X64","spartan-cpu"]'
       default_branch:
         description: "Branch the CLA.md document lives on"
         required: false
@@ -57,7 +71,11 @@ permissions:
 jobs:
   owner-bypass:
     if: github.event_name == 'push' && github.actor == inputs.owner_login
-    # ZERO GitHub-hosted runners (operator mandate 2026-07-14). Org pool.
+    # Defaults to the org pool. The blanket "ZERO GitHub-hosted runners
+    # (operator mandate 2026-07-14)" rule that stood here is SUPERSEDED by the
+    # operator's 2026-08-05 direction, so it is no longer the reason for this
+    # destination — but the SECURITY reasoning below is untouched by that and
+    # still governs this particular job.
     # WHY THIS DESTINATION IS NOT OBVIOUSLY CORRECT — read before changing.
     #
     # Four facts that are each individually fine and only bite in combination:
@@ -84,7 +102,15 @@ jobs:
     #
     # If you are 'fixing' this to satisfy a no-hosted-runners rule: that rule
     # does not model who can TRIGGER a workflow. Escalate instead.
-    runs-on: [self-hosted, Linux, X64, spartan-cpu]
+    #
+    # THIS CAVEAT NOW HAS A SECOND AUDIENCE: THE CALLER. It was written when
+    # the destination was a constant only an editor of this file could change.
+    # `runs_on` makes it a knob any consumer can turn from their own repo
+    # without ever opening this file — so the reasoning above applies to the
+    # destination THEY choose, not just the one written here. CLA runs on
+    # outsider-triggerable events; picking its runner is a safety decision, not
+    # a policy one. Do not override it here as part of a routine CI migration.
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
     permissions:
       statuses: write
     steps:
@@ -102,7 +128,11 @@ jobs:
 
   CLAssistant:
     if: github.event_name != 'push'
-    # ZERO GitHub-hosted runners (operator mandate 2026-07-14). Org pool.
+    # Defaults to the org pool. The blanket "ZERO GitHub-hosted runners
+    # (operator mandate 2026-07-14)" rule that stood here is SUPERSEDED by the
+    # operator's 2026-08-05 direction, so it is no longer the reason for this
+    # destination — but the SECURITY reasoning below is untouched by that and
+    # still governs this particular job.
     # WHY THIS DESTINATION IS NOT OBVIOUSLY CORRECT — read before changing.
     #
     # Four facts that are each individually fine and only bite in combination:
@@ -129,7 +159,15 @@ jobs:
     #
     # If you are 'fixing' this to satisfy a no-hosted-runners rule: that rule
     # does not model who can TRIGGER a workflow. Escalate instead.
-    runs-on: [self-hosted, Linux, X64, spartan-cpu]
+    #
+    # THIS CAVEAT NOW HAS A SECOND AUDIENCE: THE CALLER. It was written when
+    # the destination was a constant only an editor of this file could change.
+    # `runs_on` makes it a knob any consumer can turn from their own repo
+    # without ever opening this file — so the reasoning above applies to the
+    # destination THEY choose, not just the one written here. CLA runs on
+    # outsider-triggerable events; picking its runner is a safety decision, not
+    # a policy one. Do not override it here as part of a routine CI migration.
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
     steps:
       - name: CLA Assistant
         # Upstream v2.6.1 still declares node20. This SciTeX fork changes only

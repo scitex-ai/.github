@@ -18,9 +18,22 @@ permissions:
 
 jobs:
   pytest:
-    # ZERO GitHub-hosted runners (operator mandate 2026-07-14, enforced as
-    # PS-169). This file was added after #4 was cut, so #4 could not fix it —
-    # which left the repo that DEFINES the rule as the only one breaking it.
+    # SUPERSEDED RULE, RECORDED NOT ASSERTED. The "ZERO GitHub-hosted runners
+    # (operator mandate 2026-07-14, enforced as PS-169)" rule that stood here
+    # was replaced by the operator's 2026-08-05 direction: stop using Spartan
+    # for CI, prefer our own many-core machines, treat GitHub-hosted runners as
+    # an acceptable-but-slower fallback. Hosted runners are no longer forbidden.
+    #
+    # The label below is UNCHANGED and this is deliberate. Unlike its siblings
+    # in this directory, self-test.yml is not a reusable workflow (push /
+    # pull_request / workflow_dispatch), so it has no callers and takes no
+    # `runs_on` input — a parameter here would have exactly one possible value.
+    # It moves when this repo's own CI moves, as its own decision.
+    #
+    # The comment is corrected now anyway, because "cannot take the input" and
+    # "should keep asserting a dead rule" are different questions, and this is
+    # the org repo that DEFINES the rule — a stale mandate stated as current
+    # here is the one most likely to be read as authoritative and copied out.
     runs-on: [self-hosted, Linux, X64, spartan-cpu]
     steps:
       # FORK GUARD — MUST BE THE FIRST STEP, AHEAD OF actions/checkout, which is

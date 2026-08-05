@@ -41,6 +41,20 @@ name: auto-merge-to-develop
 on:
   workflow_call:
     inputs:
+      runs_on:
+        description: >-
+          Runner label set for this job, as a JSON ARRAY STRING (it is consumed
+          by fromJSON). Defaults to the Spartan pool, i.e. exactly the value
+          hard-coded here before this input existed -- so a caller that passes
+          nothing lands on the same runner it always did. Override it to move a
+          single repository off Spartan without touching any other consumer.
+          MUST be a JSON string, not a YAML list: a YAML list decodes to
+          something fromJSON rejects, and the resulting label mismatch makes
+          the job QUEUE FOREVER rather than fail, which is indistinguishable
+          from "still waiting" in the run list.
+        type: string
+        required: false
+        default: '["self-hosted","Linux","X64","spartan-cpu"]'
       dry_run:
         description: >-
           Report what would be merged/dispatched without doing it.
@@ -72,10 +86,18 @@ permissions:
 jobs:
   automerge:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.check_suite.conclusion == 'success' }}
-    # ZERO GitHub-hosted runners (operator mandate 2026-07-14). The org pool
-    # (scitex-ai: spartan-cpu-org-01/-02, spartan-pooled-cpu-01) serves every
-    # repo in the org; do NOT use per-repo runner labels here.
-    runs-on: [self-hosted, Linux, X64, spartan-cpu]
+    # The "ZERO GitHub-hosted runners (operator mandate 2026-07-14)" rule that
+    # stood here is SUPERSEDED by the operator's 2026-08-05 direction: stop
+    # using Spartan for CI, prefer our own many-core machines, and treat
+    # GitHub-hosted runners as an acceptable-but-slower fallback. Removed
+    # rather than edited, because it said "do NOT use per-repo runner labels
+    # here" — i.e. it instructed the reader to undo the very input below.
+    #
+    # The org pool (scitex-ai: spartan-cpu-org-01/-02, spartan-pooled-cpu-01)
+    # is still the DEFAULT and still serves every repo. What changed is that a
+    # consumer may now override it per repo, which is the whole point of the
+    # input: repos migrate off Spartan one at a time instead of all at once.
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
     steps:
       - name: merge green PRs targeting develop
         env:
