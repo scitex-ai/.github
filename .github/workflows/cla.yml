@@ -38,7 +38,27 @@ on:
           from "still waiting" in the run list.
         type: string
         required: false
-        default: '["self-hosted","Linux","X64","spartan-cpu"]'
+        # DEFAULT IS ubuntu-latest BECAUSE THIS JOB IS OUTSIDER-TRIGGERABLE.
+        # The caveat on `owner-bypass` below lists why the combination bites: this
+        # workflow runs on `issue_comment` / `pull_request_target`, which are
+        # unauthenticated on a public repo and are NOT covered by the fork-PR
+        # approval gate; and the self-hosted pool is PERSISTENT, sharing a real
+        # $HOME that holds the live fleet credential.
+        #
+        # #29 (2026-08-05) added this input so repos could leave Spartan one at a
+        # time, and kept the default on Spartan for backward compatibility. Measured
+        # 2026-08-10: of 17 consumer repos, 17 pass nothing and inherit it. The
+        # escape hatch existed for five days and nobody used it, because a default
+        # is not a decision anyone makes -- it is one they never see. sac's own repo
+        # opted out explicitly (PS-224 exemption: "the blocker is SECURITY, not
+        # capability"), so the component that OWNS the credential is off Spartan
+        # while 17 others ride it by inheritance.
+        #
+        # Inverting the default makes self-hosted opt-IN. A repo that genuinely
+        # needs the pool passes runs_on explicitly, which is a decision with an
+        # author. A compromise on an ephemeral hosted VM costs one disposable
+        # runner; on the pool it costs the fleet credential.
+        default: '["ubuntu-latest"]'
       default_branch:
         description: "Branch the CLA.md document lives on"
         required: false
