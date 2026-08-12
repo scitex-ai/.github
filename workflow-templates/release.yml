@@ -18,9 +18,11 @@ name: pypi-publish-and-github-release-on-tag
 # releases until CI is green on the exact commit being released.
 #
 # Measured across scitex-ai 2026-08-12: 68 repos inline a tag-triggered
-# release workflow, ZERO read check state, and 45 of them `gh pr merge
-# --admin` a develop->main sync with no greenness test at all. That is the
-# hazard this replaces, and the `needs: promote` edge is the whole fix.
+# release workflow and 45 of them `gh pr merge --admin` a develop->main sync.
+# CORRECTION (PR #31): all 45 of those merges ARE already gated on a test job
+# via `needs:` — the earlier "no greenness test at all" claim came from
+# grepping for `needs: ci` and missing the `needs: test` spelling. This
+# template CONSOLIDATES 45 working gates into one; it does not close a hole.
 #
 # ---------------------------------------------------------------------------
 # WHY THE PUBLISH JOB IS INLINE AND NOT AN ORG REUSABLE

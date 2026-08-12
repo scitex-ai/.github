@@ -1,38 +1,59 @@
 name: promote-develop-to-main-on-tag
 
 # ============================================================================
-# REUSABLE WORKFLOW A — the tag -> CI -> auto-PR -> auto-merge piece of the
-# release model. Called by a leaf repo's thin release caller on a `v*` tag,
-# BEFORE reusable B (pypi-publish-and-github-release-on-tag.yml) publishes.
+# THE RELEASE PROMOTION REUSABLE — the tag -> CI -> auto-PR -> auto-merge
+# piece of the release model. Called by a leaf repo's release workflow on a
+# `v*` tag, BEFORE that workflow's own build/publish/release jobs run.
+#
+# It used to be called "reusable A", paired with a "reusable B" that would
+# have centralised the publish half. B was withdrawn before it ever landed —
+# PyPI trusted publishing cannot work from a cross-repo reusable. See
+# `.old/2026-08-12/WHY-THIS-IS-HERE.md`. The A/B naming is gone; references
+# to "B" in this file are stale if you find any.
 #
 # THE RULING THIS EXISTS TO ENFORCE (operator, 2026-08-11):
 #   「リリースのワークフローということですけれど、CI が通らないとマージ
 #     しちゃだめですよね。明らかに」
 #   — a release workflow must not merge unless CI passes. Obviously.
 #
-# THE STATE IT REPLACES, measured across the org 2026-08-12: 68 repos inline
-# their own release workflow and ZERO of them read check state. 45 of those
-# run `gh pr merge --admin` on a develop->main sync at tag push, merging to
-# `main` with branch protection bypassed and no greenness test whatsoever.
-# 23 release workflows do mention `pytest-matrix` — every one of those
-# mentions is a COMMENT. Not one is a gate.
+# WHAT THIS DEDUPLICATES, measured across the org 2026-08-12: 68 repos inline
+# their own tag-triggered release workflow, and 45 of those run
+# `gh pr merge --admin` on a develop->main sync at tag push.
 #
-# THE GATE IS THE `needs: ci` EDGE BELOW. It is the entire point of this file:
-# `promote` cannot start until the `ci` job has succeeded on the TAGGED
-# commit, so the `gh pr merge --admin` inside it is unreachable while CI is
-# red. `--admin` here bypasses required REVIEW (nobody reviews an automated
-# same-commit promotion), NOT required checks — the checks already ran, in
-# this DAG, ahead of the merge. Delete the `needs:` and you have rebuilt
-# exactly the 45-repo hazard this replaces.
+# CORRECTION, 2026-08-12 (this file first shipped with the wrong claim; see
+# PR #31). Those 45 merges are NOT ungated. Resolving each workflow's `needs:`
+# graph shows the admin-merge job is reachable only downstream of a job that
+# actually runs the test suite in ALL 45 of 45. The earlier claim — "no
+# greenness test whatsoever" — was produced by grepping for `needs: ci` and
+# missing the `needs: test` / `needs: build` spellings the repos actually use.
+# A keyword search is not a reachability check. That is precisely the
+# text-vs-behaviour error tests/test_release_gate.py exists to prevent, and it
+# was committed here first.
+#
+# SO THIS WORKFLOW IS A CONSOLIDATION, NOT AN URGENT FIX. Its value is one
+# implementation of promote+gate instead of 45 drifting copies, running the
+# ORG pytest-matrix rather than each repo's bespoke inline matrix. Adopt it on
+# that basis. Anyone converting a repo should know they are replacing a
+# working gate with a shared one, not closing an open hole.
+#
+# THE GATE IS THE `needs: ci` EDGE BELOW. `promote` cannot start until `ci`
+# has succeeded on the TAGGED commit, so the `gh pr merge --admin` inside it
+# is unreachable while CI is red. `--admin` bypasses required REVIEW (nobody
+# reviews an automated same-commit promotion), NOT required checks — the
+# checks already ran, in this DAG, ahead of the merge.
+#
+# The residual findings that ARE real, and are not this file's job:
+#   - 3 repos publish to PyPI with no test job upstream of the publish job
+#     (claude-code-telegrammer, scitex-orochi, scitex-pd).
+#   - scitex-python has NO branch protection on `main` at all.
 #
 # WHY A REUSABLE (not just documented triggers) — the DECISION, stated:
-#   The leaf caller composes A then B with a single `needs:` edge
-#   (publish needs promote). For `needs` to gate B on A's completion they
-#   must be sibling JOBS in ONE caller workflow, which means BOTH have to be
-#   reusables the caller `uses:`. The promote+auto-merge logic is also
-#   identical across all 68 repos, so it is worth deduplicating exactly once
-#   here rather than re-inlining a `gh pr create && gh pr merge` block per
-#   repo. Hence: A is a reusable, mirroring B.
+#   The caller sequences this ahead of its own build/publish jobs with a
+#   single `needs: promote` edge, which requires this to be a JOB in the
+#   caller's workflow — hence a reusable it `uses:`. The promote+auto-merge
+#   logic is also near-identical across the 45 repos that do it, so it is
+#   worth deduplicating exactly once here rather than re-inlining a
+#   `gh pr create && gh pr merge` block per repo.
 #
 # WHAT IT DOES (operator model steps 1-2):
 #   1. ci      — run full CI on the TAGGED commit (calls the org pytest-matrix
@@ -40,14 +61,14 @@ name: promote-develop-to-main-on-tag
 #                commit being released.
 #   2. promote — open a develop->main PR at that same commit and auto-merge it
 #                with a MERGE commit (NEVER squash). Merge-not-squash keeps the
-#                tag's sha an ancestor of main, which is the precondition
-#                reusable B's containment guard verifies. If a squash slips
-#                through anyway, B fails RED — this is the belt, B is the
-#                braces.
+#                tag's sha an ancestor of main, which is the precondition the
+#                caller's containment guard verifies before publishing. If a
+#                squash slips through anyway, that guard fails RED — this is
+#                the belt, the guard is the braces.
 #
-# ACTOR FEEDBACK (A->B => B->A): each job writes a repo+stage verdict into the
-# run summary the tag pusher (github.actor) sees; FLEET-HOOK markers show where
-# a scitex-todo card / DM plugs in.
+# ACTOR FEEDBACK: each job writes a repo+stage verdict into the run summary
+# the tag pusher (github.actor) sees; FLEET-HOOK markers show where a
+# scitex-todo card / DM plugs in.
 #
 # RUNNERS: two independent inputs, because the two jobs run different things.
 #   `runs-on-json`    — the promote job (hosted: '"ubuntu-latest"'; sif: the
@@ -201,7 +222,7 @@ jobs:
           if [ -z "${num:-}" ]; then
             num="$(gh pr create --repo "$REPO" --base "$MAIN" --head "$DEV" \
                     --title "release: promote $DEV -> $MAIN ($TAG)" \
-                    --body "Automated promotion for release **$TAG** (reusable A). Merged with a MERGE commit so the tag's commit stays an ancestor of $MAIN — reusable B asserts exactly that before publishing." \
+                    --body "Automated promotion for release **$TAG**, opened by the org promote-develop-to-main-on-tag reusable after CI passed on the tagged commit. Merged with a MERGE commit so the tag's commit stays an ancestor of $MAIN — the caller's containment guard asserts exactly that before publishing." \
                     | sed -nE 's#.*/pull/([0-9]+).*#\1#p')"
           fi
           test -n "${num:-}" || { echo "::error::could not resolve a develop->main PR number for $TAG"; exit 1; }

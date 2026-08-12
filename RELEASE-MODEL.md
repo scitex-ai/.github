@@ -8,22 +8,51 @@
 
 This document and `promote-develop-to-main-on-tag.yml` implement that ruling.
 
-## The state this replaces — measured, not assumed
+## What this consolidates — measured, and then corrected
 
 Surveyed across all 73 active `scitex-ai` repos on 2026-08-12:
 
 | measurement | count |
 |---|---|
 | repos with a tag-triggered release/publish workflow | **68** |
-| …that read CI check state before merging or publishing | **0** |
 | …that run `gh pr merge --admin` on a `develop -> main` sync at tag push | **45** |
-| …whose release workflow *mentions* `pytest-matrix` (all in comments) | 23 |
+| …of those 45, where the merge job is reachable only **after** a job that runs the tests | **45 of 45** |
+| …that gate the PyPI publish on a test job in the same workflow | 65 of 68 |
+| …that publish with **no** test job upstream | **3** |
 | …publishing via OIDC trusted publishing | **69 of 69 files** |
-| …publishing via an API token secret | **0** |
+| …publishing via an API-token secret | **0** |
+| of the 45, repos whose `main` has no branch protection at all | **1** (`scitex-python`) |
 
-So 45 repos merge to `main` with branch protection bypassed and **no greenness
-test whatsoever**, and the 23 that look like they check CI are checking nothing
-— every one of those is a comment. That is what `needs: ci` fixes.
+> ### Correction — this document first shipped the opposite claim
+>
+> The first version of this file, and the PR that landed it, asserted that all
+> 68 read **zero** check state and that the 45 admin-merges ran with "no
+> greenness test whatsoever". **That was wrong.** It came from grepping for
+> `needs: ci` and finding none, when the repos actually spell it `needs: test`
+> or `needs: build`. Resolving the `needs:` graph instead of matching a keyword
+> shows the merge gated in **45 of 45**.
+>
+> A keyword search is not a reachability check — the exact text-vs-behaviour
+> error `tests/test_release_gate.py` was written to prevent, committed in the
+> same change that introduced the test. The numbers above are the corrected
+> ones, produced by walking each workflow's dependency closure.
+
+**So this reusable is a consolidation, not an urgent fix.** Its value is one
+audited implementation instead of 45 drifting copies, running the org
+`pytest-matrix` rather than each repo's bespoke inline matrix. A repo adopting
+it is trading a working local gate for a shared one — a real benefit, but not
+a hole being closed. Weigh it on that basis.
+
+The findings that remain genuinely open, and are **not** fixed by this file:
+
+- **3 repos publish to PyPI with no test job upstream of the publish job** —
+  `claude-code-telegrammer`, `scitex-orochi`, `scitex-pd`. This is the actual
+  instance of the hazard originally claimed for 45.
+- **`scitex-python` has no branch protection on `main`.**
+- For the other 44, the required contexts that `--admin` bypasses are the same
+  `pytest-matrix` checks the release workflow already ran, so the bypass
+  changes little in practice — but it does mean the merge commit itself is
+  never independently verified.
 
 ## The flow
 

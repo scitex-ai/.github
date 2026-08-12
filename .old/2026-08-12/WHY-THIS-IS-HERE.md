@@ -72,9 +72,13 @@ because it performs no OIDC publish at all. It runs CI and merges with
 `github.token`, so it centralises fine.
 
 That split is fortunate rather than lucky: **A is the half that carries the
-operator's ruling.** The measured hazard was 45 repos running
-`gh pr merge --admin` on tag push with no greenness test. Fixing that needs
-exactly A, and A is exactly the half that is centralisable.
+operator's ruling**, and A is exactly the half that is centralisable.
+
+(Correction, PR #31: this paragraph first cited "45 repos running
+`gh pr merge --admin` on tag push with no greenness test" as the measured
+hazard. All 45 are in fact already gated on a test job via `needs:`; the
+number came from a keyword grep rather than a reachability check. A is a
+consolidation of those 45 gates, not a repair of them.)
 
 The publish half stays in each leaf repo's top-level workflow — which is both
 what upstream recommends and, conveniently, a **zero-diff** outcome for the
