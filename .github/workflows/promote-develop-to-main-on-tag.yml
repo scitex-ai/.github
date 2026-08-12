@@ -10,20 +10,36 @@ name: promote-develop-to-main-on-tag
 #     しちゃだめですよね。明らかに」
 #   — a release workflow must not merge unless CI passes. Obviously.
 #
-# THE STATE IT REPLACES, measured across the org 2026-08-12: 68 repos inline
-# their own release workflow and ZERO of them read check state. 45 of those
-# run `gh pr merge --admin` on a develop->main sync at tag push, merging to
-# `main` with branch protection bypassed and no greenness test whatsoever.
-# 23 release workflows do mention `pytest-matrix` — every one of those
-# mentions is a COMMENT. Not one is a gate.
+# WHAT THIS DEDUPLICATES, measured across the org 2026-08-12: 68 repos inline
+# their own tag-triggered release workflow, and 45 of those run
+# `gh pr merge --admin` on a develop->main sync at tag push.
 #
-# THE GATE IS THE `needs: ci` EDGE BELOW. It is the entire point of this file:
-# `promote` cannot start until the `ci` job has succeeded on the TAGGED
-# commit, so the `gh pr merge --admin` inside it is unreachable while CI is
-# red. `--admin` here bypasses required REVIEW (nobody reviews an automated
-# same-commit promotion), NOT required checks — the checks already ran, in
-# this DAG, ahead of the merge. Delete the `needs:` and you have rebuilt
-# exactly the 45-repo hazard this replaces.
+# CORRECTION, 2026-08-12 (this file first shipped with the wrong claim; see
+# PR #17). Those 45 merges are NOT ungated. Resolving each workflow's `needs:`
+# graph shows the admin-merge job is reachable only downstream of a job that
+# actually runs the test suite in ALL 45 of 45. The earlier claim — "no
+# greenness test whatsoever" — was produced by grepping for `needs: ci` and
+# missing the `needs: test` / `needs: build` spellings the repos actually use.
+# A keyword search is not a reachability check. That is precisely the
+# text-vs-behaviour error tests/test_release_gate.py exists to prevent, and it
+# was committed here first.
+#
+# SO THIS WORKFLOW IS A CONSOLIDATION, NOT AN URGENT FIX. Its value is one
+# implementation of promote+gate instead of 45 drifting copies, running the
+# ORG pytest-matrix rather than each repo's bespoke inline matrix. Adopt it on
+# that basis. Anyone converting a repo should know they are replacing a
+# working gate with a shared one, not closing an open hole.
+#
+# THE GATE IS THE `needs: ci` EDGE BELOW. `promote` cannot start until `ci`
+# has succeeded on the TAGGED commit, so the `gh pr merge --admin` inside it
+# is unreachable while CI is red. `--admin` bypasses required REVIEW (nobody
+# reviews an automated same-commit promotion), NOT required checks — the
+# checks already ran, in this DAG, ahead of the merge.
+#
+# The residual findings that ARE real, and are not this file's job:
+#   - 3 repos publish to PyPI with no test job upstream of the publish job
+#     (claude-code-telegrammer, scitex-orochi, scitex-pd).
+#   - scitex-python has NO branch protection on `main` at all.
 #
 # WHY A REUSABLE (not just documented triggers) — the DECISION, stated:
 #   The leaf caller composes A then B with a single `needs:` edge

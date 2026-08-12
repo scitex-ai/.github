@@ -7,18 +7,28 @@ The operator's ruling, 2026-08-11::
 
     — a release workflow must not merge unless CI passes. Obviously.
 
-WHAT THIS REPLACES, measured across scitex-ai on 2026-08-12: 68 repos inline
-their own tag-triggered release workflow and **zero** of them read check
-state. 45 of those run ``gh pr merge --admin`` on a ``develop -> main`` sync
-at tag push — merging to ``main`` with branch protection bypassed and no
-greenness test at all. 23 release workflows do mention ``pytest-matrix``, and
-every one of those mentions is a COMMENT; not one is a gate.
+WHAT THIS CONSOLIDATES, measured across scitex-ai on 2026-08-12: 68 repos
+inline their own tag-triggered release workflow, and 45 of those run
+``gh pr merge --admin`` on a ``develop -> main`` sync at tag push.
 
-So the load-bearing artifact of this whole change is a single DAG edge —
-``promote: needs: ci`` — plus the caller's ``publish: needs: promote``. A
-comment claiming the gate exists is worth nothing (23 repos prove exactly
-that), and a reviewer cannot see a *missing* ``needs:`` by reading prose.
-These tests pin the edge AS STRUCTURE.
+CORRECTION (2026-08-12, PR #17). This docstring first said those 45 merged
+with "no greenness test at all". **It was wrong.** Walking each workflow's
+``needs:`` closure shows the admin-merge job sits downstream of a real test
+job in 45 of 45. The false number came from grepping for ``needs: ci`` when
+the repos spell it ``needs: test`` / ``needs: build``.
+
+That mistake is worth keeping in the file it indicts: a keyword search is not
+a reachability check, and this suite was written *because* text and behaviour
+diverge — then shipped alongside a claim that made exactly that error. Hence
+``_merge_invocations`` below, which parses command lines rather than
+substring-matching a shell body, and hence ``_needs``-based assertions rather
+than grepping the YAML.
+
+So the load-bearing artifact is still a single DAG edge —
+``promote: needs: ci``, plus the caller's ``build: needs: promote`` — but as a
+CONSOLIDATION of 45 working gates into one audited one, not as a hole being
+closed. A reviewer cannot see a *missing* ``needs:`` by reading prose, so
+these tests pin the edge AS STRUCTURE.
 
 Mutation-checked: deleting ``needs: ci`` from ``promote``, pointing ``ci`` at
 something other than the org pytest-matrix reusable, moving the
@@ -113,7 +123,8 @@ def test_promote_is_gated_on_ci(promote: dict) -> None:
     # Assert
     assert "ci" in needs, (
         "promote must declare `needs: ci` — without this edge the merge runs "
-        "regardless of CI, which is exactly the 45-repo hazard this replaces"
+        "regardless of CI, which is weaker than the 45 inline workflows this "
+        "consolidates, every one of which does gate its merge"
     )
 
 
