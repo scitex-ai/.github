@@ -1,9 +1,15 @@
 name: promote-develop-to-main-on-tag
 
 # ============================================================================
-# REUSABLE WORKFLOW A — the tag -> CI -> auto-PR -> auto-merge piece of the
-# release model. Called by a leaf repo's thin release caller on a `v*` tag,
-# BEFORE reusable B (pypi-publish-and-github-release-on-tag.yml) publishes.
+# THE RELEASE PROMOTION REUSABLE — the tag -> CI -> auto-PR -> auto-merge
+# piece of the release model. Called by a leaf repo's release workflow on a
+# `v*` tag, BEFORE that workflow's own build/publish/release jobs run.
+#
+# It used to be called "reusable A", paired with a "reusable B" that would
+# have centralised the publish half. B was withdrawn before it ever landed —
+# PyPI trusted publishing cannot work from a cross-repo reusable. See
+# `.old/2026-08-12/WHY-THIS-IS-HERE.md`. The A/B naming is gone; references
+# to "B" in this file are stale if you find any.
 #
 # THE RULING THIS EXISTS TO ENFORCE (operator, 2026-08-11):
 #   「リリースのワークフローということですけれど、CI が通らないとマージ
@@ -42,13 +48,12 @@ name: promote-develop-to-main-on-tag
 #   - scitex-python has NO branch protection on `main` at all.
 #
 # WHY A REUSABLE (not just documented triggers) — the DECISION, stated:
-#   The leaf caller composes A then B with a single `needs:` edge
-#   (publish needs promote). For `needs` to gate B on A's completion they
-#   must be sibling JOBS in ONE caller workflow, which means BOTH have to be
-#   reusables the caller `uses:`. The promote+auto-merge logic is also
-#   identical across all 68 repos, so it is worth deduplicating exactly once
-#   here rather than re-inlining a `gh pr create && gh pr merge` block per
-#   repo. Hence: A is a reusable, mirroring B.
+#   The caller sequences this ahead of its own build/publish jobs with a
+#   single `needs: promote` edge, which requires this to be a JOB in the
+#   caller's workflow — hence a reusable it `uses:`. The promote+auto-merge
+#   logic is also near-identical across the 45 repos that do it, so it is
+#   worth deduplicating exactly once here rather than re-inlining a
+#   `gh pr create && gh pr merge` block per repo.
 #
 # WHAT IT DOES (operator model steps 1-2):
 #   1. ci      — run full CI on the TAGGED commit (calls the org pytest-matrix
@@ -56,14 +61,14 @@ name: promote-develop-to-main-on-tag
 #                commit being released.
 #   2. promote — open a develop->main PR at that same commit and auto-merge it
 #                with a MERGE commit (NEVER squash). Merge-not-squash keeps the
-#                tag's sha an ancestor of main, which is the precondition
-#                reusable B's containment guard verifies. If a squash slips
-#                through anyway, B fails RED — this is the belt, B is the
-#                braces.
+#                tag's sha an ancestor of main, which is the precondition the
+#                caller's containment guard verifies before publishing. If a
+#                squash slips through anyway, that guard fails RED — this is
+#                the belt, the guard is the braces.
 #
-# ACTOR FEEDBACK (A->B => B->A): each job writes a repo+stage verdict into the
-# run summary the tag pusher (github.actor) sees; FLEET-HOOK markers show where
-# a scitex-todo card / DM plugs in.
+# ACTOR FEEDBACK: each job writes a repo+stage verdict into the run summary
+# the tag pusher (github.actor) sees; FLEET-HOOK markers show where a
+# scitex-todo card / DM plugs in.
 #
 # RUNNERS: two independent inputs, because the two jobs run different things.
 #   `runs-on-json`    — the promote job (hosted: '"ubuntu-latest"'; sif: the
