@@ -1,0 +1,231 @@
+name: promote-develop-to-main-on-tag
+
+# ============================================================================
+# REUSABLE WORKFLOW A — the tag -> CI -> auto-PR -> auto-merge piece of the
+# release model. Called by a leaf repo's thin release caller on a `v*` tag,
+# BEFORE reusable B (pypi-publish-and-github-release-on-tag.yml) publishes.
+#
+# THE RULING THIS EXISTS TO ENFORCE (operator, 2026-08-11):
+#   「リリースのワークフローということですけれど、CI が通らないとマージ
+#     しちゃだめですよね。明らかに」
+#   — a release workflow must not merge unless CI passes. Obviously.
+#
+# THE STATE IT REPLACES, measured across the org 2026-08-12: 68 repos inline
+# their own release workflow and ZERO of them read check state. 45 of those
+# run `gh pr merge --admin` on a develop->main sync at tag push, merging to
+# `main` with branch protection bypassed and no greenness test whatsoever.
+# 23 release workflows do mention `pytest-matrix` — every one of those
+# mentions is a COMMENT. Not one is a gate.
+#
+# THE GATE IS THE `needs: ci` EDGE BELOW. It is the entire point of this file:
+# `promote` cannot start until the `ci` job has succeeded on the TAGGED
+# commit, so the `gh pr merge --admin` inside it is unreachable while CI is
+# red. `--admin` here bypasses required REVIEW (nobody reviews an automated
+# same-commit promotion), NOT required checks — the checks already ran, in
+# this DAG, ahead of the merge. Delete the `needs:` and you have rebuilt
+# exactly the 45-repo hazard this replaces.
+#
+# WHY A REUSABLE (not just documented triggers) — the DECISION, stated:
+#   The leaf caller composes A then B with a single `needs:` edge
+#   (publish needs promote). For `needs` to gate B on A's completion they
+#   must be sibling JOBS in ONE caller workflow, which means BOTH have to be
+#   reusables the caller `uses:`. The promote+auto-merge logic is also
+#   identical across all 68 repos, so it is worth deduplicating exactly once
+#   here rather than re-inlining a `gh pr create && gh pr merge` block per
+#   repo. Hence: A is a reusable, mirroring B.
+#
+# WHAT IT DOES (operator model steps 1-2):
+#   1. ci      — run full CI on the TAGGED commit (calls the org pytest-matrix
+#                reusable). Nothing is promoted unless CI is green on the exact
+#                commit being released.
+#   2. promote — open a develop->main PR at that same commit and auto-merge it
+#                with a MERGE commit (NEVER squash). Merge-not-squash keeps the
+#                tag's sha an ancestor of main, which is the precondition
+#                reusable B's containment guard verifies. If a squash slips
+#                through anyway, B fails RED — this is the belt, B is the
+#                braces.
+#
+# ACTOR FEEDBACK (A->B => B->A): each job writes a repo+stage verdict into the
+# run summary the tag pusher (github.actor) sees; FLEET-HOOK markers show where
+# a scitex-todo card / DM plugs in.
+#
+# RUNNERS: two independent inputs, because the two jobs run different things.
+#   `runs-on-json`    — the promote job (hosted: '"ubuntu-latest"'; sif: the
+#                       self-hosted label array).
+#   `ci-runs-on-json` — forwarded to pytest-matrix's `runs_on`.
+# An earlier draft of this file recorded "the CI job delegates to the org
+# pytest-matrix reusable, which is self-hosted BY CONSTRUCTION" and listed
+# hosted-only CI as an unresolved human decision. That is no longer true:
+# pytest-matrix.yml gained a `runs_on` input on main, so hosted-only repos are
+# served by passing '["ubuntu-latest"]' here. The caveat is retired, not
+# deferred.
+# ============================================================================
+
+on:
+  workflow_call:
+    inputs:
+      runs-on-json:
+        description: >-
+          JSON for the promote job's runs-on. hosted callers pass
+          '"ubuntu-latest"'; sif callers pass
+          '["self-hosted","Linux","X64","scitex-ci"]'. Consumed via fromJSON.
+        required: false
+        type: string
+        default: '["self-hosted","Linux","X64","scitex-ci"]'
+      develop-branch:
+        description: 'Source branch the tag is cut on.'
+        required: false
+        type: string
+        default: 'develop'
+      main-branch:
+        description: 'Promotion target branch.'
+        required: false
+        type: string
+        default: 'main'
+      ci-runs-on-json:
+        description: >-
+          JSON array of runner labels for the CI job, forwarded to
+          pytest-matrix's `runs_on`. Defaults to that reusable's OWN default
+          (the Spartan pool), so a caller that omits this gets exactly what it
+          would have got before this input existed.
+
+          Hosted-only repos pass '["ubuntu-latest"]'. This is what closes the
+          "hosted-only CI" gap: `uses:` cannot be an expression, so the CI
+          workflow is fixed — but its RUNNER is now a caller decision, which is
+          all a hosted-only repo actually needed.
+        required: false
+        type: string
+        default: '["self-hosted","Linux","X64","spartan-cpu"]'
+    secrets:
+      # Declared, NOT inherited. `secrets: inherit` forwards EVERY secret the
+      # calling repo holds into the CI jobs — pytest-matrix.yml's own header
+      # WITHDRAWS that advice for exactly this reason (measured 2026-08-03:
+      # scitex-ui and scitex-hpc each hold CLAUDE_CODE_CREDENTIALS_JSON, the
+      # fleet Claude credential, which nothing in CI touches). A release
+      # pipeline is the worst place to widen secret exposure, so this workflow
+      # declares the one secret its CI leg actually consumes and passes only
+      # that. `required: false` because exactly one repo (scitex-io) holds a
+      # CODECOV_TOKEN — marking it required would break the other 67.
+      CODECOV_TOKEN:
+        required: false
+
+jobs:
+  # --------------------------------------------------------------------------
+  # CI on the tagged commit — org-standard pytest-matrix. Reusable `uses:`
+  # must be a literal (no expressions), so the CI WORKFLOW is fixed here; its
+  # RUNNER is caller-selectable via `ci-runs-on-json`.
+  #
+  # THE JOB ID `ci` IS DELIBERATE, and does not violate README "Caller job ids
+  # — DO NOT INVENT THEM". That rule exists because a caller's job id becomes
+  # the branch-protection context prefix. These checks are emitted by a
+  # TAG-triggered release run and are never a required PR context, so no
+  # protection list can reference them. `ci` is named for the reader of the
+  # gate below — do not "fix" it to `pytest-matrix` and assume protection
+  # changed.
+  # --------------------------------------------------------------------------
+  ci:
+    uses: scitex-ai/.github/.github/workflows/pytest-matrix.yml@main
+    with:
+      runs_on: ${{ inputs.ci-runs-on-json }}
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  # --------------------------------------------------------------------------
+  # PROMOTE — open develop->main PR at the tagged commit and auto-merge it
+  # with a MERGE commit. Only runs if `ci` succeeded.
+  # --------------------------------------------------------------------------
+  promote:
+    needs: ci
+    runs-on: ${{ fromJSON(inputs.runs-on-json) }}
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # FORK GUARD — MUST BE THE FIRST STEP, AHEAD OF actions/checkout, which is
+      # what first puts fork-authored content on the node. Ordering and
+      # predicate are asserted in tests/test_fork_guard.py — do not reorder, do
+      # not reword the `if`.
+      #
+      # This job is reached by a TAG push, where `github.event_name` is `push`,
+      # so the predicate below cannot fire here today. It is present anyway:
+      # test_fork_guard selects jobs by BEHAVIOUR (may-run-self-hosted AND
+      # checks-out), and its own docstring states why erring towards guarded is
+      # the only safe direction — a job that drops out of the selector loses
+      # the guard and the test of the guard at the same moment. `runs-on` here
+      # is caller-supplied, so "it can only ever be a tag push" is a property
+      # of today's callers, not of this file.
+      - name: Refuse to run fork-authored code on self-hosted infrastructure
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          set -euo pipefail
+          echo "::error title=Fork PR blocked::Fork-authored code is not run on the self-hosted Spartan pool."
+          echo "head repo: ${{ github.event.pull_request.head.repo.full_name }}  base repo: ${{ github.repository }}"
+          echo "To review this contribution, adopt its branch into ${{ github.repository }} and open a same-repo PR:"
+          echo "  gh pr checkout ${{ github.event.pull_request.number }} && git push origin HEAD:review/pr-${{ github.event.pull_request.number }}"
+          exit 1
+
+      - name: Resolve version from the triggering tag
+        id: ver
+        run: |
+          set -euo pipefail
+          v="${GITHUB_REF#refs/tags/}"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Open + auto-merge develop -> main (MERGE commit, never squash)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DEV: ${{ inputs.develop-branch }}
+          MAIN: ${{ inputs.main-branch }}
+          TAG: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --prune origin "$DEV" "$MAIN"
+
+          # Already contained? (develop already merged, or re-run) -> nothing to do.
+          if git merge-base --is-ancestor "origin/$DEV" "origin/$MAIN"; then
+            echo "origin/$DEV is already contained in origin/$MAIN — no promotion PR needed."
+            echo "### release A / promote — \`SKIP\` ($REPO @ $TAG): $DEV already in $MAIN" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Reuse an open PR if one already exists, else create it.
+          num="$(gh pr list --repo "$REPO" --base "$MAIN" --head "$DEV" --state open --json number --jq '.[0].number // empty')"
+          if [ -z "${num:-}" ]; then
+            num="$(gh pr create --repo "$REPO" --base "$MAIN" --head "$DEV" \
+                    --title "release: promote $DEV -> $MAIN ($TAG)" \
+                    --body "Automated promotion for release **$TAG** (reusable A). Merged with a MERGE commit so the tag's commit stays an ancestor of $MAIN — reusable B asserts exactly that before publishing." \
+                    | sed -nE 's#.*/pull/([0-9]+).*#\1#p')"
+          fi
+          test -n "${num:-}" || { echo "::error::could not resolve a develop->main PR number for $TAG"; exit 1; }
+          echo "promotion PR: #$num"
+
+          # MERGE commit (NOT --squash, NOT --rebase): preserves the tag sha in
+          # $MAIN history so B's containment guard passes. --admin bypasses any
+          # required-review gate for this automated same-commit promotion.
+          gh pr merge "$num" --repo "$REPO" --merge --admin
+
+          # Verify the promotion actually contained the tag commit — loud-fail early.
+          git fetch --no-tags --prune origin "$MAIN"
+          TAG_SHA="$(git rev-list -n1 "refs/tags/$TAG")"
+          if git merge-base --is-ancestor "$TAG_SHA" "origin/$MAIN"; then
+            echo "### release A / promote — \`MERGED\` ($REPO @ $TAG): #$num, tag contained in $MAIN" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::promotion merged PR #$num but tag $TAG ($TAG_SHA) is NOT in $MAIN — a squash/rebase merge policy likely rewrote the sha. Reconfigure the repo to allow merge commits for this PR. @${{ github.actor }}"
+            echo "### release A / promote — \`BAD-MERGE\` ($REPO @ $TAG): tag not in $MAIN after merge" >> "$GITHUB_STEP_SUMMARY"
+            # FLEET-HOOK: DM github.actor — promotion succeeded but broke containment.
+            exit 1
+          fi
+
+      - name: Actor feedback — promote verdict
+        if: always()
+        run: |
+          echo "- release A actor: @${{ github.actor }} · status: ${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"
+          # FLEET-HOOK: report CI+promote result to github.actor here.

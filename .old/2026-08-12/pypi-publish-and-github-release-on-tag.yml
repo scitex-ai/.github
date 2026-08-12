@@ -1,0 +1,276 @@
+name: pypi-publish-and-github-release-on-tag
+
+# ============================================================================
+# REUSABLE WORKFLOW B — build + CONTAINMENT-GUARD + publish + GitHub Release,
+# from a version tag. Called (never triggered directly) by a leaf repo's thin
+# `release.yml` caller AFTER the tag's commit has landed on main (see reusable
+# A: promote-develop-to-main-on-tag.yml). DRAFT PROPOSAL — not yet adopted by
+# any leaf repo.
+#
+# WHY THIS EXISTS
+#   68 repos each inline their own copy of this pipeline in two real variants
+#   (hosted-OIDC and self-hosted-SIF). There is no reusable to delegate to, so
+#   the copies cannot be deduplicated. This is that reusable. It parametrizes
+#   BOTH backends behind one `publish-backend` input.
+#
+# THE RELEASE MODEL (operator-confirmed 2026-07-23) — see RELEASE-MODEL.md.
+#   A release is cut by pushing `vX.Y.Z` on develop. Reusable A runs CI on the
+#   tagged commit and, if green, opens+auto-merges a develop->main PR (same
+#   commit, MERGE not squash). Once main contains the tag's commit, this
+#   reusable builds, ASSERTS THE TAG IS CONTAINED IN main (loud-fail guard),
+#   publishes to PyPI, and cuts the GitHub Release — all FROM THE TAG.
+#
+# THE CONTAINMENT GUARD (operator's loud-fail principle) — the whole point.
+#   A squash merge does not fail; it silently mints a NEW sha, so the tag's
+#   commit leaves main's history and setuptools-scm miscomputes the version.
+#   We do NOT fight that with repo settings. At publish time we assert
+#   `git merge-base --is-ancestor <tag-sha> origin/main`. Not contained =>
+#   ABORT publish, fail RED. Works under squash OR fast-forward.
+#
+# ACTOR FEEDBACK (operator's A->B => B->A principle).
+#   Every job writes a one-line PASS/FAIL verdict — repo + stage + tag —
+#   into $GITHUB_STEP_SUMMARY, and a final always()-job posts a consolidated
+#   verdict to the run summary that github.actor (the tag pusher) sees on the
+#   failing run. FLEET-HOOK markers show exactly where a scitex-todo card / DM
+#   would plug in for out-of-band notification.
+#
+# TWO BACKENDS (input `publish-backend`):
+#   hosted  — GitHub-hosted ubuntu runner + PyPI Trusted Publisher via the
+#             pypa/gh-action-pypi-publish Docker action (OIDC). setup-python.
+#   sif     — self-hosted Spartan pool; build/publish INSIDE the reused
+#             scitex-ci SIF via .github/ci/*.sh (the bare node has no Python
+#             and no Docker, so the pypa action cannot run there — publish is
+#             MANUAL OIDC: GitHub JWT -> PyPI mint-token -> twine).
+#   The caller selects the backend AND the matching runner via `runs-on-json`
+#   (hosted callers pass '"ubuntu-latest"'; sif callers pass the self-hosted
+#   label array). No-hosted-runners repos MUST use backend=sif — never let a
+#   sif repo land on a hosted runner (respects the no-hosted-runners guard).
+# ============================================================================
+
+on:
+  workflow_call:
+    inputs:
+      publish-backend:
+        description: 'Publish backend: "hosted" (ubuntu + pypa action) or "sif" (self-hosted Spartan SIF, manual OIDC).'
+        required: true
+        type: string
+      runs-on-json:
+        description: >-
+          JSON for runs-on. hosted callers pass '"ubuntu-latest"';
+          sif callers pass '["self-hosted","Linux","X64","scitex-ci"]'.
+          Consumed via fromJSON so a bare quoted string or an array both work.
+        required: false
+        type: string
+        default: '["self-hosted","Linux","X64","scitex-ci"]'
+      python-version:
+        description: 'Python used to build the dist (and the SIF venv tag for the sif backend).'
+        required: false
+        type: string
+        default: '3.12'
+      pypi-project:
+        description: 'PyPI project name — display only, for the deployment environment URL.'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      # Both backends publish via OIDC Trusted Publishing, so NO API-token
+      # secret is required by default. This optional secret is the documented
+      # fallback for a repo that publishes with a classic PyPI API token
+      # instead of a trusted publisher (DECISION-FOR-REVIEW in the PR body).
+      PYPI_API_TOKEN:
+        required: false
+
+jobs:
+  # --------------------------------------------------------------------------
+  # BUILD — wheel + sdist from the tag. Hosted: setup-python + `python -m
+  # build`. Sif: build INSIDE the reused SIF via .github/ci/build-in-sif.sh.
+  # --------------------------------------------------------------------------
+  build:
+    runs-on: ${{ fromJSON(inputs.runs-on-json) }}
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - name: Resolve version from the triggering tag
+        id: ver
+        run: |
+          set -euo pipefail
+          v="${GITHUB_REF#refs/tags/}"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "resolved release tag: $v"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0   # full history + tags => setuptools-scm computes the tagged version
+
+      # ---- hosted build ----
+      - name: (hosted) Set up Python
+        if: inputs.publish-backend == 'hosted'
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+      - name: (hosted) Build sdist + wheel
+        if: inputs.publish-backend == 'hosted'
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip build
+          python -m build
+          test -n "$(ls -A dist 2>/dev/null)" || { echo "::error::dist/ is empty after build"; exit 1; }
+
+      # ---- sif build (self-hosted; no setup-python on the bare Spartan node) ----
+      - name: (sif) Build wheel + sdist in the reused CI SIF (apptainer exec)
+        if: inputs.publish-backend == 'sif'
+        run: bash .github/ci/exec-in-sif.sh build-in-sif.sh ${{ inputs.python-version }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Actor feedback — build verdict
+        if: always()
+        run: |
+          verdict="${{ job.status }}"
+          echo "### release B / build — \`$verdict\` (${{ github.repository }} @ ${{ steps.ver.outputs.version }})" >> "$GITHUB_STEP_SUMMARY"
+          echo "- actor: @${{ github.actor }} · backend: ${{ inputs.publish-backend }}" >> "$GITHUB_STEP_SUMMARY"
+          # FLEET-HOOK: on failure, emit a scitex-todo card / DM to github.actor here.
+
+  # --------------------------------------------------------------------------
+  # PUBLISH — containment guard THEN publish. The guard is the load-bearing
+  # step: it makes the silent squash-merge failure LOUD.
+  # --------------------------------------------------------------------------
+  publish:
+    needs: build
+    runs-on: ${{ fromJSON(inputs.runs-on-json) }}
+    timeout-minutes: 30
+    environment:
+      name: pypi
+      url: ${{ inputs.pypi-project != '' && format('https://pypi.org/p/{0}', inputs.pypi-project) || 'https://pypi.org/' }}
+    permissions:
+      id-token: write   # OIDC: populates ACTIONS_ID_TOKEN_REQUEST_{TOKEN,URL} for both backends
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      # ---- THE CONTAINMENT GUARD (operator loud-fail; works under squash OR ff) ----
+      - name: Containment guard — the tag's commit MUST be contained in origin/main
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF#refs/tags/}"
+          git fetch --no-tags --prune origin main
+          TAG_SHA="$(git rev-list -n1 "refs/tags/${TAG}")"
+          echo "tag ${TAG} -> ${TAG_SHA}"
+          if git merge-base --is-ancestor "${TAG_SHA}" origin/main; then
+            echo "OK: ${TAG} (${TAG_SHA}) is an ancestor of origin/main — safe to publish."
+            echo "### release B / containment guard — \`PASS\` (${{ github.repository }} @ ${TAG})" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::CONTAINMENT GUARD FAILED: tag ${TAG} commit ${TAG_SHA} is NOT an ancestor of origin/main. A squash merge likely rewrote the sha, so this tag's commit left main's history and setuptools-scm would miscompute the version. ABORTING publish. Re-promote develop->main with a MERGE (not squash) commit, then re-run."
+            echo "### release B / containment guard — \`ABORT\` (${{ github.repository }} @ ${TAG})" >> "$GITHUB_STEP_SUMMARY"
+            echo "- @${{ github.actor }}: tag commit not contained in main — publish aborted (loud-fail)." >> "$GITHUB_STEP_SUMMARY"
+            # FLEET-HOOK: this is the highest-value notification — DM github.actor.
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      # ---- hosted publish: pypa Docker action (OIDC trusted publisher) ----
+      - name: (hosted) Publish to PyPI (OIDC trusted publisher)
+        if: inputs.publish-backend == 'hosted'
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      # ---- sif publish: manual OIDC inside the SIF (no Docker on Spartan) ----
+      - name: (sif) Publish to PyPI via manual OIDC trusted publishing in the SIF
+        if: inputs.publish-backend == 'sif'
+        run: bash .github/ci/exec-in-sif.sh publish-in-sif.sh ${{ inputs.python-version }}
+
+      - name: Actor feedback — publish verdict
+        if: always()
+        run: |
+          verdict="${{ job.status }}"
+          echo "### release B / publish — \`$verdict\` (${{ github.repository }} @ ${{ needs.build.outputs.version }})" >> "$GITHUB_STEP_SUMMARY"
+          echo "- actor: @${{ github.actor }} · backend: ${{ inputs.publish-backend }}" >> "$GITHUB_STEP_SUMMARY"
+          # FLEET-HOOK: report publish success/abort to github.actor here.
+
+  # --------------------------------------------------------------------------
+  # RELEASE — GitHub Release from the tag. softprops action (a JS action) runs
+  # on BOTH hosted and self-hosted (the bare Spartan node has no `gh` CLI, so
+  # `gh release create` is not portable across backends).
+  # --------------------------------------------------------------------------
+  release:
+    needs: [build, publish]
+    runs-on: ${{ fromJSON(inputs.runs-on-json) }}
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build.outputs.version }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.build.outputs.version }}"
+          VERSION="${VERSION#v}"
+          if [ -f CHANGELOG.md ]; then
+            awk -v v="$VERSION" '
+              $0 ~ "^## \\[" v "\\]" {p=1; next}
+              p && /^## \[/ {exit}
+              p
+            ' CHANGELOG.md > release-notes.md || true
+          fi
+          if [ ! -s release-notes.md ]; then
+            echo "Release ${VERSION}. See CHANGELOG.md for details." > release-notes.md
+          fi
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build.outputs.version }}
+          name: ${{ needs.build.outputs.version }}
+          body_path: release-notes.md
+          files: dist/*
+          fail_on_unmatched_files: true
+      - name: Actor feedback — release verdict
+        if: always()
+        run: |
+          verdict="${{ job.status }}"
+          echo "### release B / github-release — \`$verdict\` (${{ github.repository }} @ ${{ needs.build.outputs.version }})" >> "$GITHUB_STEP_SUMMARY"
+          echo "- actor: @${{ github.actor }}" >> "$GITHUB_STEP_SUMMARY"
+
+  # --------------------------------------------------------------------------
+  # ACTOR FEEDBACK ROLL-UP — one consolidated verdict the tag pusher reads on
+  # the run. Fails RED if any upstream job failed, so github.actor's run-
+  # failure notification carries the whole-pipeline verdict.
+  # --------------------------------------------------------------------------
+  report:
+    needs: [build, publish, release]
+    if: always()
+    runs-on: ${{ fromJSON(inputs.runs-on-json) }}
+    steps:
+      - name: Consolidated verdict to github.actor
+        run: |
+          set -euo pipefail
+          B="${{ needs.build.result }}"; P="${{ needs.publish.result }}"; R="${{ needs.release.result }}"
+          {
+            echo "## Release pipeline verdict — ${{ github.repository }} @ ${{ needs.build.outputs.version }}"
+            echo "- pusher: @${{ github.actor }}"
+            echo "- build: \`$B\` · publish: \`$P\` · release: \`$R\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          # FLEET-HOOK: single consolidated scitex-todo card / DM to @${{ github.actor }} here.
+          if [ "$B" = "success" ] && [ "$P" = "success" ] && [ "$R" = "success" ]; then
+            echo "release OK"
+          else
+            echo "::error::release pipeline FAILED for ${{ github.repository }} @ ${{ needs.build.outputs.version }} (build=$B publish=$P release=$R) — see the failing stage above, @${{ github.actor }}."
+            exit 1
+          fi

@@ -1,0 +1,7 @@
+{
+  "name": "SciTeX release (tag -> CI-gated promote -> publish)",
+  "description": "Tag-driven release. CI runs on the tagged commit and ONLY THEN is develop merged to main (merge commit, never squash); then containment-guarded PyPI publish + GitHub Release. Copy to .github/workflows/pypi-publish-and-github-release-on-tag.yml - the filename is load-bearing for PyPI trusted publishing.",
+  "iconName": "package",
+  "categories": ["Deployment", "Python"],
+  "filePatterns": ["pyproject.toml$"]
+}

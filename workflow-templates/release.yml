@@ -1,0 +1,226 @@
+name: pypi-publish-and-github-release-on-tag
+
+# ============================================================================
+# CANONICAL RELEASE CALLER — the tag-driven release pipeline for a leaf repo.
+#
+# COPY THIS TO `.github/workflows/pypi-publish-and-github-release-on-tag.yml`.
+# THE FILENAME IS LOAD-BEARING — see "Why the publish job is inline" below.
+# Adjust only the lines marked ADJUST.
+#
+# THE RULING THIS ENFORCES (operator, 2026-08-11):
+#   「リリースのワークフローということですけれど、CI が通らないとマージ
+#     しちゃだめですよね。明らかに」
+#   — a release workflow must not merge unless CI passes. Obviously.
+#
+# THE ONE EDGE THAT MATTERS: `build: needs: promote`. `promote` is the org
+# reusable, which internally runs `pytest-matrix` on the TAGGED commit and
+# only then merges develop -> main. So nothing here builds, publishes or
+# releases until CI is green on the exact commit being released.
+#
+# Measured across scitex-ai 2026-08-12: 68 repos inline a tag-triggered
+# release workflow, ZERO read check state, and 45 of them `gh pr merge
+# --admin` a develop->main sync with no greenness test at all. That is the
+# hazard this replaces, and the `needs: promote` edge is the whole fix.
+#
+# ---------------------------------------------------------------------------
+# WHY THE PUBLISH JOB IS INLINE AND NOT AN ORG REUSABLE
+# ---------------------------------------------------------------------------
+# It looks like duplication. It is not — it is the only shape that works.
+#
+# PyPI Trusted Publishing validates the OIDC `job_workflow_ref` claim and
+# IGNORES `workflow_ref`. For a job that lives in a reusable workflow,
+# `job_workflow_ref` names the REUSABLE's repo+path — here that would be
+# `scitex-ai/.github/...@main` — while PyPI expects
+# `<this repo>/.github/workflows/<registered filename>@<this tag>`. The repo
+# component alone can never match, so a publish delegated to a cross-repo
+# reusable fails `invalid-publisher` every time, for every repo, with no
+# configuration that can fix it. pypa/gh-action-pypi-publish states the
+# remedy directly: "keep the job calling pypi-publish in a top-level one".
+# Full working, sources and the measurement are in
+# `.old/2026-08-12/WHY-THIS-IS-HERE.md`.
+#
+# The upside: because the publish job never moves and this file keeps the
+# filename PyPI already has registered, adopting the gate requires ZERO
+# trusted-publisher changes on pypi.org — for this repo or any other.
+# ============================================================================
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  # --------------------------------------------------------------------------
+  # PROMOTE — CI on the tagged commit, then merge develop -> main with a MERGE
+  # commit. The CI gate lives INSIDE this reusable (`promote: needs: ci`).
+  # --------------------------------------------------------------------------
+  promote:
+    uses: scitex-ai/.github/.github/workflows/promote-develop-to-main-on-tag.yml@main
+    with:
+      # ADJUST for a hosted repo: '"ubuntu-latest"'
+      runs-on-json: '["self-hosted","Linux","X64","scitex-ci"]'
+      # ADJUST for a hosted repo: '["ubuntu-latest"]'
+      ci-runs-on-json: '["self-hosted","Linux","X64","spartan-cpu"]'
+    secrets:
+      # Named, not `inherit`. `inherit` forwards EVERY secret this repo holds
+      # into CI; pytest-matrix.yml's own header withdraws that advice.
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  # --------------------------------------------------------------------------
+  # BUILD — wheel + sdist from the tag. GATED on promote: this is the edge.
+  # --------------------------------------------------------------------------
+  build:
+    needs: promote
+    runs-on: ["self-hosted", "Linux", "X64", "scitex-ci"]   # ADJUST: ubuntu-latest for hosted
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - name: Resolve version from the triggering tag
+        id: ver
+        run: |
+          set -euo pipefail
+          v="${GITHUB_REF#refs/tags/}"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "resolved release tag: $v"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0   # full history + tags => setuptools-scm sees the tag
+
+      # ADJUST — keep ONE of the two build paths, delete the other.
+      # sif (self-hosted Spartan: no Python and no Docker on the bare node):
+      - name: Build wheel + sdist in the reused CI SIF
+        run: bash .github/ci/exec-in-sif.sh build-in-sif.sh 3.12
+      # hosted:
+      #   - uses: actions/setup-python@v5
+      #     with: { python-version: '3.12' }
+      #   - run: |
+      #       set -euo pipefail
+      #       python -m pip install --upgrade pip build
+      #       python -m build
+      #       test -n "$(ls -A dist 2>/dev/null)" || { echo "::error::dist/ empty"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  # --------------------------------------------------------------------------
+  # PUBLISH — containment guard, THEN publish. Top-level by necessity (OIDC).
+  # --------------------------------------------------------------------------
+  publish:
+    needs: build
+    runs-on: ["self-hosted", "Linux", "X64", "scitex-ci"]   # ADJUST
+    timeout-minutes: 30
+    permissions:
+      id-token: write   # OIDC: PyPI trusted publishing
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      # ---- THE CONTAINMENT GUARD (loud-fail; works under squash OR ff) ----
+      # A squash merge does not fail — it silently mints a NEW sha, so the
+      # tag's commit leaves main's history and setuptools-scm miscomputes the
+      # version. Repo settings can be changed and fail silently; this assert
+      # cannot. `promote` already merges with --merge; this is the backstop.
+      - name: Containment guard — the tag's commit MUST be contained in main
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF#refs/tags/}"
+          git fetch --no-tags --prune origin main
+          TAG_SHA="$(git rev-list -n1 "refs/tags/${TAG}")"
+          echo "tag ${TAG} -> ${TAG_SHA}"
+          if git merge-base --is-ancestor "${TAG_SHA}" origin/main; then
+            echo "OK: ${TAG} (${TAG_SHA}) is an ancestor of origin/main."
+            echo "### release / containment guard — \`PASS\` (${{ github.repository }} @ ${TAG})" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::CONTAINMENT GUARD FAILED: tag ${TAG} commit ${TAG_SHA} is NOT an ancestor of origin/main. A squash merge likely rewrote the sha. ABORTING publish. Re-promote develop->main with a MERGE commit, then re-run."
+            echo "### release / containment guard — \`ABORT\` (${{ github.repository }} @ ${TAG})" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      # ADJUST — keep ONE. sif (manual OIDC inside the SIF; the bare Spartan
+      # node has no Docker, so the pypa action cannot run there):
+      - name: Publish to PyPI via trusted publishing in the SIF
+        run: bash .github/ci/exec-in-sif.sh publish-in-sif.sh 3.12
+      # hosted:
+      #   - uses: pypa/gh-action-pypi-publish@release/v1
+
+  # --------------------------------------------------------------------------
+  # RELEASE — GitHub Release from the tag, only after a successful publish.
+  # --------------------------------------------------------------------------
+  release:
+    needs: [build, publish]
+    runs-on: ["self-hosted", "Linux", "X64", "scitex-ci"]   # ADJUST
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build.outputs.version }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.build.outputs.version }}"
+          VERSION="${VERSION#v}"
+          if [ -f CHANGELOG.md ]; then
+            awk -v v="$VERSION" '
+              $0 ~ "^## \\[" v "\\]" {p=1; next}
+              p && /^## \[/ {exit}
+              p
+            ' CHANGELOG.md > release-notes.md || true
+          fi
+          if [ ! -s release-notes.md ]; then
+            echo "Release ${VERSION}. See CHANGELOG.md for details." > release-notes.md
+          fi
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build.outputs.version }}
+          name: ${{ needs.build.outputs.version }}
+          body_path: release-notes.md
+          files: dist/*
+          fail_on_unmatched_files: true
+
+  # --------------------------------------------------------------------------
+  # ACTOR FEEDBACK — one consolidated verdict for the tag pusher.
+  # --------------------------------------------------------------------------
+  report:
+    needs: [promote, build, publish, release]
+    if: always()
+    runs-on: ["self-hosted", "Linux", "X64", "scitex-ci"]   # ADJUST
+    steps:
+      - name: Consolidated verdict to github.actor
+        run: |
+          set -euo pipefail
+          M="${{ needs.promote.result }}"; B="${{ needs.build.result }}"
+          P="${{ needs.publish.result }}"; R="${{ needs.release.result }}"
+          {
+            echo "## Release pipeline verdict — ${{ github.repository }} @ ${{ needs.build.outputs.version }}"
+            echo "- pusher: @${{ github.actor }}"
+            echo "- promote(ci+merge): \`$M\` · build: \`$B\` · publish: \`$P\` · release: \`$R\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$M" = "success" ] && [ "$B" = "success" ] && [ "$P" = "success" ] && [ "$R" = "success" ]; then
+            echo "release OK"
+          else
+            echo "::error::release pipeline FAILED for ${{ github.repository }} (promote=$M build=$B publish=$P release=$R) — see the failing stage above, @${{ github.actor }}."
+            exit 1
+          fi
