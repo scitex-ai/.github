@@ -222,7 +222,7 @@ jobs:
           if [ -z "${num:-}" ]; then
             num="$(gh pr create --repo "$REPO" --base "$MAIN" --head "$DEV" \
                     --title "release: promote $DEV -> $MAIN ($TAG)" \
-                    --body "Automated promotion for release **$TAG** (reusable A). Merged with a MERGE commit so the tag's commit stays an ancestor of $MAIN — reusable B asserts exactly that before publishing." \
+                    --body "Automated promotion for release **$TAG**, opened by the org promote-develop-to-main-on-tag reusable after CI passed on the tagged commit. Merged with a MERGE commit so the tag's commit stays an ancestor of $MAIN — the caller's containment guard asserts exactly that before publishing." \
                     | sed -nE 's#.*/pull/([0-9]+).*#\1#p')"
           fi
           test -n "${num:-}" || { echo "::error::could not resolve a develop->main PR number for $TAG"; exit 1; }
