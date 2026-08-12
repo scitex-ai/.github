@@ -36,6 +36,25 @@ jobs:
   pytest-matrix:            # <-- DO NOT RENAME (see above)
     uses: scitex-ai/.github/.github/workflows/pytest-matrix.yml@main
 
+    # REQUIRED FOR THE NIGHTLY ALARM, and it can only be granted HERE.
+    #
+    # A called workflow's token can never exceed the CALLER's grant, so the
+    # `report-a-red-night` job inside pytest-matrix.yml declares
+    # `issues: write` but only RECEIVES it if this stub passes it down. Omit
+    # this block and the alarm can read the issues API but not file — an alarm
+    # that looks configured, probes green every night, and then fails on the
+    # one night it is needed.
+    #
+    # `contents: read` is listed explicitly rather than left implicit: naming
+    # any permission here drops every unnamed one to `none`, so the checkout in
+    # the test job needs it back.
+    #
+    # This is the minimum that makes a red night reach a human. It grants
+    # nothing else — no packages, no id-token, no pull-requests.
+    permissions:
+      contents: read
+      issues: write
+
     # ONE secret, mapped explicitly. This stub used to say `secrets: inherit`,
     # which forwards EVERY secret your repo holds into these jobs — measured
     # 2026-08-03, scitex-ui and scitex-hpc each hold CLAUDE_CODE_CREDENTIALS_JSON
