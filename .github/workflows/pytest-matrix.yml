@@ -51,6 +51,34 @@ on:
         required: false
         default: '["self-hosted","Linux","X64","spartan-cpu"]'
 
+      alarm_runs_on:
+        description: >-
+          Runner labels for the `report-a-red-night` alarm, as a JSON array.
+          SEPARATE FROM `runs_on` ON PURPOSE, and defaulting to the same pool so
+          that adding the alarm changes no caller's runner policy.
+
+          WHY IT IS ITS OWN INPUT. An alarm ideally does not share fate with the
+          thing it reports on: every failure it announces is a failure of the
+          pool, so a wholly wedged pool silences the alarm precisely when it is
+          most needed. Passing '["ubuntu-latest"]' buys that independence.
+
+          WHY THE DEFAULT IS NOT ubuntu-latest ANYWAY. Two reasons, and the
+          second is the honest one. First, `tests/test_fork_guard.py` in this
+          repo asserts that NO job here targets a hosted image, citing the
+          2026-07-14 mandate — while the `runs_on` description directly above
+          cites a LATER ruling (2026-07-31) making hosted the default choice for
+          new work. Those two cannot both be current, and resolving that
+          contradiction is an operator decision, not something to settle by
+          quietly editing the guard that blocks you. Second, the evidence does
+          not demand it: across the seven consecutive silent nights that
+          motivated this alarm (scitex-agent-container, Aug 5-11) the runner was
+          ALIVE every time — the job failed inside it, at `mkdir`. A same-pool
+          alarm would have fired on all seven. Fate-independence is a real but
+          SECONDARY concern, and shipping the alarm beats winning the argument.
+        type: string
+        required: false
+        default: '["self-hosted","Linux","X64","spartan-cpu"]'
+
     # Declared so a caller can pass this ONE secret explicitly instead of
     # `secrets: inherit`, which forwards EVERY secret the calling repo holds
     # into these jobs. Same remedy PR #22 already shipped for cla.yml.
@@ -302,3 +330,128 @@ jobs:
           # this path is unique per concurrent job by construction. git creates the
           # file on first write and treats a missing one as empty — no seeding.
           GIT_CONFIG_GLOBAL: ${{ runner.temp }}/gitconfig-codecov
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # A NIGHTLY THAT CANNOT REPORT ITS OWN FAILURE IS NOT A TEST.
+  #
+  # MEASURED 2026-08-12, across the 22 repos carrying the SIF shim:
+  #
+  #     repos with >=1 nightly whose LATEST run failed        20 of 22
+  #     failing repo/workflow nightly pairs                        52
+  #     fully green                                                 2
+  #
+  # The case that forced it: scitex-agent-container's `main` failed its nightly
+  # on seven consecutive nights (Aug 5-11) — every leg, ZERO tests executed,
+  # each time at `mkdir: cannot create directory '/data': Permission denied` —
+  # and told nobody, because that workflow had no failure reporting of any
+  # kind. Seven days of silence was evidence about the DETECTOR, not about the
+  # code. Diagnosing the 52 causes first would only have bought another seven
+  # days of silence at the next regression, so the alarm goes in first.
+  #
+  # THIS LIVES HERE RATHER THAN IN EACH REPO because 16 of those 22 CALL this
+  # workflow and only 6 keep local copies. One edit here arms the majority; the
+  # alternative is the same notify block pasted into 16 files, which is the
+  # divergence this reusable workflow exists to prevent. Operator, repeatedly:
+  # 「すべて org 側のランナーにしてくださいね。毎回言ってますけど。」
+  #
+  # THE PERMISSION IS THE CALLER'S TO GRANT, AND THAT IS THE ONE SHARP EDGE.
+  # A called workflow's token can never exceed the CALLER's grant, so a repo
+  # whose stub omits `permissions: issues: write` gets an alarm that can read
+  # but not file. That is why workflow-templates/pytest-matrix.yml now grants
+  # it and why tests/test_nightly_alarm.py asserts the stub does. Runtime
+  # behaviour is deliberately loud rather than clever: the liveness probe below
+  # catches a token that cannot even READ, and a refused write fails the step
+  # with the reason attached instead of being swallowed.
+  #
+  # HONEST RESIDUAL GAP: a caller granting read-but-not-write is only detected
+  # on the first RED night, not on green ones — there is no side-effect-free
+  # probe for issue-write. The stub grant plus its test is what keeps that case
+  # from arising; this note is here so nobody mistakes the green probe for
+  # proof of write access.
+  # ───────────────────────────────────────────────────────────────────────────
+  notify:
+    name: report-a-red-night
+    needs: pytest-matrix
+    # `always()`, NOT `failure()`. On a GREEN night this still runs and probes
+    # the API the alarm depends on, so a revoked token or a repo with Issues
+    # disabled turns this red on a QUIET night — rather than being discovered
+    # by the first regression that goes unreported. Silence then means green
+    # because it was CHECKED, not because it was assumed.
+    #
+    # Unattended events only: a push/PR failure already has a human reading it,
+    # and must not open issues.
+    if: >-
+      always()
+      && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    # Defaults to the SAME pool as the suite, so adding this alarm changes no
+    # caller's runner policy. A caller wanting the alarm to survive a wholly
+    # wedged pool passes `alarm_runs_on: '["ubuntu-latest"]'` — the argument for
+    # and against that default is written out on the input itself.
+    runs-on: ${{ fromJSON(inputs.alarm_runs_on) }}
+    permissions:
+      contents: read
+      issues: write
+    timeout-minutes: 10
+    steps:
+      - name: Prove the alarm path is alive, then fire it if the night was red
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TEST_RESULT: ${{ needs.pytest-matrix.result }}
+        run: |
+          set -euo pipefail
+          title="[nightly] the test matrix failed"
+
+          # ── LIVENESS, ON EVERY RUN INCLUDING GREEN ONES ────────────────────
+          if ! gh issue list --repo "$REPO" --state all --limit 1 >/dev/null; then
+            echo "::error::ALARM PATH IS DEAD — cannot reach the issues API for" \
+                 "$REPO. A nightly failure would NOT have been reported. Check" \
+                 "that Issues are enabled, and that this repo's caller stub grants" \
+                 "'permissions: issues: write' (workflow-templates/pytest-matrix.yml)."
+            exit 1
+          fi
+
+          if [ "$TEST_RESULT" = "success" ]; then
+            echo "night green; alarm path verified reachable (no issue filed)."
+            exit 0
+          fi
+
+          echo "::error::nightly result='$TEST_RESULT' — filing/updating: $title"
+
+          body="The nightly test matrix finished with result \`${TEST_RESULT}\` on ${GITHUB_SHA:-HEAD}.
+
+          Run: $RUN_URL
+
+          The nightly is the early warning that a regression or an environment
+          drift exists days before a tag would find it, and it is the only daily
+          run watching the shared CI environment rather than the code.
+
+          REOPENED and COMMENTED rather than duplicated: one issue per fault,
+          not one per night."
+
+          num="$(gh issue list --repo "$REPO" --state all --limit 20 \
+                   --search "in:title \"$title\"" --json number,title \
+                   --jq "[.[] | select(.title == \"$title\") | .number] | first // empty")"
+
+          if [ -n "$num" ]; then
+            # An already-open issue makes `reopen` exit non-zero; that is not a
+            # reporting failure, so it is the ONLY tolerated error here.
+            gh issue reopen "$num" --repo "$REPO" >/dev/null 2>&1 || true
+            gh issue comment "$num" --repo "$REPO" --body "$body"
+          else
+            gh issue create --repo "$REPO" --title "$title" --body "$body"
+          fi
+
+          # POST-CONDITION. `set -e` already fails on a non-zero gh exit, but
+          # "the command returned 0" and "an open issue now exists" are
+          # different claims, and only the second is the alarm having worked.
+          open_num="$(gh issue list --repo "$REPO" --state open --limit 20 \
+                        --search "in:title \"$title\"" --json number,title \
+                        --jq "[.[] | select(.title == \"$title\") | .number] | first // empty")"
+          if [ -z "$open_num" ]; then
+            echo "::error::ALARM FAILED SILENTLY — reporting commands succeeded but" \
+                 "no OPEN issue titled '$title' exists in $REPO afterwards."
+            exit 1
+          fi
+          echo "alarm delivered: $REPO#$open_num"
