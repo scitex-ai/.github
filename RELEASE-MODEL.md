@@ -1,56 +1,100 @@
-# SciTeX release model (DRAFT proposal — for operator review, not adopted)
+# SciTeX release model
 
-This document + the two reusable workflows it describes are a **draft
-proposal**. Nothing here is wired into any leaf repo yet. The goal is to
-replace the 68 inlined, drifting copies of
-`pypi-publish-and-github-release-on-tag.yml` with **one** org reusable, and to
-implement the operator-confirmed release model (TG 2026-07-23) exactly.
+**A release workflow must not merge to `main` unless CI passes.**
+
+> 「リリースのワークフローということですけれど、CI が通らないとマージしちゃ
+> だめですよね。明らかに」
+> — operator, 2026-08-11
+
+This document and `promote-develop-to-main-on-tag.yml` implement that ruling.
+
+## The state this replaces — measured, not assumed
+
+Surveyed across all 73 active `scitex-ai` repos on 2026-08-12:
+
+| measurement | count |
+|---|---|
+| repos with a tag-triggered release/publish workflow | **68** |
+| …that read CI check state before merging or publishing | **0** |
+| …that run `gh pr merge --admin` on a `develop -> main` sync at tag push | **45** |
+| …whose release workflow *mentions* `pytest-matrix` (all in comments) | 23 |
+| …publishing via OIDC trusted publishing | **69 of 69 files** |
+| …publishing via an API token secret | **0** |
+
+So 45 repos merge to `main` with branch protection bypassed and **no greenness
+test whatsoever**, and the 23 that look like they check CI are checking nothing
+— every one of those is a comment. That is what `needs: ci` fixes.
 
 ## The flow
 
-A release is cut by **pushing a version tag on `develop`**:
+A release is cut by pushing a version tag on `develop`:
 
 ```
 git tag vX.Y.Z && git push origin vX.Y.Z
 ```
 
-Everything else is automatic. The leaf repo's thin `release.yml` (see
-`workflow-templates/release.yml`) composes two org reusables:
-
 ```
  tag v* on develop
         │
         ▼
- ┌─────────────────────────────────────────────────────────────┐
- │ Reusable A — promote-develop-to-main-on-tag.yml             │
- │   ci      : run full CI on the TAGGED commit (pytest-matrix)│
- │   promote : if green, open develop→main PR at the same      │
- │             commit and auto-merge it with a MERGE commit    │
- │             (never squash) → main now contains the tag sha  │
- └─────────────────────────────────────────────────────────────┘
-        │  (caller: publish `needs: promote`)
+ ┌──────────────────────────────────────────────────────────────┐
+ │ promote-develop-to-main-on-tag.yml   (ORG REUSABLE)          │
+ │   ci      : pytest-matrix on the TAGGED commit               │
+ │   promote : needs: ci  ← THE GATE. Only if green: open a     │
+ │             develop→main PR at that same commit and merge it │
+ │             with a MERGE commit (never squash)               │
+ └──────────────────────────────────────────────────────────────┘
+        │  (caller: build `needs: promote`)
         ▼
- ┌─────────────────────────────────────────────────────────────┐
- │ Reusable B — pypi-publish-and-github-release-on-tag.yml     │
- │   build   : wheel + sdist from the tag                      │
- │   publish : CONTAINMENT GUARD, then PyPI (hosted | sif)     │
- │   release : GitHub Release from the tag                     │
- │   report  : consolidated verdict → github.actor             │
- └─────────────────────────────────────────────────────────────┘
+ ┌──────────────────────────────────────────────────────────────┐
+ │ the leaf repo's OWN top-level workflow  (NOT centralised)    │
+ │   build   : wheel + sdist from the tag                       │
+ │   publish : CONTAINMENT GUARD, then PyPI via OIDC            │
+ │   release : GitHub Release from the tag                      │
+ │   report  : consolidated verdict → github.actor              │
+ └──────────────────────────────────────────────────────────────┘
 ```
 
-Because the caller wires `publish: {needs: promote}`, **B never runs until A
-has landed the tag's commit on `main`**. Both are reusables (not a single
-mega-workflow) so the caller can express that one `needs:` edge — that is the
-reason A is a reusable and not just documented triggers.
+`gh pr merge --admin` inside `promote` bypasses required **review** — nobody
+reviews an automated same-commit promotion — **not** required checks. The
+checks already ran, in this DAG, ahead of the merge. That distinction is the
+entire reason this design satisfies the ruling, and it is pinned by
+`tests/test_release_gate.py`.
 
-## The containment guard (the load-bearing part)
+## Why the publish half is NOT centralised
 
-A **squash merge does not fail** — it silently creates a *new* SHA, so the
-tag's commit leaves `main`'s history and `setuptools-scm` miscomputes the
-version. We do **not** fight this with repo settings (they can be changed, and
-a wrong setting fails silently). Instead, at publish time in B we assert the
-tag's commit is contained in `main`:
+It looks like duplication left on the table. It is the only shape that works.
+
+PyPI Trusted Publishing validates the OIDC **`job_workflow_ref`** claim and
+ignores `workflow_ref`. For a job inside a reusable workflow,
+`job_workflow_ref` names the **reusable's** repo and path
+(`scitex-ai/.github/...@main`), while PyPI's expectation is built from the
+**caller's** repo plus the registered filename
+(`scitex-ai/<leaf>/.github/workflows/<name>@refs/tags/vX.Y.Z`). The repo
+component alone can never match, so a publish delegated to a cross-repo
+reusable fails `invalid-publisher` — every release, every repo, with **no
+configuration that can fix it**. `pypi/warehouse#11096` has tracked this since
+2022 and is still open with no timeline.
+
+`pypa/gh-action-pypi-publish` states the remedy directly: *"keep the job
+calling `pypi-publish` in a top-level one."*
+
+Since all 69 of this org's publish workflows use OIDC and none uses a token,
+this applies universally here. The full working, sources and measurement are
+in [`.old/2026-08-12/WHY-THIS-IS-HERE.md`](.old/2026-08-12/WHY-THIS-IS-HERE.md),
+alongside the drafted reusable that had to be withdrawn because of it.
+
+**The consolation is large:** the publish job never moves and the workflow
+filename never changes, so adopting the gate needs **zero trusted-publisher
+changes on pypi.org** — for any of the 68 repos. The half that carries the
+operator's ruling (`promote`) is exactly the half that centralises cleanly.
+
+## The containment guard
+
+A squash merge does not fail. It silently mints a *new* SHA, so the tag's
+commit leaves `main`'s history and `setuptools-scm` miscomputes the version.
+Repo settings can be changed and fail silently, so the guard is an assertion at
+publish time instead:
 
 ```bash
 TAG_SHA="$(git rev-list -n1 "refs/tags/${TAG}")"
@@ -59,113 +103,65 @@ git merge-base --is-ancestor "${TAG_SHA}" origin/main \
   || { echo "::error::CONTAINMENT GUARD FAILED — tag not in main"; exit 1; }
 ```
 
-Not contained → **ABORT publish, fail RED.** This turns the silent squash
-failure into a loud one and works under squash **or** fast-forward. Reusable A
-also merges with `--merge` (never `--squash`) and re-checks containment right
-after merging, so the guard in B is the backstop, not the only line of
-defence.
+Not contained → **abort the publish, fail red.** Works under squash *or*
+fast-forward. `promote` also merges with `--merge` and re-checks containment
+straight after merging, so the guard is the backstop, not the only defence.
 
-## The feedback loop (A→B ⇒ B→A)
+## Adopting it — the minimal diff for an existing repo
 
-Each stage reports its result back to `github.actor` (the tag pusher):
+**Do not replace a working release workflow.** 51 of the 68 have a green latest
+release run; rewriting them risks a publish regression to fix a merge problem.
+Adoption is two edits to the file the repo already has:
 
-- Every job appends a `repo + stage + tag + verdict` line to
-  `$GITHUB_STEP_SUMMARY`.
-- B's final `report` job emits a **consolidated verdict** and **fails red** if
-  any stage failed, so the actor's GitHub run-failure notification carries the
-  whole-pipeline outcome (which repo, which stage).
-- Every failure path is marked `# FLEET-HOOK:` in the YAML — that is exactly
-  where an out-of-band **scitex-todo card / DM to `github.actor`** plugs in
-  once the fleet channel is chosen. The draft deliberately uses only
-  GitHub-native surfaces (job summary + a failing status) so it is adoptable
-  today without the fleet dependency.
-
-## The two publish backends
-
-The single reusable B parametrizes **both** real variants behind
-`publish-backend`:
-
-| backend  | runner (`runs-on-json`)                        | build                         | publish                                                        |
-|----------|------------------------------------------------|-------------------------------|----------------------------------------------------------------|
-| `hosted` | `'"ubuntu-latest"'`                            | `setup-python` + `python -m build` | `pypa/gh-action-pypi-publish` (Docker action, OIDC trusted publisher) |
-| `sif`    | `'["self-hosted","Linux","X64","scitex-ci"]'` | `.github/ci/exec-in-sif.sh build-in-sif.sh` | `.github/ci/exec-in-sif.sh publish-in-sif.sh` (manual OIDC: GitHub JWT → PyPI mint-token → twine, inside the SIF) |
-
-The caller selects the backend **and** the matching runner. A `sif` repo must
-never be given a hosted `runs-on-json` — that is the `no-hosted-runners-guard`
-posture (the Spartan nodes have no Docker and no bare-node Python; the SIF path
-is self-hosted by construction). `runs-on-json` is consumed via `fromJSON`, so
-a bare quoted string (`'"ubuntu-latest"'`) and a label array both work in the
-same field.
-
-**Secrets (decision-for-review):** both backends publish via **OIDC Trusted
-Publishing**, so **no API-token secret is required** by default. B declares one
-*optional* `PYPI_API_TOKEN` secret as the documented fallback for any repo that
-still publishes with a classic token instead of a trusted publisher. The
-caller passes `secrets: inherit`.
-
-## How a leaf repo adopts it (the thin caller)
-
-Copy `workflow-templates/release.yml` to `.github/workflows/release.yml`, delete
-the repo's old inlined `pypi-publish-and-github-release-on-tag.yml`, and set the
-three marked values (`publish-backend`, `runs-on-json` on both jobs,
-`pypi-project`). A `sif` repo also keeps its `.github/ci/*.sh` scripts (the
-reusable calls them in the caller's checkout).
-
-### Worked example — scitex-dev (the SIF case)
-
-`scitex-dev/.github/workflows/release.yml`:
+1. Add the `promote` job that calls the org reusable.
+2. Add `needs: promote` to the workflow's first job (usually `build`), and
+   delete whatever `gh pr create` / `gh pr merge --admin` block the repo
+   currently runs inline.
 
 ```yaml
-name: release
-on:
-  push:
-    tags: ['v*']
 jobs:
   promote:
     uses: scitex-ai/.github/.github/workflows/promote-develop-to-main-on-tag.yml@main
     with:
       runs-on-json: '["self-hosted","Linux","X64","scitex-ci"]'
-    secrets: inherit
-  publish:
-    needs: promote
-    uses: scitex-ai/.github/.github/workflows/pypi-publish-and-github-release-on-tag.yml@main
-    with:
-      publish-backend: sif
-      runs-on-json: '["self-hosted","Linux","X64","scitex-ci"]'
-      pypi-project: scitex-dev
-    secrets: inherit
+      ci-runs-on-json: '["self-hosted","Linux","X64","spartan-cpu"]'
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  build:
+    needs: promote          # <-- the gate reaches this repo through this line
+    ...                     # everything below is UNCHANGED
 ```
 
-scitex-dev already ships `.github/ci/build-in-sif.sh`, `exec-in-sif.sh`,
-`run-in-sif.sh`, and `publish-in-sif.sh`, so no other change is needed. The
-PyPI Trusted Publisher on `pypi.org/p/scitex-dev` must list the **new**
-workflow filename — see the human-decision list.
+Keep the filename. Keep the publish job. Both are load-bearing for OIDC.
 
-A hosted repo's caller is identical except `publish-backend: hosted` and
-`runs-on-json: '"ubuntu-latest"'` on both jobs.
+`workflow-templates/release.yml` is the full canonical shape for a **new**
+repo, and shows where each piece goes.
 
-## What still needs a human decision
+### Runners
 
-- **PyPI Trusted Publisher filename.** Trusted publishing is keyed on the
-  *workflow filename*. Moving publish into a reusable means the actual runner
-  filename the caller invokes is still the leaf repo's `release.yml`, but the
-  OIDC subject differs when a reusable does the upload — each package's PyPI
-  trusted-publisher config must be re-checked / updated before first real
-  release (per-package, ~68 entries). This is the single biggest gate.
-- **Hosted-only CI runner.** Reusable A runs CI via the org `pytest-matrix.yml`
-  reusable, which is self-hosted by construction (`uses:` can't be an
-  expression, so the CI ref is fixed). Repos that must run CI on hosted runners
-  need either a hosted `pytest-matrix` variant or a `runs-on` input added to
-  the shared `pytest-matrix.yml`. Decide before onboarding any hosted-only repo.
-- **`--admin` auto-merge.** A promotes with `gh pr merge --merge --admin` to
-  bypass required-review on the automated same-commit promotion. Confirm every
-  target repo's branch protection permits admin merge with a merge commit (not
-  squash-only), or the guard will (correctly) abort the release.
-- **The 5 CALLER+extra repos.** A handful of repos append extra steps to their
-  current inlined release (e.g. docs/artifact uploads, Zenodo DOI, extra smoke
-  gates). Those extras must become either **inputs** on B or **companion jobs**
-  in the leaf caller — enumerate them and decide input-vs-companion per repo
-  before migrating them off their inlined copies.
-- **Rollout order.** Pilot on one SIF repo (scitex-dev) and one hosted repo
-  before the org-wide sweep; keep each leaf repo's old inlined workflow until
-  its first reusable-driven release is verified green.
+`runs-on-json` selects the promote job's runner; `ci-runs-on-json` is forwarded
+to `pytest-matrix`'s own `runs_on`. A hosted-only repo passes
+`'"ubuntu-latest"'` and `'["ubuntu-latest"]'` respectively. An earlier draft
+listed hosted-only CI as an unresolved blocker because `uses:` cannot be an
+expression — but `pytest-matrix.yml` has since gained a `runs_on` input, so
+only the *runner* ever needed to be caller-selectable. That caveat is retired.
+
+### Order of adoption — the whole risk
+
+**Never delete a repo's release workflow before its replacement has cut a real
+release for that repo.** Deleting first stops every release in the fleet. The
+minimal-diff recipe above avoids this by construction: nothing is deleted, one
+edge is added.
+
+Convert in tranches with a check between them. Do not pick a repo whose latest
+release run is already failing (17 of the 68 on 2026-08-12) — you would be
+debugging its fault, not the gate's. Do not pick one whose `main` still
+hardcodes `/data/gpfs` (7 repos on 2026-08-12).
+
+## Ownership
+
+`scitex-ai/.github` has **no owning agent**, which is why this sat as a draft
+from 2026-07-23 to 2026-08-12. This change makes `.github` the most
+load-bearing repo in the org: a defect in `promote-develop-to-main-on-tag.yml`
+is a defect in every release in the fleet. **It needs a named owner.**
