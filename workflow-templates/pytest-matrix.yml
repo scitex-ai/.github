@@ -1,0 +1,52 @@
+name: tests
+
+# CANONICAL CALLER STUB — copy this verbatim. Do not rename the job.
+#
+# The job id `pytest-matrix` is NOT cosmetic. GitHub names the status check of a
+# reusable-workflow call:
+#
+#     "<caller job id> / <job name inside the reusable workflow>"
+#
+# so the job id below IS the branch-protection context prefix. With `pytest-matrix`
+# every repo in the ecosystem emits exactly:
+#
+#     pytest-matrix / pytest-matrix-on-ubuntu-py3.11
+#     pytest-matrix / pytest-matrix-on-ubuntu-py3.12
+#     pytest-matrix / pytest-matrix-on-ubuntu-py3.13
+#
+# One required-status-check list then serves every repo. Rename the job to
+# `test`, `call`, `ci`, … and that repo emits `test / pytest-matrix-on-ubuntu-py3.11`
+# instead — a bespoke protection list for that repo, forever, and a merge that
+# blocks silently until someone hand-reads the new names off a real PR.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    - cron: "0 17 * * *"  # nightly, off-peak
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  pytest-matrix:            # <-- DO NOT RENAME (see above)
+    uses: scitex-ai/.github/.github/workflows/pytest-matrix.yml@main
+
+    # ONE secret, mapped explicitly. This stub used to say `secrets: inherit`,
+    # which forwards EVERY secret your repo holds into these jobs — measured
+    # 2026-08-03, scitex-ui and scitex-hpc each hold CLAUDE_CODE_CREDENTIALS_JSON
+    # (the fleet Claude credential), which nothing in pytest-matrix touches.
+    # PS-224 flags the pattern.
+    #
+    # IF YOUR REPO HAS NO CODECOV_TOKEN, DELETE THESE TWO LINES ENTIRELY rather
+    # than leaving them — an unset secret maps to empty, and coverage upload
+    # then fails as `Token required because branch is protected` while the step
+    # still reports success (`fail_ci_if_error: false`). Measured across all 50
+    # consumer repos: exactly ONE (scitex-io) holds the token, so for almost
+    # every repo copying this stub, DELETING is the correct action.
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

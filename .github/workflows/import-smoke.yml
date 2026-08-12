@@ -6,14 +6,45 @@ name: import-smoke
 # name is auto-derived from `src/<pkg>` in the checkout, same as source.
 
 on:
-  workflow_call: {}
+  workflow_call:
+    inputs:
+      runs_on:
+        description: >-
+          Runner label set for this job, as a JSON ARRAY STRING (it is consumed
+          by fromJSON). Defaults to the Spartan pool, i.e. exactly the value
+          hard-coded here before this input existed -- so a caller that passes
+          nothing lands on the same runner it always did. Override it to move a
+          single repository off Spartan without touching any other consumer.
+          MUST be a JSON string, not a YAML list: a YAML list decodes to
+          something fromJSON rejects, and the resulting label mismatch makes
+          the job QUEUE FOREVER rather than fail, which is indistinguishable
+          from "still waiting" in the run list.
+        type: string
+        required: false
+        default: '["self-hosted","Linux","X64","spartan-cpu"]'
 
 jobs:
   import-smoke:
     name: import-smoke-on-ubuntu-py3-12
-    runs-on: [self-hosted, Linux, X64, spartan-cpu]
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
     timeout-minutes: 15
     steps:
+      # FORK GUARD — MUST BE THE FIRST STEP, AHEAD OF actions/checkout, which is
+      # what first puts fork-authored content on the node. Rationale, the two
+      # operator mandates it reconciles, and what it deliberately does NOT stop:
+      # README.md "Fork guard". Ordering and predicate are asserted in
+      # tests/test_fork_guard.py — do not reorder, do not reword the `if`.
+      - name: Refuse to run fork-authored code on self-hosted infrastructure
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          set -euo pipefail
+          echo "::error title=Fork PR blocked::Fork-authored code is not run on the self-hosted Spartan pool."
+          echo "head repo: ${{ github.event.pull_request.head.repo.full_name }}  base repo: ${{ github.repository }}"
+          echo "To review this contribution, adopt its branch into ${{ github.repository }} and open a same-repo PR:"
+          echo "  gh pr checkout ${{ github.event.pull_request.number }} && git push origin HEAD:review/pr-${{ github.event.pull_request.number }}"
+          exit 1
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v7
         with:

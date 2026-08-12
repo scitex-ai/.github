@@ -14,12 +14,51 @@ name: cla
 # (defaults to `main`) since the CLA.md path assumes the doc lives on the
 # repo's default branch. `owner_allowlist` is an input so each repo can
 # keep its own allowlisted owner login(s); defaults to the current value.
-# Needs `secrets: inherit` on the caller (GH_PERSONAL_ACCESS_TOKEN for the
-# CLA-signature-storage PAT; GITHUB_TOKEN is provided automatically).
+# Needs GH_PERSONAL_ACCESS_TOKEN (the CLA-signature-storage PAT) from the
+# caller; GITHUB_TOKEN is provided automatically. Map it EXPLICITLY — see the
+# `secrets:` declaration below. This line used to say `secrets: inherit` was
+# needed, which PR #22 made untrue in this very file and nobody updated, so the
+# header mandated the thing the declaration twelve lines down exists to avoid.
+# A stale comment that contradicts its own file is worse than no comment: a
+# reader who trusts it re-introduces the defect while believing they complied.
 
 on:
   workflow_call:
     inputs:
+      runs_on:
+        description: >-
+          Runner label set for this job, as a JSON ARRAY STRING (it is consumed
+          by fromJSON). Defaults to the Spartan pool, i.e. exactly the value
+          hard-coded here before this input existed -- so a caller that passes
+          nothing lands on the same runner it always did. Override it to move a
+          single repository off Spartan without touching any other consumer.
+          MUST be a JSON string, not a YAML list: a YAML list decodes to
+          something fromJSON rejects, and the resulting label mismatch makes
+          the job QUEUE FOREVER rather than fail, which is indistinguishable
+          from "still waiting" in the run list.
+        type: string
+        required: false
+        # DEFAULT IS ubuntu-latest BECAUSE THIS JOB IS OUTSIDER-TRIGGERABLE.
+        # The caveat on `owner-bypass` below lists why the combination bites: this
+        # workflow runs on `issue_comment` / `pull_request_target`, which are
+        # unauthenticated on a public repo and are NOT covered by the fork-PR
+        # approval gate; and the self-hosted pool is PERSISTENT, sharing a real
+        # $HOME that holds the live fleet credential.
+        #
+        # #29 (2026-08-05) added this input so repos could leave Spartan one at a
+        # time, and kept the default on Spartan for backward compatibility. Measured
+        # 2026-08-10: of 17 consumer repos, 17 pass nothing and inherit it. The
+        # escape hatch existed for five days and nobody used it, because a default
+        # is not a decision anyone makes -- it is one they never see. sac's own repo
+        # opted out explicitly (PS-224 exemption: "the blocker is SECURITY, not
+        # capability"), so the component that OWNS the credential is off Spartan
+        # while 17 others ride it by inheritance.
+        #
+        # Inverting the default makes self-hosted opt-IN. A repo that genuinely
+        # needs the pool passes runs_on explicitly, which is a decision with an
+        # author. A compromise on an ephemeral hosted VM costs one disposable
+        # runner; on the pool it costs the fleet credential.
+        default: '["ubuntu-latest"]'
       default_branch:
         description: "Branch the CLA.md document lives on"
         required: false
@@ -36,6 +75,13 @@ on:
         type: string
         default: "ywatanabe1989"
 
+    # Declared so a caller can pass this ONE secret explicitly instead of
+    # `secrets: inherit`, which forwards EVERY secret the calling repo
+    # holds into a job an outsider can start. Backward compatible:
+    # `secrets: inherit` keeps working for callers that have not migrated.
+    secrets:
+      GH_PERSONAL_ACCESS_TOKEN:
+        required: true
 permissions:
   actions: write
   contents: write
@@ -45,7 +91,46 @@ permissions:
 jobs:
   owner-bypass:
     if: github.event_name == 'push' && github.actor == inputs.owner_login
-    runs-on: ubuntu-latest
+    # Defaults to the org pool. The blanket "ZERO GitHub-hosted runners
+    # (operator mandate 2026-07-14)" rule that stood here is SUPERSEDED by the
+    # operator's 2026-08-05 direction, so it is no longer the reason for this
+    # destination — but the SECURITY reasoning below is untouched by that and
+    # still governs this particular job.
+    # WHY THIS DESTINATION IS NOT OBVIOUSLY CORRECT — read before changing.
+    #
+    # Four facts that are each individually fine and only bite in combination:
+    #   1. `issue_comment` and `pull_request_target` are UNAUTHENTICATED
+    #      triggers on a public repo. A GitHub account is the whole barrier.
+    #   2. The fork-PR approval gate does NOT cover them —
+    #      `pull_request_target` runs in the BASE repo's context and
+    #      `issue_comment` is not gated at all. These two events are the
+    #      documented way AROUND that gate.
+    #   3. Self-hosted runners here are PERSISTENT and share a real $HOME
+    #      that holds the live fleet credential.
+    #   4. This job runs a third-party action.
+    #
+    # Measured 2026-07-30 (scitex-app): no `actions/checkout` of the PR head,
+    # third-party action SHA-pinned, NO code-injection path found. This is a
+    # hardening concern, not an active compromise. Unverified by anyone: the
+    # pinned action's contents, and whether a fork PR actually reaches here.
+    #
+    # sac's own repo REFUSED this shape and keeps its CLA job on
+    # `ubuntu-latest` with a written PS-224 exemption: "the blocker is
+    # SECURITY, not capability, and moving the job to Spartan would be a
+    # REGRESSION". An ephemeral hosted VM is destroyed after the run, so a
+    # compromise costs one disposable runner.
+    #
+    # If you are 'fixing' this to satisfy a no-hosted-runners rule: that rule
+    # does not model who can TRIGGER a workflow. Escalate instead.
+    #
+    # THIS CAVEAT NOW HAS A SECOND AUDIENCE: THE CALLER. It was written when
+    # the destination was a constant only an editor of this file could change.
+    # `runs_on` makes it a knob any consumer can turn from their own repo
+    # without ever opening this file — so the reasoning above applies to the
+    # destination THEY choose, not just the one written here. CLA runs on
+    # outsider-triggerable events; picking its runner is a safety decision, not
+    # a policy one. Do not override it here as part of a routine CI migration.
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
     permissions:
       statuses: write
     steps:
@@ -63,7 +148,46 @@ jobs:
 
   CLAssistant:
     if: github.event_name != 'push'
-    runs-on: ubuntu-latest
+    # Defaults to the org pool. The blanket "ZERO GitHub-hosted runners
+    # (operator mandate 2026-07-14)" rule that stood here is SUPERSEDED by the
+    # operator's 2026-08-05 direction, so it is no longer the reason for this
+    # destination — but the SECURITY reasoning below is untouched by that and
+    # still governs this particular job.
+    # WHY THIS DESTINATION IS NOT OBVIOUSLY CORRECT — read before changing.
+    #
+    # Four facts that are each individually fine and only bite in combination:
+    #   1. `issue_comment` and `pull_request_target` are UNAUTHENTICATED
+    #      triggers on a public repo. A GitHub account is the whole barrier.
+    #   2. The fork-PR approval gate does NOT cover them —
+    #      `pull_request_target` runs in the BASE repo's context and
+    #      `issue_comment` is not gated at all. These two events are the
+    #      documented way AROUND that gate.
+    #   3. Self-hosted runners here are PERSISTENT and share a real $HOME
+    #      that holds the live fleet credential.
+    #   4. This job runs a third-party action.
+    #
+    # Measured 2026-07-30 (scitex-app): no `actions/checkout` of the PR head,
+    # third-party action SHA-pinned, NO code-injection path found. This is a
+    # hardening concern, not an active compromise. Unverified by anyone: the
+    # pinned action's contents, and whether a fork PR actually reaches here.
+    #
+    # sac's own repo REFUSED this shape and keeps its CLA job on
+    # `ubuntu-latest` with a written PS-224 exemption: "the blocker is
+    # SECURITY, not capability, and moving the job to Spartan would be a
+    # REGRESSION". An ephemeral hosted VM is destroyed after the run, so a
+    # compromise costs one disposable runner.
+    #
+    # If you are 'fixing' this to satisfy a no-hosted-runners rule: that rule
+    # does not model who can TRIGGER a workflow. Escalate instead.
+    #
+    # THIS CAVEAT NOW HAS A SECOND AUDIENCE: THE CALLER. It was written when
+    # the destination was a constant only an editor of this file could change.
+    # `runs_on` makes it a knob any consumer can turn from their own repo
+    # without ever opening this file — so the reasoning above applies to the
+    # destination THEY choose, not just the one written here. CLA runs on
+    # outsider-triggerable events; picking its runner is a safety decision, not
+    # a policy one. Do not override it here as part of a routine CI migration.
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
     steps:
       - name: CLA Assistant
         # Upstream v2.6.1 still declares node20. This SciTeX fork changes only
@@ -82,3 +206,13 @@ jobs:
           custom-notsigned-prcomment: |
             Please sign the [SciTeX CLA](https://github.com/${{ github.repository }}/blob/${{ inputs.default_branch }}/CLA.md) before your contribution can be merged.
             Comment `I have read and agree to the SciTeX CLA.` to sign.
+          # MUST stay byte-identical to the phrase quoted just above. Without
+          # this input the action accepts ONLY its own default ("I have read
+          # the CLA Document and I hereby sign the CLA"), so the instruction we
+          # publish is one the system rejects: a contributor who follows it
+          # exactly is told nothing happened, and the check sits stale-FAILURE
+          # with no way for them to discover why. Measured 2026-07-23 on
+          # figrecipe #319/#320 — the contributor commented the quoted phrase
+          # on 07-23 15:56 and both CLA runs that day concluded `failure`.
+          # If you edit either string, edit BOTH. They are one contract.
+          custom-pr-sign-comment: "I have read and agree to the SciTeX CLA."
