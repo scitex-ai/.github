@@ -15,7 +15,7 @@ name: promote-develop-to-main-on-tag
 # `gh pr merge --admin` on a develop->main sync at tag push.
 #
 # CORRECTION, 2026-08-12 (this file first shipped with the wrong claim; see
-# PR #17). Those 45 merges are NOT ungated. Resolving each workflow's `needs:`
+# PR #31). Those 45 merges are NOT ungated. Resolving each workflow's `needs:`
 # graph shows the admin-merge job is reachable only downstream of a job that
 # actually runs the test suite in ALL 45 of 45. The earlier claim — "no
 # greenness test whatsoever" — was produced by grepping for `needs: ci` and

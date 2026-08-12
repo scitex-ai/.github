@@ -11,7 +11,7 @@ WHAT THIS CONSOLIDATES, measured across scitex-ai on 2026-08-12: 68 repos
 inline their own tag-triggered release workflow, and 45 of those run
 ``gh pr merge --admin`` on a ``develop -> main`` sync at tag push.
 
-CORRECTION (2026-08-12, PR #17). This docstring first said those 45 merged
+CORRECTION (2026-08-12, PR #31). This docstring first said those 45 merged
 with "no greenness test at all". **It was wrong.** Walking each workflow's
 ``needs:`` closure shows the admin-merge job sits downstream of a real test
 job in 45 of 45. The false number came from grepping for ``needs: ci`` when
