@@ -45,6 +45,7 @@ from any one workflow, dropping the ``exit 1``, or relaxing the predicate to
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -240,9 +241,37 @@ def test_guard_tells_the_reviewer_what_to_do_instead(
 
 
 # ---------------------------------------------------------------------------
-# The mandate the guard exists to honour: no job here may resolve to a
-# GitHub-hosted image. Asserted locally so a future 'just route forks to
-# ubuntu-latest' cannot land quietly in this repo.
+# EVERY `runs_on` INPUT DEFAULT MUST BE GITHUB-HOSTED.
+#
+# This REPLACES `test_no_job_targets_a_github_hosted_image`, which asserted the
+# operator's 2026-07-14 mandate that hosted runners were forbidden "with no
+# exceptions". That mandate was repealed twice before this test caught up:
+#
+#   2026-07-31, quoted in pytest-matrix.yml's own `runs_on` description —
+#     "hosted is the DEFAULT CHOICE for new work, because most scitex
+#      repositories are public so hosted minutes are free; self-hosted is for
+#      jobs where our own machines are genuinely faster ... not a blanket
+#      policy."
+#   2026-08-05, constitution — "GitHub-hosted runners are free for public
+#     repositories, which most of ours are ... a reasonable fallback."
+#
+# So the old test was a gate enforcing a rule nobody held any more, and it was
+# not inert: on 2026-08-15 it FAILED the very change that unblocked the fleet,
+# because self-test.yml had to move off a dead pool. A stale mandate encoded as
+# a test does not sit quietly — it blocks the repair.
+#
+# WHAT REPLACES IT IS THE LESSON THAT OUTAGE TAUGHT. All four `spartan-cpu`
+# runners went offline; every reusable here defaulted `runs_on` to that label;
+# no shipped caller stub passes the input. GitHub does not reject a job whose
+# labels nothing serves — it QUEUES IT FOREVER. Measured that morning: 57
+# queued runs across ~30 repositories, and `CI_RUNS_ON` variables set on 76 of
+# 76 repos selected nothing, because these workflows read `inputs.runs_on`.
+#
+# A DEFAULT MUST FAIL SAFE. Hosted degrades to SLOWER. Self-hosted degrades to
+# NEVER, with no error and a run list indistinguishable from a busy queue.
+# Preferring our own hardware stays a CALLER decision via `runs_on`, and
+# Spartan remains PREFERRED where it is faster (operator, 2026-08-13). This
+# test only pins what happens when a caller says nothing.
 # ---------------------------------------------------------------------------
 
 
@@ -252,23 +281,76 @@ _ALL_JOBS = [
     for path in sorted(_WORKFLOW_DIR.glob("*.yml"))
     for job_id, job in (_load(path).get("jobs") or {}).items()
 ]
+_RUNS_ON_DEFAULTS = [
+    (path.name, name, spec.get("default"))
+    for path in sorted(_WORKFLOW_DIR.glob("*.yml"))
+    for name, spec in (
+        ((_load(path).get(True) or _load(path).get("on") or {})
+         .get("workflow_call") or {}).get("inputs") or {}
+    ).items()
+    if "runs" in name and "on" in name
+]
+
+
+def test_the_runner_default_inventory_is_not_empty() -> None:
+    """A parametrised suite over an empty list PASSES, reporting nothing.
+
+    Without this, a refactor that renames the input or moves the `on:` block
+    silently reduces the checks below to zero cases and the file still goes
+    green — the same shape as the outage they were written for.
+    """
+    # Arrange
+    discovered = _RUNS_ON_DEFAULTS
+    # Act
+    count = len(discovered)
+    # Assert
+    assert count, (
+        "no `runs_on` input defaults were discovered under "
+        f"{_WORKFLOW_DIR}; the collector, not the workflows, is what broke"
+    )
 
 
 @pytest.mark.parametrize(
-    ("workflow", "job_id", "job"),
-    _ALL_JOBS,
-    ids=[f"{w}:{j}" for w, j, _ in _ALL_JOBS],
+    ("workflow", "input_name", "default"),
+    _RUNS_ON_DEFAULTS,
+    ids=[f"{w}:{n}" for w, n, _ in _RUNS_ON_DEFAULTS],
 )
-def test_no_job_targets_a_github_hosted_image(
-    workflow: str, job_id: str, job: dict
+def test_a_runner_input_declares_a_non_empty_string_default(
+    workflow: str, input_name: str, default: object
 ) -> None:
     # Arrange
-    labels = _runs_on_labels(job)
+    declared = default
     # Act
-    hosted = [label for label in labels if label.startswith(_HOSTED_PREFIXES)]
+    usable = isinstance(declared, str) and bool(declared)
     # Assert
-    assert not hosted, (
-        f"{workflow}:{job_id} targets {hosted}. Operator mandate 2026-07-14 "
-        "(PS-169) forbids GitHub-hosted runners with no exceptions; if the "
-        "self-hosted pool cannot run it, fix the pool"
+    assert usable, (
+        f"{workflow}:{input_name} has no non-empty string default; a caller "
+        "that passes nothing then resolves an empty label set, which queues "
+        "forever rather than failing"
+    )
+
+
+@pytest.mark.parametrize(
+    ("workflow", "input_name", "default"),
+    _RUNS_ON_DEFAULTS,
+    ids=[f"{w}:{n}" for w, n, _ in _RUNS_ON_DEFAULTS],
+)
+def test_a_runner_input_defaults_to_a_hosted_image(
+    workflow: str, input_name: str, default: object
+) -> None:
+    # Arrange
+    labels = json.loads(default) if isinstance(default, str) and default else []
+    # Act
+    hosted = [
+        label
+        for label in labels
+        if isinstance(label, str) and label.startswith(_HOSTED_PREFIXES)
+    ]
+    # Assert
+    assert hosted, (
+        f"{workflow}:{input_name} defaults to {labels}, which is self-hosted. "
+        "A self-hosted default degrades to NEVER when that pool goes offline — "
+        "GitHub queues the job instead of failing it, so nothing reports the "
+        "outage. Put the preference in the CALLER via `runs_on` and leave the "
+        "default hosted."
     )
