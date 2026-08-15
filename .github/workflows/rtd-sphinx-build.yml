@@ -32,17 +32,25 @@ on:
       runs_on:
         description: >-
           Runner label set for this job, as a JSON ARRAY STRING (it is consumed
-          by fromJSON). Defaults to the Spartan pool, i.e. exactly the value
-          hard-coded here before this input existed -- so a caller that passes
-          nothing lands on the same runner it always did. Override it to move a
-          single repository off Spartan without touching any other consumer.
+          by fromJSON). DEFAULTS TO GITHUB-HOSTED, because a default must FAIL
+          SAFE. It defaulted to the Spartan pool until 2026-08-15, when all
+          four `spartan-cpu` runners went offline and every caller that passes
+          nothing -- which was every caller, since no shipped stub passes this
+          input -- silently requested a label no online machine served: 57
+          queued runs across ~30 repositories, while the repo-level CI_RUNS_ON
+          variables set on 76 of 76 repos had no effect at all, because THIS
+          input selects the runner and nothing was passing it. A hosted default
+          degrades to SLOWER; a self-hosted default degrades to NEVER. Pass
+          `runs_on` to prefer our own hardware -- Spartan stays PREFERRED where
+          it is faster (operator, 2026-08-13); this line only decides what
+          happens when a caller is silent.
           MUST be a JSON string, not a YAML list: a YAML list decodes to
           something fromJSON rejects, and the resulting label mismatch makes
           the job QUEUE FOREVER rather than fail, which is indistinguishable
           from "still waiting" in the run list.
         type: string
         required: false
-        default: '["self-hosted","Linux","X64","spartan-cpu"]'
+        default: '["ubuntu-latest"]'
       docs_dir:
         description: >-
           Directory holding the sphinx conf.py. Defaults to the org
