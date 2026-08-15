@@ -87,12 +87,20 @@ on:
     inputs:
       runs-on-json:
         description: >-
-          JSON for the promote job's runs-on. hosted callers pass
-          '"ubuntu-latest"'; sif callers pass
-          '["self-hosted","Linux","X64","scitex-ci"]'. Consumed via fromJSON.
+          JSON for the promote job's runs-on. Consumed via fromJSON. DEFAULTS
+          TO GITHUB-HOSTED so a release can never be blocked by a machine being
+          down; self-hosted callers pass their own label set.
+
+          It defaulted to '["self-hosted","Linux","X64","scitex-ci"]' until
+          2026-08-15. Measured that morning, `scitex-ci` was carried by exactly
+          four runners and ALL FOUR WERE OFFLINE, so this default named a label
+          with zero online satisfiers -- and GitHub queues such a job forever
+          rather than failing it. On the PROMOTE path that is the worst place
+          for it: the tag lands, the release never happens, and the run list
+          shows "waiting" rather than an error.
         required: false
         type: string
-        default: '["self-hosted","Linux","X64","scitex-ci"]'
+        default: '["ubuntu-latest"]'
       develop-branch:
         description: 'Source branch the tag is cut on.'
         required: false
@@ -106,17 +114,17 @@ on:
       ci-runs-on-json:
         description: >-
           JSON array of runner labels for the CI job, forwarded to
-          pytest-matrix's `runs_on`. Defaults to that reusable's OWN default
-          (the Spartan pool), so a caller that omits this gets exactly what it
-          would have got before this input existed.
+          pytest-matrix's `runs_on`. Defaults to that reusable's OWN default,
+          which is GitHub-hosted as of 2026-08-15 — so a caller that omits this
+          gets the same fail-safe runner the CI workflow would pick for itself.
 
-          Hosted-only repos pass '["ubuntu-latest"]'. This is what closes the
-          "hosted-only CI" gap: `uses:` cannot be an expression, so the CI
-          workflow is fixed — but its RUNNER is now a caller decision, which is
-          all a hosted-only repo actually needed.
+          Self-hosted repos pass their label set. This is what closes the
+          runner-choice gap: `uses:` cannot be an expression, so the CI
+          workflow is fixed — but its RUNNER is a caller decision, which is all
+          a repo with a runner preference actually needed.
         required: false
         type: string
-        default: '["self-hosted","Linux","X64","spartan-cpu"]'
+        default: '["ubuntu-latest"]'
     secrets:
       # Declared, NOT inherited. `secrets: inherit` forwards EVERY secret the
       # calling repo holds into the CI jobs — pytest-matrix.yml's own header

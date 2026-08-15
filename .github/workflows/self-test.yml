@@ -34,7 +34,11 @@ jobs:
     # "should keep asserting a dead rule" are different questions, and this is
     # the org repo that DEFINES the rule — a stale mandate stated as current
     # here is the one most likely to be read as authoritative and copied out.
-    runs-on: [self-hosted, Linux, X64, spartan-cpu]
+    # Moved off `spartan-cpu` 2026-08-15, when all four carriers of that label
+    # were offline and this job — the org repo's OWN gate — was queuing forever
+    # like everyone else's. A gate that cannot run is not a gate; hosted is
+    # slower and always there.
+    runs-on: [ubuntu-latest]
     steps:
       # FORK GUARD — MUST BE THE FIRST STEP, AHEAD OF actions/checkout, which is
       # what first puts fork-authored content on the node. Rationale, the two

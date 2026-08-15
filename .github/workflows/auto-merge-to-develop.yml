@@ -45,16 +45,19 @@ on:
         description: >-
           Runner label set for this job, as a JSON ARRAY STRING (it is consumed
           by fromJSON). Defaults to the Spartan pool, i.e. exactly the value
-          hard-coded here before this input existed -- so a caller that passes
-          nothing lands on the same runner it always did. Override it to move a
-          single repository off Spartan without touching any other consumer.
+          hard-coded here before this input existed. DEFAULTS TO GITHUB-HOSTED
+          as of 2026-08-15: the previous default named the Spartan pool, all
+          four of whose runners were offline that morning, so a caller passing
+          nothing requested a label no online machine served. Pass your own
+          label set to prefer self-hosted hardware.
           MUST be a JSON string, not a YAML list: a YAML list decodes to
           something fromJSON rejects, and the resulting label mismatch makes
           the job QUEUE FOREVER rather than fail, which is indistinguishable
-          from "still waiting" in the run list.
+          from "still waiting" in the run list -- the same shape the offline
+          pool produced, reached by a different route.
         type: string
         required: false
-        default: '["self-hosted","Linux","X64","spartan-cpu"]'
+        default: '["ubuntu-latest"]'
       dry_run:
         description: >-
           Report what would be merged/dispatched without doing it.
