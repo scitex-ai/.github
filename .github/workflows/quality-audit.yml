@@ -38,6 +38,29 @@ on:
         type: string
         required: false
         default: '["ubuntu-latest"]'
+      scitex_dev_version:
+        description: >-
+          PEP 440 specifier for scitex-dev, which supplies THE RULE CORPUS this
+          job grades against. PINNED BY DEFAULT, because for an audit gate the
+          corpus IS the definition of passing: an unpinned install lets the
+          pass/fail criterion change under every caller with ZERO DIFF in their
+          repository. That is not hypothetical. scitex-hub measured it on
+          2026-07-28: the IDENTICAL tree fa16e8eb4 audited GREEN at
+          2026-07-27T15:32Z and RED WITH 170 ERRORS at 2026-07-28T04:17Z,
+          because scitex-dev 0.38.0 was published in between. Nobody could tell
+          "we regressed" from "the corpus moved", and bisection was silently
+          defeated -- the tree under test never changed.
+          The consequence runs the other way too: whoever cuts a scitex-dev
+          release redefines green for every caller at once, which is far more
+          blast radius than an unconstrained `pip install` should carry.
+          So corpus bumps land HERE, as a reviewable one-line change, instead of
+          arriving as a side effect of someone else's release timing.
+          Callers may override to trial a newer corpus before it is adopted
+          org-wide. An EMPTY string restores the old unpinned behaviour and is
+          deliberately NOT the default.
+        type: string
+        required: false
+        default: '==0.49.3'
 
 jobs:
   audit:
@@ -72,7 +95,10 @@ jobs:
           uv pip install --python .venv/bin/python -e ".[all,dev]" \
             || uv pip install --python .venv/bin/python -e ".[dev]" \
             || uv pip install --python .venv/bin/python -e .
-          uv pip install --python .venv/bin/python scitex-dev
+          # PINNED — see the `scitex_dev_version` input for why an audit gate
+          # must not float its own rule corpus. Quoted as one argument so the
+          # specifier's `==` reaches pip rather than the shell.
+          uv pip install --python .venv/bin/python "scitex-dev${{ inputs.scitex_dev_version }}"
           # .venv/bin on PATH so audit-all's spawned `scitex-dev` subcommands resolve.
           export PATH="$PWD/.venv/bin:$PATH"
           DIST=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['name'])")
