@@ -137,23 +137,83 @@ jobs:
             # which is incidental, not a designed guard.
             has_label=$(gh pr view "$pr" --repo "$REPO" --json labels --jq '[.labels[].name] | index("automerge-ok") != null' 2>/dev/null || echo false)
             [ "$has_label" = "true" ] || { echo "skip #$pr (no automerge-ok label — opt-in required)"; continue; }
-            pending=$(gh pr view "$pr" --repo "$REPO" --json statusCheckRollup --jq '
-              [ .statusCheckRollup[]
+            # GREENNESS IS THREE-VALUED: pass / fail / NOT-YET-KNOWN.
+            #
+            # The previous filter ended in `and . != ""`, and that trailing
+            # clause DISCARDED exactly the checks that must block a merge.
+            # A CheckRun that has not finished carries `conclusion: null`
+            # and has no `.state`, so `(.conclusion // .state // "")`
+            # collapsed it to "" and the `select` dropped it from the
+            # count. `.status` — the only field that says QUEUED or
+            # IN_PROGRESS — was never consulted at all. Net effect: a PR
+            # whose checks were ALL still queued reported zero pending and
+            # was merged having been tested by nothing.
+            #
+            # A queued check is not a passing check. It is an absence of
+            # evidence, and absence of evidence is not evidence of green.
+            #
+            # One call, two numbers: n_total is the non-advisory check
+            # population, n_bad is everything in it that is not a settled
+            # pass. The jq stays a pure projection; all judgement is in
+            # shell, where it is readable.
+            counts=$(gh pr view "$pr" --repo "$REPO" --json statusCheckRollup --jq '
+              [ (.statusCheckRollup // [])[]
                 | select(((.name // .context // "") | ascii_downcase | test("codecov|readthedocs")) | not)
-                | (.conclusion // .state // "")
-                | select(. != "SUCCESS" and . != "NEUTRAL" and . != "SKIPPED" and . != "") ] | length' 2>/dev/null || echo 1)
-            if [ "$pending" = "0" ]; then
-              if [ "$DRY_RUN" = "true" ]; then
-                echo "DRY RUN: would merge #$pr -> develop"
-                merges=$((merges + 1))
-              elif gh pr merge "$pr" --repo "$REPO" --merge --admin --delete-branch; then
-                echo "MERGED #$pr -> develop"
-                merges=$((merges + 1))
-              else
-                echo "blocked #$pr"
-              fi
+                | ((((.status // "") | ascii_upcase)) as $s
+                   | if ($s != "" and $s != "COMPLETED")
+                     then "NOT_COMPLETED"
+                     else ((.conclusion // .state // "UNKNOWN") | ascii_upcase)
+                     end)
+              ] as $phases
+              | [ ($phases | length),
+                  ($phases | map(select(. != "SUCCESS" and . != "NEUTRAL" and . != "SKIPPED")) | length) ]
+              | @tsv' 2>/dev/null || printf 'ERR\tERR\n')
+
+            # Split on the single tab WITHOUT `read`: with IFS=$'\t', read
+            # collapses runs of tabs and shifts columns left the moment a
+            # field is empty. Parameter expansion cannot do that.
+            tab=$(printf '\t')
+            n_total=${counts%%"$tab"*}
+            n_bad=${counts##*"$tab"}
+
+            # UNREADABLE IS ITS OWN VERDICT, not a zero.
+            #
+            # Both refuse the merge, so the BEHAVIOUR would be right either
+            # way — but "I measured zero checks" and "I could not read the
+            # check list" are different findings, and only the first one
+            # means a human should consider merging deliberately. Folding
+            # the second into the first prints a confident sentence about a
+            # measurement that never happened, which is the same
+            # unknown-rendered-as-a-definite-answer this whole block exists
+            # to remove. Keep the three states separate all the way to the
+            # log line.
+            unreadable=0
+            case "$n_total" in ''|*[!0-9]*) unreadable=1 ;; esac
+            case "$n_bad"   in ''|*[!0-9]*) unreadable=1 ;; esac
+
+            if [ "$unreadable" -eq 1 ]; then
+              echo "::warning::#$pr — could NOT READ its check list (rollup query returned '$counts'). Not merging. This is an UNKNOWN, not a measured zero: do not read it as 'this PR has no checks'."
+              continue
+            fi
+
+            if [ "$n_total" -eq 0 ]; then
+              echo "::warning::#$pr has NO non-advisory checks at all — nothing has tested it. Not merging: absence of evidence is not evidence of green. If this PR genuinely needs no CI, it needs a deliberate human merge."
+              continue
+            fi
+
+            if [ "$n_bad" -gt 0 ]; then
+              echo "PR #$pr is not green — skip ($n_bad of $n_total check(s) failing or not yet known). NOT-YET-KNOWN IS A REFUSAL, NOT A PASS: a queued check has tested nothing."
+              continue
+            fi
+
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "DRY RUN: would merge #$pr -> develop ($n_total check(s) all green)"
+              merges=$((merges + 1))
+            elif gh pr merge "$pr" --repo "$REPO" --merge --admin --delete-branch; then
+              echo "MERGED #$pr -> develop ($n_total check(s) all green)"
+              merges=$((merges + 1))
             else
-              echo "PR #$pr not green ($pending) — skip"
+              echo "blocked #$pr"
             fi
           done
 
