@@ -167,7 +167,7 @@ jobs:
               ] as $phases
               | [ ($phases | length),
                   ($phases | map(select(. != "SUCCESS" and . != "NEUTRAL" and . != "SKIPPED")) | length) ]
-              | @tsv' 2>/dev/null || printf '1\t1\n')
+              | @tsv' 2>/dev/null || printf 'ERR\tERR\n')
 
             # Split on the single tab WITHOUT `read`: with IFS=$'\t', read
             # collapses runs of tabs and shifts columns left the moment a
@@ -175,10 +175,26 @@ jobs:
             tab=$(printf '\t')
             n_total=${counts%%"$tab"*}
             n_bad=${counts##*"$tab"}
-            # Fail CLOSED on anything unparseable — a malformed count must
-            # never read as zero-problems.
-            case "$n_total" in ''|*[!0-9]*) n_total=0 ;; esac
-            case "$n_bad"   in ''|*[!0-9]*) n_bad=1 ;; esac
+
+            # UNREADABLE IS ITS OWN VERDICT, not a zero.
+            #
+            # Both refuse the merge, so the BEHAVIOUR would be right either
+            # way — but "I measured zero checks" and "I could not read the
+            # check list" are different findings, and only the first one
+            # means a human should consider merging deliberately. Folding
+            # the second into the first prints a confident sentence about a
+            # measurement that never happened, which is the same
+            # unknown-rendered-as-a-definite-answer this whole block exists
+            # to remove. Keep the three states separate all the way to the
+            # log line.
+            unreadable=0
+            case "$n_total" in ''|*[!0-9]*) unreadable=1 ;; esac
+            case "$n_bad"   in ''|*[!0-9]*) unreadable=1 ;; esac
+
+            if [ "$unreadable" -eq 1 ]; then
+              echo "::warning::#$pr — could NOT READ its check list (rollup query returned '$counts'). Not merging. This is an UNKNOWN, not a measured zero: do not read it as 'this PR has no checks'."
+              continue
+            fi
 
             if [ "$n_total" -eq 0 ]; then
               echo "::warning::#$pr has NO non-advisory checks at all — nothing has tested it. Not merging: absence of evidence is not evidence of green. If this PR genuinely needs no CI, it needs a deliberate human merge."
