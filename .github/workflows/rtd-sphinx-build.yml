@@ -69,12 +69,81 @@ on:
         type: boolean
         required: false
         default: true
+      dependency_group:
+        description: >-
+          PEP 735 dependency-group holding the docs requirements, installed
+          with `uv pip install --group`. Leave empty (the default) to keep the
+          `.[docs]` EXTRA path.
+          REQUIRED FOR ADOPTION BY PEP 735 REPOS, not a convenience. Measured
+          on scitex-ai/scitex-app 2026-08-18: it declares docs under
+          `[dependency-groups]`, so `-e ".[docs]"` matches nothing and the job
+          died at `sphinx-build: No such file or directory`, exit 127 —
+          `rtd-sphinx-build / docs-sphinx` FAILURE beside its own legacy
+          `sphinx` SUCCESS in the same run. The `||` fallback chain below does
+          NOT catch it: uv treats an unknown extra as a WARNING and exits 0, so
+          nothing downstream ever fires. Any repo on the modern packaging
+          spelling inherits this.
+        type: string
+        required: false
+        default: ''
+      python_version:
+        description: >-
+          Interpreter for the docs venv. Default 3.12 preserves today's
+          behaviour. Callers whose `.readthedocs.yaml` pins a different
+          `build.tools.python` should pass the SAME value here, so the CI
+          smoke build and the RTD build use one interpreter — otherwise this
+          gate is green against a Python the published docs are never built
+          with.
+        type: string
+        required: false
+        default: '3.12'
+      fail_on_warning:
+        description: >-
+          Pass `-W` to sphinx-build, turning warnings into errors. Default
+          false preserves today's behaviour. Leaves that run `-W` on
+          pull_request CANNOT convert to this reusable without it: doing so
+          silently WEAKENS their docs gate, which is the direction nobody
+          re-checks.
+        type: boolean
+        required: false
+        default: false
+      upload_artifact:
+        description: >-
+          Upload the built HTML as an artifact so the CALLER can vendor and
+          commit it in its own follow-on job.
+          This exists because the reusable is BUILD-ONLY while ~30 leaves are
+          BUILD + PUBLISH: they copy `docs/sphinx/_build/html` into
+          `src/<pkg>/_sphinx_html` and commit it back. That bundle is NOT a
+          build artifact — hatch packages `src/<pkg>` wholesale, so it SHIPS
+          INSIDE THE WHEEL, and a leaf converted to a bare `uses:` today would
+          silently FREEZE its users' documentation while CI stayed green.
+          Deliberately an ARTIFACT rather than a `commit_back` input: each
+          caller then pushes under its OWN `contents: write`, which keeps
+          git-push blast radius out of a workflow thirty repositories call,
+          and avoids a second build. figrecipe and scitex-scholar reached that
+          preference independently, for the same reason.
+        type: boolean
+        required: false
+        default: false
+      artifact_name:
+        description: Name for the uploaded HTML artifact (see upload_artifact).
+        type: string
+        required: false
+        default: sphinx-html
+    outputs:
+      html_dir:
+        description: >-
+          Repo-relative directory holding the built HTML, for a caller that
+          downloads the artifact and needs to know where it came from.
+        value: ${{ jobs.docs-sphinx.outputs.html_dir }}
 
 jobs:
   docs-sphinx:
     name: docs-sphinx
     runs-on: ${{ fromJSON(inputs.runs_on) }}
     timeout-minutes: 15
+    outputs:
+      html_dir: ${{ steps.build.outputs.html_dir }}
     steps:
       # FORK GUARD — MUST BE THE FIRST STEP, AHEAD OF actions/checkout, which is
       # what first puts fork-authored content on the node. Rationale, the two
@@ -101,9 +170,13 @@ jobs:
         with:
           cache-dependency-glob: pyproject.toml
       - name: Build sphinx HTML (satisfies PS-122; RTD bundle stays fresh)
+        id: build
         env:
           DOCS_DIR: ${{ inputs.docs_dir }}
           DOCS_REQUIRED: ${{ inputs.required }}
+          DOCS_GROUP: ${{ inputs.dependency_group }}
+          PY_VERSION: ${{ inputs.python_version }}
+          FAIL_ON_WARNING: ${{ inputs.fail_on_warning }}
         run: |
           set -euo pipefail
           # The caller's docs_dir is probed FIRST, then the legacy layouts.
@@ -134,11 +207,58 @@ jobs:
             exit 1
           fi
           echo "found sphinx conf.py at $CONF"
-          uv venv --python 3.12 .venv
-          uv pip install --python .venv/bin/python -e ".[docs]" \
-            || uv pip install --python .venv/bin/python -e ".[all,dev]" \
-            || { uv pip install --python .venv/bin/python -e .; uv pip install --python .venv/bin/python sphinx; }
+          uv venv --python "$PY_VERSION" .venv
+          if [ -n "$DOCS_GROUP" ]; then
+            # PEP 735 dependency group. No `||` chain: the caller named this
+            # group explicitly, so a failure here is a real defect in the
+            # caller's pyproject and must be reported as one, not papered over.
+            uv pip install --python .venv/bin/python -e . --group "$DOCS_GROUP"
+          else
+            uv pip install --python .venv/bin/python -e ".[docs]" \
+              || uv pip install --python .venv/bin/python -e ".[all,dev]" \
+              || { uv pip install --python .venv/bin/python -e .; uv pip install --python .venv/bin/python sphinx; }
+          fi
+          # THE FALLBACK CHAIN ABOVE CANNOT BE TRUSTED TO HAVE WORKED, and this
+          # check is why the `dependency_group` input alone is not the whole
+          # fix. `uv pip install -e ".[docs]"` against a package with no `docs`
+          # EXTRA emits `warning: The package `<pkg>` does not have an extra
+          # named `docs`` and EXITS 0 — so `||` never fires, nothing installs
+          # sphinx, and the failure surfaces three lines later as a bare
+          # `No such file or directory` naming a path instead of a cause.
+          # Measured on scitex-ai/scitex-app 2026-08-18 (exit 127).
+          if [ ! -x .venv/bin/sphinx-build ]; then
+            echo "::error title=sphinx not installed::the docs dependencies did not install sphinx, so there is nothing to build with."
+            echo "::error::Checked for .venv/bin/sphinx-build after installing, and it is absent."
+            if [ -n "$DOCS_GROUP" ]; then
+              echo "::error::Installed with --group '$DOCS_GROUP'. Does that group list sphinx?"
+            else
+              echo "::error::Installed via the '.[docs]' extra path. If this repo declares docs as a PEP 735"
+              echo "::error::dependency GROUP rather than an extra, uv treats the missing extra as a WARNING"
+              echo "::error::and exits 0 — pass the group instead:"
+              echo "::error::    uses: scitex-ai/.github/.github/workflows/rtd-sphinx-build.yml@main"
+              echo "::error::    with:"
+              echo "::error::      dependency_group: docs"
+            fi
+            exit 1
+          fi
           CONFDIR=$(dirname "$CONF")
+          SPHINX_OPTS=""
+          if [ "$FAIL_ON_WARNING" = "true" ]; then
+            SPHINX_OPTS="-W"
+            echo "fail_on_warning: sphinx warnings are errors for this build"
+          fi
           # use the `sphinx-build` console script (not `python -m sphinx`) so the
           # auditor's PS-122 detects this workflow runs sphinx-build.
-          .venv/bin/sphinx-build -b html "$CONFDIR" "$CONFDIR/_build/html"
+          .venv/bin/sphinx-build $SPHINX_OPTS -b html "$CONFDIR" "$CONFDIR/_build/html"
+          echo "html_dir=$CONFDIR/_build/html" >> "$GITHUB_OUTPUT"
+
+      # The caller vendors and commits this itself, under its OWN
+      # `contents: write`. See the `upload_artifact` input for why the
+      # commit-back half is deliberately NOT done here.
+      - name: Upload built HTML for the caller to publish
+        if: ${{ inputs.upload_artifact && steps.build.outputs.html_dir != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ steps.build.outputs.html_dir }}
+          if-no-files-found: error
