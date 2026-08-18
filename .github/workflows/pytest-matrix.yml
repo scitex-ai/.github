@@ -20,6 +20,35 @@ name: pytest-matrix
 # emits a check name no other repo emits, which means a bespoke required-check
 # list for it forever. See the README's "Caller job ids" section.
 
+# ═══════════════════════════════════════════════════════════════════════════
+# BEFORE CONVERTING A LEAF TO CALL THIS: ENUMERATE WHICH OF THE LEAF'S
+# PUBLISHED CHECK CONTEXTS ARE REQUIRED BY BRANCH PROTECTION, ON EVERY
+# PROTECTED BRANCH.
+#
+#     gh api repos/{owner}/{repo}/branches/{branch}/protection
+#
+# Calling a reusable renames the context from `<job>` to
+# `<caller-job> / <callee-job>`, and the separator is STRUCTURAL — no caller
+# configuration can preserve a bare context, and the callee's job `name:` is
+# fixed here. Protection then waits forever on a check nothing will publish.
+# NO PR CAN FIX THAT; only an admin protection edit can.
+#
+# THIS CANNOT BE DETERMINED FROM THE WORKFLOW FILES. Measured 2026-08-18:
+# `audit` is REQUIRED on figrecipe and NOT required on scitex-app, from files
+# that look identical. Four repos checked; three share one protection set and
+# the fourth differs on both branches AND between its own two branches — so it
+# cannot be assumed from a sibling repo either.
+#
+# The safe order: add the caller ALONGSIDE the legacy workflow; read the check
+# names GitHub actually publishes from a throwaway PR; move the required
+# contexts while BOTH sets publish; only then delete the legacy file. At no
+# point is a required context unpublished.
+#
+# Two different mechanisms reach the same dead end — this rename, and an
+# install that leaves the leg deterministically red (see `dependency_group`).
+# The enumeration above catches both without knowing either.
+# ═══════════════════════════════════════════════════════════════════════════
+
 on:
   workflow_call:
     inputs:
@@ -73,6 +102,41 @@ on:
         type: string
         required: false
         default: '["ubuntu-latest"]'
+      dependency_group:
+        description: >-
+          PEP 735 dependency-group holding the test requirements, installed
+          with `uv pip install --group`. Leave empty (the default) to keep the
+          `.[all,dev]` EXTRAS path.
+
+          REQUIRED FOR ADOPTION BY PEP 735 REPOS, and this one lands on the
+          contexts branch protection requires — it is not a docs-only
+          convenience. Measured on scitex-ai/scitex-app 2026-08-18: it declares
+          `all` as an extra but `dev` as a GROUP, with pytest-cov inside it.
+          Both bracketed arms of the install chain fail, the chain lands on a
+          bare `-e .` with no test dependencies, AND THE STEP EXITS 0. The
+          failure resurfaced two steps later as `unrecognized arguments:
+          --cov=...`, exit 4 — naming the wrong subsystem entirely.
+
+          Third instance of ONE unhandled packaging idiom: PS-210's
+          `_extras_index` reads `project.optional-dependencies.dev` only,
+          rtd-sphinx-build installs `.[docs]`, and this. PEP 735 is the modern
+          spelling, so every repo that adopts it inherits all three.
+
+          SET ALONGSIDE THE RUNTIME EXTRA, NOT INSTEAD OF IT. When this is
+          non-empty the install becomes `-e ".[all]" --group <name>`: `[all]`
+          is the RUNTIME extra, the group is the TOOLCHAIN, and they are
+          orthogonal. scitex-app's release workflow has run that exact shape in
+          production since before this input existed.
+
+          AND NOTE WHY THE VERIFY STEP BELOW IS NOT OPTIONAL EVEN HERE: pip
+          WARNS about an unknown extra and STILL EXITS 0, so a single install
+          with no fallback chain degrades silently on pip's own semantics. The
+          `||` chain makes that worse; it does not create it. Dropping the
+          chain is necessary and not sufficient — verify the toolchain is
+          actually present afterwards.
+        type: string
+        required: false
+        default: ''
 
     # Declared so a caller can pass this ONE secret explicitly instead of
     # `secrets: inherit`, which forwards EVERY secret the calling repo holds
@@ -192,6 +256,8 @@ jobs:
           # so later steps resolve uv without needing this variable themselves.
           RUNNER_TOOL_CACHE: /tmp/scitex-ci-runner-work/toolcache/${{ runner.name }}
       - name: Install (.[all,dev]) + pytest
+        env:
+          DEPENDENCY_GROUP: ${{ inputs.dependency_group }}
         run: |
           set -euo pipefail
           # --seed puts pip/setuptools/wheel IN the venv. A bare `uv venv`
@@ -204,9 +270,66 @@ jobs:
           # the production `pip_install_user_app` argv shape and went red
           # on exactly this.
           uv venv --seed --python ${{ matrix.python-version }} .venv
-          uv pip install --python .venv/bin/python -e ".[all,dev]" \
-            || uv pip install --python .venv/bin/python -e ".[dev]" \
-            || uv pip install --python .venv/bin/python -e .
+          if [ -n "${DEPENDENCY_GROUP}" ]; then
+            # THE EXTRA AND THE GROUP ARE ORTHOGONAL — `[all]` is the RUNTIME
+            # extra, the group is the TOOLCHAIN. This is `.[all]` AND
+            # `--group`, not one instead of the other. Corrected from an
+            # either/or first draft by scitex-app, whose own release workflow
+            # has been running exactly this shape in production:
+            #
+            #     pip install -e ".[all]" --group dev
+            #
+            # An either/or would have installed the toolchain and dropped the
+            # runtime extras, so a suite needing an optional runtime dependency
+            # would fail for a reason no message names — the same silent
+            # substitution this whole step is being fixed for.
+            #
+            # NO `||` chain: the caller named this group explicitly, so a
+            # failure is a real defect in their pyproject and must be reported
+            # as one.
+            uv pip install --python .venv/bin/python -e ".[all]" --group "${DEPENDENCY_GROUP}"
+          else
+            uv pip install --python .venv/bin/python -e ".[all,dev]" \
+              || uv pip install --python .venv/bin/python -e ".[dev]" \
+              || uv pip install --python .venv/bin/python -e .
+          fi
+          # THE CHAIN ABOVE CONVERTS A HARD FAILURE INTO A WRONG SUCCESS, and
+          # that is why this check exists rather than only the input.
+          #
+          # Measured on scitex-ai/scitex-app 2026-08-18: it declares `all` as an
+          # EXTRA but `dev` as a PEP 735 GROUP, with pytest-cov inside it. Both
+          # bracketed arms fail, the chain lands on a bare `-e .` that installs
+          # NO test dependencies, AND THE STEP EXITS 0. The truth surfaced two
+          # steps later as
+          #
+          #     python -m pytest: error: unrecognized arguments: --cov=src/...
+          #     exit code 4
+          #
+          # — an argument-parsing error naming nothing about dependencies.
+          # Nobody debugging argparse looks at their pyproject. "I could not
+          # install the dev group" travelled downstream as "installed fine".
+          #
+          # It cost that repo a branch-protection manoeuvre: had it reached the
+          # stage of pointing protection at these contexts on the evidence
+          # available before this failure, develop AND main would have been
+          # aimed at three checks that can never pass on that repo —
+          # deterministically red forever, every PR blocked, no exit without a
+          # repo-admin edit. A throwaway probe branch caught it.
+          if [ ! -x .venv/bin/pytest ]; then
+            echo "::error title=pytest not installed::the dependency install did not provide pytest, so there is nothing to run the suite with."
+            echo "::error::Checked for .venv/bin/pytest after installing, and it is absent."
+            if [ -n "${DEPENDENCY_GROUP}" ]; then
+              echo "::error::Installed with --group '${DEPENDENCY_GROUP}'. Does that group list pytest?"
+            else
+              echo "::error::Installed via the '.[all,dev]' extras path. If this repo declares dev as a"
+              echo "::error::PEP 735 dependency GROUP rather than an extra, every bracketed arm fails and"
+              echo "::error::the fallback silently installs no test dependencies. Pass the group instead:"
+              echo "::error::    uses: scitex-ai/.github/.github/workflows/pytest-matrix.yml@main"
+              echo "::error::    with:"
+              echo "::error::      dependency_group: dev"
+            fi
+            exit 1
+          fi
           # pytest-xdist is installed EXPLICITLY, not relied on transitively.
           # scitex-dev declares it, but only under its OWN [dev] extra — and a
           # package depending on plain `scitex-dev` does NOT get that extra, so

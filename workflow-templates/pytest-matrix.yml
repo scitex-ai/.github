@@ -18,6 +18,34 @@ name: tests
 # `test`, `call`, `ci`, … and that repo emits `test / pytest-matrix-on-ubuntu-py3.11`
 # instead — a bespoke protection list for that repo, forever, and a merge that
 # blocks silently until someone hand-reads the new names off a real PR.
+#
+# ─────────────────────────────────────────────────────────────────────────
+# AND BEFORE YOU DELETE THE LEGACY WORKFLOW THIS STUB REPLACES: ENUMERATE
+# WHICH OF ITS CONTEXTS ARE REQUIRED, ON EVERY PROTECTED BRANCH.
+#
+#     gh api repos/{owner}/{repo}/branches/{branch}/protection
+#
+# The rename above is not only a cosmetic mismatch — if the OLD bare context
+# is REQUIRED, nothing will ever publish it again once the legacy file is
+# gone. The separator in `<caller-job> / <callee-job>` is structural, so no
+# caller configuration can restore the bare name. Protection then waits
+# forever and NO PR CAN FIX IT; only an admin protection edit can.
+#
+# THIS IS NOT VISIBLE FROM THE WORKFLOW FILES. Measured 2026-08-18: `audit`
+# is required on figrecipe and not on scitex-app, from files that look
+# identical; and figrecipe's own develop and main protection sets differ from
+# each other. Neither a sibling repo nor your own other branch settles it.
+#
+# SAFE ORDER: add this caller ALONGSIDE the legacy workflow (both run,
+# nothing required changes) → open a throwaway PR and READ the names GitHub
+# actually publishes, rather than deriving them from this comment → update
+# the required contexts while BOTH sets still publish → only then delete the
+# legacy file. At no point is a required context unpublished, and every step
+# is reversible.
+#
+# scitex-app ran that order on 2026-08-18 and its throwaway probe caught two
+# separate would-be-permanent deadlocks before either reached protection.
+# ─────────────────────────────────────────────────────────────────────────
 
 on:
   push:
