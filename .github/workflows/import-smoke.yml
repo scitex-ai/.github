@@ -30,6 +30,28 @@ on:
         type: string
         required: false
         default: '["ubuntu-latest"]'
+      console_script:
+        description: >-
+          Name of a [project.scripts] console script to assert resolves, e.g.
+          "sac". When set, the job additionally runs `.venv/bin/<name>
+          --version`.
+
+          WHY THIS IS WORTH A STEP OF ITS OWN. `import <pkg>` and "the console
+          script resolves" are DIFFERENT failures. Entry-point drift — a
+          renamed module or callable behind [project.scripts] — leaves the
+          import passing and breaks every caller that invokes the command,
+          which for containerised packages is the shape the runtime actually
+          uses. Nothing else in CI exercises it against a venv install.
+
+          A venv install DOES materialise entry-point scripts in .venv/bin,
+          unlike `pip install --target`, which does not — so this assertion is
+          meaningful here specifically.
+
+          Left empty by default so packages that ship no console script are
+          unaffected and nothing is asserted about them.
+        type: string
+        required: false
+        default: ''
 
 jobs:
   import-smoke:
@@ -64,3 +86,22 @@ jobs:
           uv pip install --python .venv/bin/python -e .
           PKG=$(basename "$(find src -maxdepth 1 -mindepth 1 -type d ! -name '*.egg-info' | sort | head -1)")
           .venv/bin/python -c "import importlib; importlib.import_module('$PKG'); print('import OK:', '$PKG')"
+
+      # A SEPARATE STEP, NOT A LINE APPENDED ABOVE, so its failure is
+      # attributable: "the package imports but its command is broken" and "the
+      # package does not import" are different diagnoses and should not share
+      # a red step.
+      - name: Console script resolves (${{ inputs.console_script }} --version)
+        if: inputs.console_script != ''
+        run: |
+          set -euo pipefail
+          SCRIPT=".venv/bin/${{ inputs.console_script }}"
+          # Check existence FIRST and say so plainly. Without this the failure
+          # is a bare "No such file or directory" from the shell, which reads
+          # as an infrastructure problem rather than as the [project.scripts]
+          # drift it actually is.
+          if [ ! -x "$SCRIPT" ]; then
+            echo "::error title=Console script missing::[project.scripts] declares '${{ inputs.console_script }}' but $SCRIPT does not exist after an editable install. The entry point is declared and not installable — check the module:callable target in pyproject.toml."
+            exit 1
+          fi
+          "$SCRIPT" --version
