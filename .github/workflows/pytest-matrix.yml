@@ -92,6 +92,19 @@ on:
           `_extras_index` reads `project.optional-dependencies.dev` only,
           rtd-sphinx-build installs `.[docs]`, and this. PEP 735 is the modern
           spelling, so every repo that adopts it inherits all three.
+
+          SET ALONGSIDE THE RUNTIME EXTRA, NOT INSTEAD OF IT. When this is
+          non-empty the install becomes `-e ".[all]" --group <name>`: `[all]`
+          is the RUNTIME extra, the group is the TOOLCHAIN, and they are
+          orthogonal. scitex-app's release workflow has run that exact shape in
+          production since before this input existed.
+
+          AND NOTE WHY THE VERIFY STEP BELOW IS NOT OPTIONAL EVEN HERE: pip
+          WARNS about an unknown extra and STILL EXITS 0, so a single install
+          with no fallback chain degrades silently on pip's own semantics. The
+          `||` chain makes that worse; it does not create it. Dropping the
+          chain is necessary and not sufficient — verify the toolchain is
+          actually present afterwards.
         type: string
         required: false
         default: ''
@@ -229,10 +242,23 @@ jobs:
           # on exactly this.
           uv venv --seed --python ${{ matrix.python-version }} .venv
           if [ -n "${DEPENDENCY_GROUP}" ]; then
-            # PEP 735 dependency group. NO `||` chain: the caller named this
-            # group explicitly, so a failure is a real defect in the caller's
-            # pyproject and must be reported as one.
-            uv pip install --python .venv/bin/python -e . --group "${DEPENDENCY_GROUP}"
+            # THE EXTRA AND THE GROUP ARE ORTHOGONAL — `[all]` is the RUNTIME
+            # extra, the group is the TOOLCHAIN. This is `.[all]` AND
+            # `--group`, not one instead of the other. Corrected from an
+            # either/or first draft by scitex-app, whose own release workflow
+            # has been running exactly this shape in production:
+            #
+            #     pip install -e ".[all]" --group dev
+            #
+            # An either/or would have installed the toolchain and dropped the
+            # runtime extras, so a suite needing an optional runtime dependency
+            # would fail for a reason no message names — the same silent
+            # substitution this whole step is being fixed for.
+            #
+            # NO `||` chain: the caller named this group explicitly, so a
+            # failure is a real defect in their pyproject and must be reported
+            # as one.
+            uv pip install --python .venv/bin/python -e ".[all]" --group "${DEPENDENCY_GROUP}"
           else
             uv pip install --python .venv/bin/python -e ".[all,dev]" \
               || uv pip install --python .venv/bin/python -e ".[dev]" \
