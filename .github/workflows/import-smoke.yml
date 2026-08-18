@@ -52,6 +52,35 @@ on:
         type: string
         required: false
         default: ''
+      uv_version:
+        description: >-
+          uv version for setup-uv, e.g. "0.11.29". Defaults to "latest", which
+          is setup-uv's own default, so a caller that passes nothing keeps
+          exactly the behaviour it has today.
+
+          WHY A CALLER WOULD PIN. An unpinned `latest` makes a CI result a
+          function of WALL-CLOCK TIME and of each runner's cache state: the
+          same commit passes on one node and fails on another, and a run that
+          was green yesterday goes red overnight with no diff. That is the
+          worst failure shape a gate can have, because the evidence points at
+          the change under test rather than at the toolchain underneath it.
+          scitex-agent-container hit this and pinned deliberately
+          (sac-ci-pin-uv-version-*).
+
+          WHY IT IS AN INPUT RATHER THAN A PIN HERE. Pinning centrally would
+          freeze uv for all 17+ consumers at once and make every bump a
+          coordinated migration; leaving it unpinned forces any repo that
+          needs determinism to keep a LOCAL COPY of this whole workflow, which
+          is the PS-231 duplication this file exists to remove. An input lets
+          one repo pin without touching the others — the same shape as
+          `runs_on`.
+
+          NOTE THIS DOES NOT PIN THE ACTION. `astral-sh/setup-uv@v7` above is
+          the action version; this input is the uv BINARY it installs. Both can
+          drift and only one of them is addressed here.
+        type: string
+        required: false
+        default: 'latest'
 
 jobs:
   import-smoke:
@@ -78,6 +107,10 @@ jobs:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v7
         with:
+          # Defaults to "latest", which is setup-uv's own default, so every
+          # caller that passes nothing keeps exactly today's behaviour. See
+          # the `uv_version` input for why a caller would want to pin.
+          version: ${{ inputs.uv_version }}
           cache-dependency-glob: pyproject.toml
       - name: Install (no extras) + import
         run: |
