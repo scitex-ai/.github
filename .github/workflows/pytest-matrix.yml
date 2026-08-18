@@ -20,6 +20,35 @@ name: pytest-matrix
 # emits a check name no other repo emits, which means a bespoke required-check
 # list for it forever. See the README's "Caller job ids" section.
 
+# ═══════════════════════════════════════════════════════════════════════════
+# BEFORE CONVERTING A LEAF TO CALL THIS: ENUMERATE WHICH OF THE LEAF'S
+# PUBLISHED CHECK CONTEXTS ARE REQUIRED BY BRANCH PROTECTION, ON EVERY
+# PROTECTED BRANCH.
+#
+#     gh api repos/{owner}/{repo}/branches/{branch}/protection
+#
+# Calling a reusable renames the context from `<job>` to
+# `<caller-job> / <callee-job>`, and the separator is STRUCTURAL — no caller
+# configuration can preserve a bare context, and the callee's job `name:` is
+# fixed here. Protection then waits forever on a check nothing will publish.
+# NO PR CAN FIX THAT; only an admin protection edit can.
+#
+# THIS CANNOT BE DETERMINED FROM THE WORKFLOW FILES. Measured 2026-08-18:
+# `audit` is REQUIRED on figrecipe and NOT required on scitex-app, from files
+# that look identical. Four repos checked; three share one protection set and
+# the fourth differs on both branches AND between its own two branches — so it
+# cannot be assumed from a sibling repo either.
+#
+# The safe order: add the caller ALONGSIDE the legacy workflow; read the check
+# names GitHub actually publishes from a throwaway PR; move the required
+# contexts while BOTH sets publish; only then delete the legacy file. At no
+# point is a required context unpublished.
+#
+# Two different mechanisms reach the same dead end — this rename, and an
+# install that leaves the leg deterministically red (see `dependency_group`).
+# The enumeration above catches both without knowing either.
+# ═══════════════════════════════════════════════════════════════════════════
+
 on:
   workflow_call:
     inputs:
