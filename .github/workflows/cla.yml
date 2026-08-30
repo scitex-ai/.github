@@ -73,7 +73,7 @@ jobs:
         with:
           path-to-signatures: "signatures/cla.json"
           path-to-document: "https://github.com/${{ github.repository }}/blob/${{ inputs.default_branch }}/CLA.md"
-          branch: "cla-signatures"
+          branch: "cla"
           allowlist: ${{ inputs.owner_allowlist }}
           custom-allsigned-prcomment: |
             Thank you for signing the SciTeX CLA. Your contribution can now be reviewed.
