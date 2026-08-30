@@ -74,6 +74,59 @@ on:
         required: false
         default: '["ubuntu-latest"]'
 
+      postgres:
+        description: >-
+          Start a `postgres:16` service container alongside this job and export
+          SCITEX_STORE_DSN pointing at it. DEFAULTS TO FALSE: a caller that
+          passes nothing starts no container, binds no port and gets no new
+          environment variable.
+
+          WHY AN INPUT IS THE ONLY PLACE THIS CAN LIVE. A job that calls a
+          reusable workflow accepts exactly nine keys — concurrency, if, name,
+          needs, permissions, secrets, strategy, uses, with — and `services` is
+          not one of them (json.schemastore.org/github-workflow.json,
+          definitions.reusableWorkflowCallJob.properties). So a caller cannot
+          attach a database to THIS job from any file in its own repository, by
+          any spelling. The consequence is what #42 named: packages are being
+          migrated onto PostgreSQL while the check that blocks their merges
+          cannot open a cluster. Measured on scitex-cards, where the three
+          `pytest-matrix` contexts ARE the required checks and the one workflow
+          that does start a postgres:16 is NOT required — so the gate certifies
+          the package against an environment its production never uses.
+
+          THE EMPTY-IMAGE MECHANISM IS DOCUMENTED, NOT ASSUMED. That was the
+          single unknown that stopped #42 from becoming a PR. GitHub's workflow
+          syntax reference says, under
+          `jobs.<job_id>.services.<service_id>.image`, verbatim:
+
+            "If `jobs.<job_id>.services.<service_id>.image` is assigned an empty
+            string, the service will not start. You can use this to set up
+            conditional services, similar to the following example."
+
+          and the example it gives is the same `&&`/`||` ternary used below.
+          Source: github/docs,
+          content/actions/reference/workflows-and-actions/workflow-syntax.md
+          line 1310, fetched 2026-08-30. Skipped, therefore — not started-idle,
+          and not an error.
+
+          `required: false`, and a `false` default rather than `true`, for the
+          same reason CODECOV_TOKEN is optional below. Enumerated 2026-08-30
+          across all 76 repositories in the org: 25 workflow files call this
+          reusable — 24 consumer repos plus this repo's own
+          promote-develop-to-main-on-tag.yml — and NOT ONE of them passes this
+          input. Requiring it would break all 25 at once, and defaulting it to
+          `true` would charge every one of them an image pull and a container
+          start on each of three matrix legs for a database they never open.
+
+          NOTE FOR REPOS THAT PROMOTE VIA promote-develop-to-main-on-tag.yml:
+          that reusable forwards `runs_on` to this one but has no passthrough
+          for `postgres`, so a repo whose CI runs through it cannot opt in until
+          a matching input is added there. Out of scope here, and stated so the
+          gap is not discovered by someone whose opt-in silently did nothing.
+        type: boolean
+        required: false
+        default: false
+
     # Declared so a caller can pass this ONE secret explicitly instead of
     # `secrets: inherit`, which forwards EVERY secret the calling repo holds
     # into these jobs. Same remedy PR #22 already shipped for cla.yml.
@@ -110,6 +163,53 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
+    # CONDITIONAL SERVICE. When `postgres` is false — which is every caller
+    # today — the image expression evaluates to the empty string and GitHub does
+    # not start the service at all: nothing is pulled, nothing runs, no port is
+    # bound. The docs line licensing that is quoted in full in the input's
+    # description above; it is the mechanism #42 refused to assume.
+    #
+    # ADDED TO THE EXISTING JOB ON PURPOSE. The alternative — a second, nearly
+    # identical reusable for database-needing repos — would emit a DIFFERENT
+    # check name, so every opting-in repo would need its branch protection
+    # rewritten, and it would plant a fresh instance of exactly the workflow
+    # duplication PS-231 exists to catch. One job, one check name, one file.
+    services:
+      postgres:
+        image: ${{ inputs.postgres && 'postgres:16' || '' }}
+        env:
+          POSTGRES_USER: scitex
+          POSTGRES_PASSWORD: scitex
+          POSTGRES_DB: scitex
+        ports:
+          # The steps below run ON the runner, not inside a container, so the
+          # service is NOT reachable by its service name and the port has to be
+          # published to the host. A skipped service publishes nothing.
+          #
+          # 5432, not the fleet's 55432: this is a throwaway cluster whose only
+          # client is the DSN written below, and 5432:5432 is the one mapping
+          # this org has actually run green (scitex-cards'
+          # postgres-backend-on-ubuntu-latest.yml). 55432 is the port of the
+          # per-host fleet instances, which this container is not one of.
+          #
+          # A FIXED HOST PORT IS A SHARED RESOURCE, same class as the shared
+          # $HOME and the shared tool cache documented below. On the self-hosted
+          # pool, where many runners share one machine, two concurrent jobs both
+          # opting in would contend for it. Callers that opt in should pass
+          # `runs_on: '["ubuntu-latest"]'`, where the runner is a fresh VM and
+          # the port is theirs alone. Stated rather than solved: no caller opts
+          # in yet, so this has never been observed, and inventing an untested
+          # dynamic-port mechanism is the thing #42 declined to do.
+          - 5432:5432
+        # Without a health check the steps race the server's startup and fail
+        # with a connection error that reads exactly like a real defect. GitHub
+        # holds the job's steps until the service reports healthy, which is why
+        # nothing below has to wait for it.
+        options: >-
+          --health-cmd "pg_isready -U scitex"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       # FORK GUARD — MUST BE THE FIRST STEP, AHEAD OF actions/checkout, which is
       # what first puts fork-authored content on the node. Rationale, the two
@@ -191,6 +291,46 @@ jobs:
           # to job-level `env`. setup-uv writes the resolved path to $GITHUB_PATH,
           # so later steps resolve uv without needing this variable themselves.
           RUNNER_TOOL_CACHE: /tmp/scitex-ci-runner-work/toolcache/${{ runner.name }}
+      # A GATED STEP, NOT A JOB-LEVEL `env:` WITH A TERNARY, and the difference
+      # is the entire reason this is a step. Writing
+      # `SCITEX_STORE_DSN: ${{ inputs.postgres && '...' || '' }}` would export
+      # the NAME WITH AN EMPTY VALUE into every step of all 25 opt-out call
+      # sites, and set-but-empty is not the same as unset. A reader spelled
+      # `os.environ.get(NAME)` cannot tell the difference; one spelled
+      # `NAME in os.environ` or `os.environ.get(NAME) is not None` flips
+      # behaviour. scitex-dev's own resolver happens to be the safe spelling
+      # (store/_host.py: `override = os.environ.get(STORE_DSN_ENV)`, then
+      # `if override:`), but that is one consumer out of 24 repositories' worth
+      # of code and the rest were not audited. A step whose `if` is false never
+      # runs, so it defines nothing — the opt-out path is unchanged BY CONSTRUCTION
+      # rather than by survey, which is the standard this file's other defaults
+      # are held to.
+      #
+      # THE VARIABLE NAME IS THE FLEET'S EXISTING ONE. SCITEX_STORE_DSN is the
+      # canonical override declared in scitex-dev (store/_host.py:
+      # `STORE_DSN_ENV`), whose documented resolution is "1. SCITEX_STORE_DSN if
+      # set — an explicit override wins outright." scitex-dev's own test
+      # workflow already sets it in exactly this shape. Nothing here invents a
+      # name.
+      #
+      # WHAT THIS DOES NOT DO, so nobody reads it as more than it is: it does
+      # not make a Postgres-needing test FAIL when the server is missing. A
+      # suite whose fixtures skip on an absent DSN still skips when a caller
+      # leaves this input off, and a skipped test is indistinguishable from a
+      # passing one in a green summary — the point scitex-cards'
+      # postgres-backend-on-ubuntu-latest.yml makes at length. That repo also
+      # gates its fixtures on its OWN name, SCITEX_CARDS_TEST_PG_DSN, so
+      # `postgres: true` alone will not flip them; teaching those fixtures the
+      # canonical variable is a change in that repository, not this one.
+      - name: Point the store at the service container
+        if: inputs.postgres
+        run: |
+          set -euo pipefail
+          # 127.0.0.1, not `postgres`: the service's hostname resolves only for
+          # jobs that themselves run in a container, and this job runs directly
+          # on the runner. The published port above is what makes it reachable.
+          echo "SCITEX_STORE_DSN=postgresql://scitex:scitex@127.0.0.1:5432/scitex" \
+            >> "$GITHUB_ENV"
       - name: Install (.[all,dev]) + pytest
         run: |
           set -euo pipefail
