@@ -1,4 +1,6 @@
-"""Every self-hosted job that checks out a pull request must refuse fork code.
+"""Every self-hosted job that checks out a pull request must keep fork code
+off self-hosted infrastructure — by ROUTING it away, not by refusing to run
+it at all.
 
 These jobs run BARE on shared University of Melbourne HPC nodes — no
 container, no overlay, two concurrent jobs sharing one ``$HOME`` (measured by
@@ -7,7 +9,7 @@ scitex-hpc on the CI supervisor allocation, job 28161762, spartan-bm062). So
 request's own build-backend hooks on university hardware, and for
 ``rtd-sphinx-build`` the fork's ``conf.py`` is executed as plain Python.
 
-Two operator mandates constrain the fix and they point in opposite
+Two operator mandates originally constrained the fix and pointed in opposite
 directions:
 
     2026-07-14  「PR用のテストとgithub側のランナーというのは本当にもう一切
@@ -16,8 +18,37 @@ directions:
     2026-07-30  「大学の資源を外部の人にも使わせる形になったら一発でアウト」
                 — external people using university resources is unacceptable.
 
-Together they leave no runner for fork-authored code, so a fork PR is not
-re-routed anywhere: it is REFUSED, before checkout.
+Together they used to leave no runner for fork-authored code, so a fork PR
+was not re-routed anywhere: it was REFUSED, before checkout, unconditionally
+— see git history for that version of this file and of the workflows.
+
+THAT FIRST MANDATE WAS REPEALED, TWICE, BEFORE THE GUARD CAUGHT UP (see the
+runner-default tests below for the same correction applied to ``runs_on``):
+2026-07-31 ("hosted is the DEFAULT CHOICE for new work... not a blanket
+policy") and 2026-08-05 (constitution: hosted is "a reasonable fallback").
+The second mandate — never let external code touch university/self-hosted
+hardware — was never repealed and still holds in full.
+
+With only the second mandate standing, refusing fork PRs outright was no
+longer necessary NOR correct: it left real external contributors blocked
+with a runner (``ubuntu-latest``) sitting right there, unused, satisfying
+the surviving mandate on its own. Measured 2026-08-31 on scitex-ai/scitex-io:
+two waiting, CLA-signed contributor PRs (#166, #164) died in 3-8 seconds on
+this exact guard, on every job, having never run a single test — the
+unconditional predicate did not distinguish "no runner exists" (true in
+2026-07) from "a safe runner exists and nothing routes to it" (true since).
+
+THE CURRENT DESIGN, as of the fix that added this paragraph: each guarded
+job's ``runs-on`` is now a CONDITIONAL expression — a fork-authored PR
+resolves to ``ubuntu-latest`` unconditionally; everything else resolves to
+exactly what the caller passed (``inputs.runs_on`` / ``inputs.runs-on-json``),
+self-hosted included, same as before. The guard step that used to be the ONLY
+line of defense is now a BACKSTOP: its predicate gained one more clause,
+``runner.environment == 'self-hosted'``, so it fires only if a fork PR
+somehow still lands on self-hosted despite the routing above (a caller
+override, a future edit that drops the ternary). Nothing fork-authored ever
+executes on self-hosted hardware either way — that half of the guard's intent
+is unchanged and is what the tests below still hold to the letter.
 
 WHICH WORKFLOWS ARE COVERED IS DERIVED, NOT LISTED. The suite reads every
 workflow, selects the jobs that (a) resolve to a self-hosted runner and
@@ -33,14 +64,16 @@ scitex-app), so no fork code runs there.
 WHAT THESE TESTS DO NOT CLAIM. For ``pull_request``, GitHub runs the
 workflow definition from the PR's own head, so a hostile fork can edit a
 CALLER's ci.yml to bypass these reusable workflows entirely and declare its
-own self-hosted job. The guard closes the DEFAULT path; the actual boundary
-is the fork-PR approval policy (``all_external_contributors``, measured on
-74/74 public scitex-ai repos, 2026-07-30) — a human click. Do not read a
-green run here as "forks cannot reach the pool".
+own self-hosted job. The guard (routing + backstop) closes the DEFAULT path;
+the actual boundary is the fork-PR approval policy
+(``first_time_contributors_new_to_github`` as of 2026-08-31, was
+``all_external_contributors``) — a human click. Do not read a green run here
+as "forks cannot reach the pool".
 
 Mutation-checked: moving the guard after ``actions/checkout``, deleting it
-from any one workflow, dropping the ``exit 1``, or relaxing the predicate to
-``head.repo.fork`` each turn at least one test red.
+from any one workflow, dropping the ``exit 1``, dropping the
+``runner.environment`` clause, relaxing the predicate to ``head.repo.fork``,
+or dropping the ``runs-on`` routing ternary each turn at least one test red.
 """
 
 from __future__ import annotations
@@ -54,16 +87,30 @@ import yaml
 _REPO = Path(__file__).resolve().parents[1]
 _WORKFLOW_DIR = _REPO / ".github" / "workflows"
 
-#: The one sanctioned predicate. Folded from the workflows' ``if: >-`` block,
-#: so newlines have already become single spaces by the time yaml hands it
-#: over. Pinned as one string on purpose: five copies of a predicate that
-#: drift apart is five different answers to "is this a fork?".
-_GUARD_IF = (
+#: The fork-identification half of the predicate, shared between the guard
+#: step's `if` and the `runs-on` routing ternary — one sanctioned answer to
+#: "is this a fork?", not two that can drift apart.
+_FORK_PREDICATE = (
     "github.event_name == 'pull_request' && "
     "github.event.pull_request.head.repo.full_name != github.repository"
 )
 
+#: The full guard-step predicate. Folded from the workflows' ``if: >-`` block,
+#: so newlines have already become single spaces by the time yaml hands it
+#: over. Pinned as one string on purpose: every copy of a predicate that
+#: drifts apart is a different answer to "is this a fork?". Since the
+#: `runs-on` routing ternary (below) now sends fork PRs to `ubuntu-latest`
+#: before this step ever runs, the guard fires only as a BACKSTOP — hence the
+#: added `runner.environment == 'self-hosted'` clause, which is false on the
+#: hosted runner that routing sent a fork PR to and true only if that routing
+#: somehow failed.
+_GUARD_IF = (
+    f"{_FORK_PREDICATE} && "
+    "runner.environment == 'self-hosted'"
+)
+
 _GUARD_NAME = "Refuse to run fork-authored code on self-hosted infrastructure"
+_ROUTED_LABEL = "ubuntu-latest"
 
 
 def _load(path: Path) -> dict:
@@ -208,6 +255,33 @@ def test_guard_predicate_is_the_sanctioned_one(
     normalised = " ".join(str(guard.get("if", "")).split())
     # Assert
     assert normalised == _GUARD_IF, f"{workflow}:{job_id} predicate drifted"
+
+
+@pytest.mark.parametrize(("workflow", "job_id", "job"), _TARGETS, ids=_IDS)
+def test_runs_on_routes_fork_prs_to_a_hosted_runner(
+    workflow: str, job_id: str, job: dict
+) -> None:
+    """The RUNNER SELECTION, not just the guard step, must exclude forks.
+
+    Every guarded job's ``runs-on`` is now a conditional expression: a
+    fork-authored PR resolves to ``ubuntu-latest`` regardless of what
+    ``inputs.runs_on`` / ``inputs.runs-on-json`` says, which is what lets the
+    guard step above fail CLOSED as a backstop instead of firing on every
+    fork PR. This pins the routing expression itself — the SAME fork
+    predicate (`_FORK_PREDICATE`) and an ``ubuntu-latest`` branch — so a
+    future edit that quietly drops the ternary and goes back to a bare
+    ``fromJSON(inputs.runs_on)`` is caught here, in CI on this repo, instead
+    of by a contributor's job dying in seconds again.
+    """
+    # Arrange
+    runs_on = " ".join(str(job.get("runs-on", "")).split())
+    # Act
+    routes_forks_to_hosted = _FORK_PREDICATE in runs_on and _ROUTED_LABEL in runs_on
+    # Assert
+    assert routes_forks_to_hosted, (
+        f"{workflow}:{job_id} runs-on does not conditionally route fork PRs "
+        f"to {_ROUTED_LABEL!r}: {runs_on!r}"
+    )
 
 
 @pytest.mark.parametrize(("workflow", "job_id", "job"), _TARGETS, ids=_IDS)
