@@ -41,10 +41,16 @@ jobs:
     runs-on: [ubuntu-latest]
     steps:
       # FORK GUARD — MUST BE THE FIRST STEP, AHEAD OF actions/checkout, which is
-      # what first puts fork-authored content on the node. Rationale, the two
-      # operator mandates it reconciles, and what it deliberately does NOT stop:
-      # README.md "Fork guard". Ordering and predicate are asserted in
-      # tests/test_fork_guard.py — do not reorder, do not reword the `if`.
+      # what first puts fork-authored content on the node. `runs-on` above is
+      # hardcoded ubuntu-latest (never self-hosted), so the added
+      # `runner.environment == 'self-hosted'` clause below is permanently
+      # false here and this step never fires — kept only so every copy of the
+      # guard in this repo carries the SAME predicate (see
+      # tests/test_fork_guard.py's own reasoning for why five/six drifting
+      # copies are five/six different answers to "is this a fork?"). A fork
+      # PR to THIS repo therefore now runs self-test the same as any other PR.
+      # Rationale and what this deliberately does NOT stop: README.md "Fork
+      # guard".
       #
       # This file is NOT a reusable workflow, so a fork PR to THIS repo carries
       # its own copy of this guard and can delete it. That is not a reason to
@@ -53,7 +59,8 @@ jobs:
       - name: Refuse to run fork-authored code on self-hosted infrastructure
         if: >-
           github.event_name == 'pull_request' &&
-          github.event.pull_request.head.repo.full_name != github.repository
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          runner.environment == 'self-hosted'
         run: |
           set -euo pipefail
           echo "::error title=Fork PR blocked::Fork-authored code is not run on the self-hosted Spartan pool."

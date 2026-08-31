@@ -78,18 +78,34 @@ on:
 jobs:
   audit:
     name: audit
-    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    # FORK-AUTHORED PRs ARE ROUTED TO ubuntu-latest HERE, UNCONDITIONALLY —
+    # never to `inputs.runs_on`, which may be self-hosted. Same fork
+    # predicate as the guard step below on purpose: one sanctioned answer to
+    # "is this a fork?", not two that can drift apart. Non-fork runs are
+    # unaffected — exactly `inputs.runs_on`, as before. The guard step is the
+    # BACKSTOP: it independently checks `runner.environment` and refuses
+    # checkout if this expression is ever wrong. See README.md "Fork guard"
+    # and tests/test_fork_guard.py.
+    runs-on: >-
+      ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
+          && fromJSON('["ubuntu-latest"]')
+          || fromJSON(inputs.runs_on) }}
     timeout-minutes: 15
     steps:
       # FORK GUARD — MUST BE THE FIRST STEP, AHEAD OF actions/checkout, which is
-      # what first puts fork-authored content on the node. Rationale, the two
-      # operator mandates it reconciles, and what it deliberately does NOT stop:
-      # README.md "Fork guard". Ordering and predicate are asserted in
-      # tests/test_fork_guard.py — do not reorder, do not reword the `if`.
+      # what first puts fork-authored content on the node. `runs-on` above
+      # already routes a fork-authored PR to ubuntu-latest, so this is now a
+      # BACKSTOP: it only fires if a fork PR somehow still landed on a
+      # self-hosted runner (a caller override, a future edit to `runs-on`).
+      # Rationale and what this deliberately does NOT stop: README.md "Fork
+      # guard". Ordering and predicate are asserted in tests/test_fork_guard.py
+      # — do not reorder, do not reword the `if` without updating _GUARD_IF
+      # there.
       - name: Refuse to run fork-authored code on self-hosted infrastructure
         if: >-
           github.event_name == 'pull_request' &&
-          github.event.pull_request.head.repo.full_name != github.repository
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          runner.environment == 'self-hosted'
         run: |
           set -euo pipefail
           echo "::error title=Fork PR blocked::Fork-authored code is not run on the self-hosted Spartan pool."

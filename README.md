@@ -81,52 +81,74 @@ lives directly in the publishing repo.
 
 ## Fork guard
 
-Every job here that is self-hosted **and** runs `actions/checkout` carries a
-first step that refuses fork-authored pull requests before checkout:
+Every job here that is self-hosted **and** runs `actions/checkout` carries
+two layers that keep fork-authored code off self-hosted infrastructure:
+
+1. **Routing.** The job's `runs-on` is a conditional expression: a
+   fork-authored PR resolves to `ubuntu-latest`, unconditionally, regardless
+   of what the caller passed for `inputs.runs_on` / `inputs.runs-on-json`.
+   Every other run — including self-hosted ones — is unaffected.
+2. **A backstop guard step**, first, ahead of `actions/checkout`, that fires
+   only if a fork PR somehow still lands on a self-hosted runner anyway:
 
 ```yaml
 - name: Refuse to run fork-authored code on self-hosted infrastructure
   if: >-
     github.event_name == 'pull_request' &&
-    github.event.pull_request.head.repo.full_name != github.repository
+    github.event.pull_request.head.repo.full_name != github.repository &&
+    runner.environment == 'self-hosted'
 ```
 
-Which jobs those are is **derived, not listed** — `tests/test_fork_guard.py`
-parses every workflow, selects the jobs matching that predicate, and requires
-the guard on exactly them. Add a self-hosted workflow that checks out a PR
-and those tests go red on your change. `cla.yml` is excluded because its jobs
-check out nothing, not by an exemption.
+Which jobs need this is **derived, not listed** — `tests/test_fork_guard.py`
+parses every workflow, selects the jobs matching the routable/self-hosted
+predicate, and requires both the routing expression and the guard step on
+exactly them. Add a self-hosted workflow that checks out a PR and those tests
+go red on your change. `cla.yml` is excluded because its jobs check out
+nothing, not by an exemption.
 
-### Why refuse rather than re-route
+### Why route rather than only refuse
 
-Two operator mandates constrain this, and they point in opposite directions:
+Two operator mandates originally constrained this, and pointed in opposite
+directions:
 
 | date | mandate |
 |---|---|
 | 2026-07-14 | 「PR用のテストとgithub側のランナーというのは本当にもう一切使わないでください…強制です、例外なしです」 — never use GitHub-hosted runners, no exceptions. Enforced as PS-169. |
 | 2026-07-30 | 「大学の資源を外部の人にも使わせる形になったら一発でアウト」 — external people using university resources is unacceptable. |
 
-These jobs run **bare** on shared University of Melbourne HPC nodes: no
-container, no overlay, two concurrent jobs sharing one `$HOME` (measured by
-scitex-hpc on the CI supervisor allocation, job 28161762, spartan-bm062). So
-`uv pip install -e .` executes a pull request's own build-backend hooks on
-university hardware, and `rtd-sphinx-build` executes the fork's `conf.py` as
-plain Python.
+The first was **repealed twice** since (2026-07-31: "hosted is the DEFAULT
+CHOICE for new work... not a blanket policy"; 2026-08-05, constitution:
+hosted is "a reasonable fallback") — see `pytest-matrix.yml`'s own `runs_on`
+input description and the runner-default tests in `tests/test_fork_guard.py`
+for the same correction applied there. The second mandate never moved and
+still holds in full: nothing fork-authored may execute on university /
+self-hosted hardware.
 
-`ubuntu-latest` for forks would satisfy the second mandate and break the
-first, so there is no runner for fork-authored code. It is refused. The
-guard **fails** rather than skipping: a skipped job's check can be reported as
+With only the second mandate standing, unconditionally REFUSING every fork
+PR was no longer necessary. It also stopped being harmless: measured
+2026-08-31 on scitex-ai/scitex-io, two CLA-signed, waiting external
+contributions (#166, #164) died in 3-8 seconds on this exact guard, on every
+job, having never run a single test — even though `ubuntu-latest` (which
+satisfies the surviving mandate on its own) was sitting right there, unused.
+
+So a fork-authored PR is now **routed** to `ubuntu-latest` instead of
+refused. These jobs run **bare** on shared University of Melbourne HPC nodes
+when self-hosted: no container, no overlay, two concurrent jobs sharing one
+`$HOME` (measured by scitex-hpc on the CI supervisor allocation, job
+28161762, spartan-bm062). So `uv pip install -e .` would execute a pull
+request's own build-backend hooks on university hardware, and
+`rtd-sphinx-build` would execute the fork's `conf.py` as plain Python — which
+is exactly what the routing above now prevents by construction, and what the
+backstop guard step still refuses, loudly, if it is ever wrong. The guard
+**fails** rather than skipping: a skipped job's check can be reported as
 successful to branch protection, which is a red that looks green.
-
-The two together imply the durable fix is a runner **we own** — neither
-GitHub's nor the university's.
 
 ### What the guard does not do
 
 For `pull_request`, GitHub runs the workflow definition from the PR's own
 head. A hostile fork can therefore edit the **caller's** `ci.yml` to skip
 these reusable workflows entirely and declare its own self-hosted job. This
-guard closes the default path; it is not a boundary.
+guard (routing + backstop) closes the default path; it is not a boundary.
 
 The boundary is the fork-PR approval policy — measured
 `all_external_contributors` on 74 of 74 public `scitex-ai` repos and as the
