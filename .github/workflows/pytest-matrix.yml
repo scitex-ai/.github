@@ -102,6 +102,35 @@ on:
         type: string
         required: false
         default: '["ubuntu-latest"]'
+      ordinary_pr_python:
+        description: Python used for ordinary pull requests targeting develop.
+        type: string
+        required: false
+        default: '3.11'
+      full_python_versions:
+        description: >-
+          JSON version array used for release/production PRs, pushes, nightly,
+          and manual runs. Keep minimum, middle, and maximum supported versions.
+        type: string
+        required: false
+        default: '["3.11","3.12","3.13"]'
+      shard_indices:
+        description: JSON array of zero-based file-group shard indices.
+        type: string
+        required: false
+        default: '[0]'
+      shard_count:
+        description: Total disjoint file groups; must match shard_indices.
+        type: number
+        required: false
+        default: 1
+      pre_test_command:
+        description: >-
+          Optional repository-specific preparation after checkout. It may write
+          test variables to GITHUB_ENV; failures are fatal.
+        type: string
+        required: false
+        default: ''
       dependency_group:
         description: >-
           PEP 735 dependency-group holding the test requirements, installed
@@ -214,6 +243,10 @@ on:
       CODECOV_TOKEN:
         required: false
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   pytest-matrix:
     # This name is the SECOND half of the required status check. The full context
@@ -237,7 +270,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: >-
+          ${{ fromJSON(github.event_name == 'pull_request' && github.base_ref == 'develop'
+              && format('["{0}"]', inputs.ordinary_pr_python)
+              || inputs.full_python_versions) }}
+        shard: ${{ fromJSON(inputs.shard_indices) }}
     # CONDITIONAL SERVICE. When `postgres` is false — which is every caller
     # today — the image expression evaluates to the empty string and GitHub does
     # not start the service at all: nothing is pulled, nothing runs, no port is
@@ -308,6 +345,11 @@ jobs:
           echo "  gh pr checkout ${{ github.event.pull_request.number }} && git push origin HEAD:review/pr-${{ github.event.pull_request.number }}"
           exit 1
       - uses: actions/checkout@v5
+      - name: Repository-specific test preparation
+        if: inputs.pre_test_command != ''
+        env:
+          PRE_TEST_COMMAND: ${{ inputs.pre_test_command }}
+        run: bash -euo pipefail -c "$PRE_TEST_COMMAND"
       - uses: astral-sh/setup-uv@v7
         with:
           cache-dependency-glob: pyproject.toml
@@ -540,8 +582,42 @@ jobs:
           # inherits the cpuset but NOT the step environment. sched_getaffinity reads
           # the cpuset directly and is the only thing that works. (ADR-0004 P1(b)
           # prescribed the SLURM-var form and was wrong; corrected in scitex-dev.)
-          export PYTEST_XDIST_AUTO_NUM_WORKERS="$(.venv/bin/python -c 'import os; print(len(os.sched_getaffinity(0)))')"
-          .venv/bin/python -m pytest tests/ -n auto \
+          WORKERS=$(.venv/bin/python - <<'PY'
+          import math, os
+          from pathlib import Path
+          limits = [os.cpu_count() or 1]
+          if hasattr(os, "sched_getaffinity"):
+              limits.append(len(os.sched_getaffinity(0)))
+          try:
+              quota, period = Path("/sys/fs/cgroup/cpu.max").read_text().split()
+              if quota != "max":
+                  limits.append(max(1, math.floor(int(quota) / int(period))))
+          except (FileNotFoundError, PermissionError, ValueError, ZeroDivisionError):
+              pass
+          print(max(1, min(limits)))
+          PY
+          )
+          mapfile -t TEST_FILES < <(.venv/bin/python - "${{ matrix.shard }}" "${{ inputs.shard_count }}" <<'PY'
+          import re, sys
+          from pathlib import Path
+          index, count = map(int, sys.argv[1:])
+          groups, totals = [[] for _ in range(count)], [0] * count
+          weighted = []
+          for path in Path("tests").rglob("test_*.py"):
+              text = path.read_text(errors="ignore")
+              weight = max(1, len(re.findall(r"(?m)^\s*(?:async\s+)?def\s+test_", text)))
+              weighted.append((weight, path))
+          for weight, path in sorted(weighted, key=lambda item: (-item[0], str(item[1]))):
+              target = min(range(count), key=lambda item: (totals[item], item))
+              groups[target].append(path)
+              totals[target] += weight
+          if not groups[index]:
+              raise SystemExit("selected pytest shard is empty")
+          print(*groups[index], sep="\n")
+          PY
+          )
+          echo "shard=${{ matrix.shard }}/${{ inputs.shard_count }} files=${#TEST_FILES[@]} effective pytest workers=$WORKERS"
+          nice -n 10 ionice -c 2 -n 7 .venv/bin/python -m pytest "${TEST_FILES[@]}" -n "$WORKERS" \
             --cov="src/$PKG" --cov-report=xml --cov-report=term
       - name: Seed the per-job git config for the codecov step
         if: always() && matrix.python-version == '3.12'
@@ -604,3 +680,18 @@ jobs:
           # this path is unique per concurrent job by construction. git creates the
           # file on first write and treats a missing one as empty — no seeding.
           GIT_CONFIG_GLOBAL: ${{ runner.temp }}/gitconfig-codecov
+
+  pytest-aggregate:
+    name: pytest aggregate gate
+    runs-on: ubuntu-latest
+    needs: [pytest-matrix]
+    if: always()
+    steps:
+      - name: Require every selected compatibility leg
+        env:
+          RESULT: ${{ needs.pytest-matrix.result }}
+        run: |
+          if [ "$RESULT" != "success" ]; then
+            echo "pytest matrix did not pass (result: $RESULT)"
+            exit 1
+          fi
