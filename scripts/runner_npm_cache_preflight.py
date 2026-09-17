@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Safely prepare a shared self-hosted runner's npm cache directory."""
 
 from __future__ import annotations

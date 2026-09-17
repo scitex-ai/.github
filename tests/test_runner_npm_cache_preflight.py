@@ -224,9 +224,11 @@ def test_lock_ownership_mismatch_fails_closed(
         return current
 
     monkeypatch.setattr(module.os, "fstat", mismatched_lock_owner)
-    with pytest.raises(module.PreflightError, match="lock ownership"):
-        with module._locked(lock, os.getuid(), os.getgid()):
-            raise AssertionError("ownership mismatch must not acquire the lock")
+    with (
+        pytest.raises(module.PreflightError, match="lock ownership"),
+        module._locked(lock, os.getuid(), os.getgid()),
+    ):
+        raise AssertionError("ownership mismatch must not acquire the lock")
 
 
 def test_create_race_never_follows_replacement_symlink(
