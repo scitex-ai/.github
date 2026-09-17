@@ -11,10 +11,14 @@ def workflow():
 def test_reusable_matrix_has_fast_and_full_policy_inputs():
     data = workflow()
     call = data.get("on", data.get(True))["workflow_call"]["inputs"]
-    assert call["ordinary_pr_python"]["default"] == "3.11"
+    # A single-version ordinary PR is an explicit per-caller optimization.
+    # The shared default must continue to emit every context that existing
+    # branch protection requires, otherwise a fully-green PR is unmergeable.
+    assert call["ordinary_pr_python"]["default"] == ""
     assert call["full_python_versions"]["default"] == '["3.11","3.12","3.13"]'
     matrix = str(data["jobs"]["pytest-matrix"]["strategy"]["matrix"]["python-version"])
     assert "github.base_ref == 'develop'" in matrix
+    assert "inputs.ordinary_pr_python != ''" in matrix
     assert "full_python_versions" in matrix
 
 

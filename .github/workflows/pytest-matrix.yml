@@ -103,10 +103,16 @@ on:
         required: false
         default: '["ubuntu-latest"]'
       ordinary_pr_python:
-        description: Python used for ordinary pull requests targeting develop.
+        description: >-
+          Optional single Python version for ordinary pull requests targeting
+          develop. Empty (the safe default) runs full_python_versions so the
+          reusable workflow publishes every context that existing branch
+          protection may require. A caller may opt into one version only after
+          its protected branches require the aggregate gate rather than the
+          individual version contexts.
         type: string
         required: false
-        default: '3.11'
+        default: ''
       full_python_versions:
         description: >-
           JSON version array used for release/production PRs, pushes, nightly,
@@ -272,6 +278,7 @@ jobs:
       matrix:
         python-version: >-
           ${{ fromJSON(github.event_name == 'pull_request' && github.base_ref == 'develop'
+              && inputs.ordinary_pr_python != ''
               && format('["{0}"]', inputs.ordinary_pr_python)
               || inputs.full_python_versions) }}
         shard: ${{ fromJSON(inputs.shard_indices) }}
