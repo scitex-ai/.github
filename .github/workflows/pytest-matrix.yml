@@ -613,7 +613,7 @@ jobs:
               totals[target] += weight
           if not groups[index]:
               raise SystemExit("selected pytest shard is empty")
-          print(*groups[index], sep="\n")
+          print(*sorted(groups[index], key=str), sep="\n")
           PY
           )
           echo "shard=${{ matrix.shard }}/${{ inputs.shard_count }} files=${#TEST_FILES[@]} effective pytest workers=$WORKERS"
