@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import stat
 import subprocess
 from pathlib import Path
@@ -312,3 +313,16 @@ def test_real_composite_action_executes_the_preflight(tmp_path: Path) -> None:
     cache = home / ".npm"
     assert cache.is_dir() and not cache.is_symlink()
     assert stat.S_IMODE(cache.stat().st_mode) == 0o755
+
+
+def test_readme_pins_preflight_action_to_immutable_commit() -> None:
+    readme = (_REPO / "README.md").read_text(encoding="utf-8")
+    section = readme.split("## Self-hosted runner npm-cache preflight", maxsplit=1)[1]
+    section = section.split("\n## ", maxsplit=1)[0]
+    reference = re.search(
+        r"scitex-ai/\.github/\.github/actions/runner-npm-cache-preflight@([0-9a-f]+)",
+        section,
+    )
+
+    assert reference is not None
+    assert reference.group(1) == "93e7732c73b76b2ca81e8200f521fd88d00df6cb"
