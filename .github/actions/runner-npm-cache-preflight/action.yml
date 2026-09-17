@@ -1,0 +1,10 @@
+name: Runner npm-cache preflight
+description: >-
+  Ensure the shared runner user's ~/.npm path is a real, owned directory,
+  quarantining only a conflicting cache artifact.
+runs:
+  using: composite
+  steps:
+    - name: Repair npm cache path
+      shell: bash
+      run: bash "${{ github.action_path }}/../../../scripts/runner-npm-cache-preflight.sh"

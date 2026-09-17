@@ -166,6 +166,38 @@ git push origin HEAD:refs/heads/review/pr-<n>
 
 and open a same-repo pull request, which runs CI over code you have read.
 
+## Self-hosted runner npm-cache preflight
+
+Jobs that use npm on a self-hosted org runner should run the central preflight
+before `setup-node`, `npm`, or checkout of same-repo code. On self-hosted
+pull-request jobs it belongs immediately after the existing fork-guard step,
+which must remain first:
+
+```yaml
+- name: Validate the runner npm cache
+  uses: scitex-ai/.github/.github/actions/runner-npm-cache-preflight@93e7732c73b76b2ca81e8200f521fd88d00df6cb
+```
+
+The full 40-character commit is intentional: this action runs before checkout
+on a privileged self-hosted runner, so callers must review and pin an immutable
+commit rather than trust an unprotected mutable branch such as `main`.
+
+The action runs `scripts/runner-npm-cache-preflight.sh`. Multiple runner
+services share `$HOME`, so the script serializes inspection and repair with a
+per-user host lock that is opened without following links or truncating an
+existing file. An existing owned real directory is normalized in place to mode
+0755 and checked for write access. A symlink or non-directory artifact owned by
+the runner user is moved, without dereferencing it or replacing prior evidence,
+to `$HOME/.npm.quarantine-<UTC>[.<collision>]`; then an owned real directory is
+created atomically. Unexpected ownership is a hard failure, not an attempted
+`sudo` or recursive `chown`.
+
+For runners configured with GitHub's job-started hook, the same script may be
+used directly as `ACTIONS_RUNNER_HOOK_JOB_STARTED` from a trusted, pinned local
+checkout. Do not point a runner hook at a script from the repository under
+test. The composite action remains necessary until that host-level hook is
+explicitly deployed to every runner service.
+
 ## Branches
 
 - `main` — stable, what callers reference (`@main`).
