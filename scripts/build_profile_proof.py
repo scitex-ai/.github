@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rebuild ``profile/assets/proof-e2e.png`` — the org profile's visual proof.
+"""Rebuild ``profile/assets/proof-e2e.jpg`` — the org profile's visual proof.
 
 WHY THIS IS A SCRIPT AND NOT A HAND-MADE IMAGE. The profile README claims one
 thing visually: that a researcher can go from raw data to a compiled manuscript
@@ -94,7 +94,7 @@ _PDF_PAGE = 19  # 1-indexed
 _PDF_DPI = 140
 _PDF_PAGE_SIZE = (1190, 1540)
 
-_WIDTH = 900
+_WIDTH = 720
 _GAP = 16
 _PAD = 14
 _BORDER = (208, 215, 222)  # GitHub --border-default
@@ -240,10 +240,10 @@ def build(out: Path, hub: Path) -> Path:
     paper_cut = _PAD + sum(p.height for p in panels[:-1]) + _GAP * (len(panels) - 1)
     text = _posterise(canvas.crop((0, paper_cut, _WIDTH, y)).convert("L"), levels=4).convert("RGB")
     canvas.paste(text, (0, paper_cut))
-    canvas = canvas.convert("P", palette=Image.Palette.ADAPTIVE, colors=128, dither=Image.Dither.NONE)
+    canvas = canvas.convert("RGB")
 
     out.parent.mkdir(parents=True, exist_ok=True)
-    canvas.save(out, optimize=True)
+    canvas.save(out, quality=65, optimize=True, progressive=False)
     return out
 
 
@@ -254,7 +254,7 @@ def main() -> int:
         i = args.index("--hub-src")
         hub = Path(args[i + 1])
         del args[i : i + 2]
-    default_out = Path(__file__).resolve().parents[1] / "profile" / "assets" / "proof-e2e.png"
+    default_out = Path(__file__).resolve().parents[1] / "profile" / "assets" / "proof-e2e.jpg"
     out = Path(args[0]) if args else default_out
     written = build(out, hub)
     print(f"{written} {written.stat().st_size} bytes")

@@ -31,10 +31,42 @@ That gap is what this organisation builds tooling against. Not a better
 notebook, not a better plotting library — a traceable path from raw data to a
 manuscript a reviewer can actually check.
 
+## The system at a glance
+
+SciTeX is one research project context with specialized interfaces around it:
+
+```text
+                           SciTeX Clew
+                    verifies provenance and drift
+                                  │
+  Scholar ── literature ──┐       │       ┌── data and files ── Storage
+                          │       ▼       │
+  Stats ───── analysis ───┼── SciTeX Hub ─┼── figures ───────── FigRecipe
+                          │  one project  │
+  Agents + Chat ─ commands┘    context    └── manuscript + PDF ─ Writer
+                                  │
+                             Custom Apps
+                      extend the same project contract
+```
+
+The centre is not another file format. It is the shared project, identity,
+storage and command layer. Use the built-in apps from a phone or browser, work
+through SSH on a compute node, or add a custom app without making another copy
+of the research project.
+
+<p align="center">
+  <a href="https://scitex.ai"><img src="assets/scitex-product-overview.jpg" alt="Actual SciTeX Cloud screens: Hub, Scholar, FigRecipe and Writer" width="900"></a>
+</p>
+
+These are four actual SciTeX Cloud development captures, not mockups. They show
+the Hub project surface, Scholar literature workflow, FigRecipe figure output,
+and Writer's source/PDF workspace. Source video hashes and capture details are
+in [`profile/assets/ASSET-MANIFEST.md`](assets/ASSET-MANIFEST.md).
+
 ## One project, end to end
 
 <p align="center">
-  <a href="https://scitex.ai"><img src="assets/proof-e2e.png" alt="SciTeX Hub: a project's files, the Writer compiling a PDF, a populated Scholar library, and the figures from an automated run" width="900"></a>
+  <a href="https://scitex.ai"><img src="assets/proof-e2e.jpg" alt="SciTeX Hub: a project's files, the Writer compiling a PDF, a populated Scholar library, and the figures from an automated run" width="900"></a>
 </p>
 
 Four crops of real SciTeX surfaces and outputs, in the order a project moves:

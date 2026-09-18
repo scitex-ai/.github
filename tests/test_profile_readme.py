@@ -166,7 +166,7 @@ def test_every_relative_target_exists(lang: str, checker) -> None:
 def test_the_proof_image_is_referenced_by_both_readmes() -> None:
     """Guards the two tests below: an unreferenced image costs weight for nothing."""
     # Arrange
-    proof = "assets/proof-e2e.png"
+    proof = "assets/proof-e2e.jpg"
     # Act
     referenced = {lang: proof in _readme(lang) for lang in _READMES}
     # Assert
@@ -176,12 +176,12 @@ def test_the_proof_image_is_referenced_by_both_readmes() -> None:
 def test_the_proof_image_has_alt_text() -> None:
     """A profile image with empty alt text is a blank line for a screen reader."""
     # Arrange
-    pattern = re.compile(r'<img[^>]*src="assets/proof-e2e\.png"[^>]*alt="([^"]*)"')
+    pattern = re.compile(r'<img[^>]*src="assets/proof-e2e\.jpg"[^>]*alt="([^"]*)"')
     # Act
     alts = {lang: pattern.search(_readme(lang)) for lang in _READMES}
     # Assert
     for lang, match in alts.items():
-        assert match, f"{lang}: no <img> tag with alt for proof-e2e.png"
+        assert match, f"{lang}: no <img> tag with alt for proof-e2e.jpg"
         assert len(match.group(1)) >= 40, f"{lang}: alt text too short to be useful"
 
 
@@ -195,7 +195,7 @@ def test_the_proof_image_has_alt_text() -> None:
 def test_the_proof_is_labelled_a_development_build(lang: str) -> None:
     # Arrange
     text = _readme(lang)
-    image_at = text.index("assets/proof-e2e.png")
+    image_at = text.index("assets/proof-e2e.jpg")
     # Act: the label lives in the ~2000 characters that follow the image
     vicinity = text[image_at : image_at + 2000].lower()
     # Assert
@@ -334,7 +334,9 @@ def test_the_hosted_and_self_hosted_choice_is_stated(lang: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("asset", sorted(p.name for p in _ASSETS.glob("*.png")))
+@pytest.mark.parametrize(
+    "asset", sorted(p.name for pattern in ("*.png", "*.jpg") for p in _ASSETS.glob(pattern))
+)
 def test_each_asset_is_within_budget(asset: str) -> None:
     # Arrange
     path = _ASSETS / asset
@@ -350,7 +352,7 @@ def test_each_asset_is_within_budget(asset: str) -> None:
 
 def test_the_assets_together_fit_the_page_budget() -> None:
     # Arrange
-    pngs = sorted(_ASSETS.glob("*.png"))
+    pngs = sorted(p for pattern in ("*.png", "*.jpg") for p in _ASSETS.glob(pattern))
     # Act
     total = sum(p.stat().st_size for p in pngs)
     # Assert
