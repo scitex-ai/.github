@@ -31,10 +31,41 @@
 良い描画ライブラリでもなく、生データから査読者が検証できる原稿までの、たどれる道筋
 です。
 
+## 全体像
+
+SciTeX は、ひとつの研究プロジェクトを中心に、専門化したインターフェイスを配置します。
+
+```text
+                           SciTeX Clew
+                    provenance と drift を検証
+                                  │
+  Scholar ───── 文献 ─────┐       │       ┌── データとファイル ─ Storage
+                          │       ▼       │
+  Stats ─────── 解析 ─────┼── SciTeX Hub ─┼── 図 ─────────────── FigRecipe
+                          │  one project  │
+  Agents + Chat ─ command┘    context    └── 原稿 + PDF ─────── Writer
+                                  │
+                             Custom Apps
+                    同じ project contract を拡張
+```
+
+中心にあるのは新しいファイル形式ではありません。共有された project、identity、storage、
+command の層です。組み込みアプリを携帯やブラウザから使い、計算機へ SSH して作業し、
+研究プロジェクトを複製せずに custom app を追加できます。
+
+<p align="center">
+  <a href="https://scitex.ai"><img src="assets/scitex-product-overview.jpg" alt="実際の SciTeX Cloud 画面：Hub、Scholar、FigRecipe、Writer" width="900"></a>
+</p>
+
+4 枚はモックアップではなく、実際の SciTeX Cloud 開発画面です。Hub の project 画面、
+Scholar の文献 workflow、FigRecipe の図出力、Writer の source/PDF workspace を示します。
+source video の hash と取得条件は
+[`profile/assets/ASSET-MANIFEST.md`](assets/ASSET-MANIFEST.md) にあります。
+
 ## ひとつのプロジェクトで、端から端まで
 
 <p align="center">
-  <a href="https://scitex.ai"><img src="assets/proof-e2e.png" alt="SciTeX Hub: プロジェクトのファイル一覧、Writer による PDF コンパイル、書誌ライブラリ、自動実行で生成された図" width="900"></a>
+  <a href="https://scitex.ai"><img src="assets/proof-e2e.jpg" alt="SciTeX Hub: プロジェクトのファイル一覧、Writer による PDF コンパイル、書誌ライブラリ、自動実行で生成された図" width="900"></a>
 </p>
 
 実際に動いている SciTeX の画面と出力を、プロジェクトが進む順に 4 枚並べたものです。

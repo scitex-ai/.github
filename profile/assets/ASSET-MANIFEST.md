@@ -11,12 +11,34 @@ prose.
 Legend: **dev** = captured from a development build of SciTeX Hub on
 `127.0.0.1:8000`, signed in as a throwaway demo account. Not production.
 
-## `proof-e2e.png`
+## `scitex-product-overview.jpg`
+
+1200 × 780 px, RGB baseline JPEG. A 2 × 2 overview built from frames of the
+Hub's tracked landing demonstration videos at approximately two seconds. The
+labels and borders identify the source app; the app pixels are not redrawn or
+retouched.
+
+| Panel | Source video | sha256 (source video) |
+|---|---|---|
+| Hub | `scitex-hub:apps/infra/public_app/static/public_app/videos/landing/hub-demo.mp4` | `7cd2907ad3289b397fb004190517b13a5b9131008b771065a662a756d3e761b0` |
+| Scholar | `scitex-hub:apps/infra/public_app/static/public_app/videos/landing/scholar-demo.mp4` | `9cae14be0ccbd6d046c77ebe4ff6431aec1b6ea5d1943694160b0675cced5bca` |
+| FigRecipe | `scitex-hub:apps/infra/public_app/static/public_app/videos/landing/visualizer-demo.mp4` | `3b99fff54231a026f466c8ced52e5afc05549c601135bcb51725f7c28b5894c7` |
+| Writer | `scitex-hub:apps/infra/public_app/static/public_app/videos/landing/writer-demo.mp4` | `83e9a257f5cc826bc1c5bcb707552de5c86aced9fb1c73bed88bb294acffead8` |
+
+Output sha256: `1cf031f6c6c29a7244323ffe13808306a44ac3451668b2f8048ebb58517d4f58`.
+The source videos are development recordings already shipped in the Hub; the
+overview makes no production claim and contains no account identifiers.
+
+## `proof-e2e.jpg`
 
 Built by [`scripts/build_profile_proof.py`](../../scripts/build_profile_proof.py);
-900 × 1757 px, palette PNG. Four vertically stacked crops, numbered ①–④ in the
+720 × 1406 px, RGB baseline JPEG. Four vertically stacked crops, numbered ①–④ in the
 image, in the order a project actually moves: files → manuscript → literature →
 figures.
+
+This is a mobile-compatible rendering of the original palette PNG, resized and
+JPEG-encoded to keep the whole profile below its phone download budget. Output
+sha256: `c594b3a612c644189df950965f5cbba741a9da204175d1c3f937cc0e0989e1db`.
 
 | # | Crop shows | Source | Source commit / date | sha256 (source) |
 |---|---|---|---|---|
