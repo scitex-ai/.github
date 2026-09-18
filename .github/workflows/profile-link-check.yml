@@ -1,0 +1,73 @@
+name: profile-link-check
+
+# The org profile page (github.com/scitex-ai) is built from profile/README.md and
+# its assets, and from URLs pointing at OTHER repositories and sites. Nothing
+# else in this repo's CI touches it: no import loads it, no build consumes it, so
+# a 404 in it is invisible here and visible to every visitor there.
+#
+# WHY A SCHEDULE AND NOT ONLY A PUSH TRIGGER. Most of what this file checks is
+# not in this repository. Repositories get renamed and transferred (every
+# `ywatanabe1989/...` URL in this ecosystem is one transfer away from 404),
+# shields.io paths change, and demo pages move. A check that only runs when
+# someone edits the README would never see any of that — it would confirm, once,
+# that the links worked on the day they were written.
+#
+# scripts/check_profile_links.py retries transient failures, so a red run here
+# means a target is genuinely gone, not that github.com hiccuped once.
+
+on:
+  push:
+    paths:
+      - "profile/**"
+      - "scripts/check_profile_links.py"
+      - ".github/workflows/profile-link-check.yml"
+  pull_request:
+    paths:
+      - "profile/**"
+      - "scripts/check_profile_links.py"
+      - ".github/workflows/profile-link-check.yml"
+  schedule:
+    - cron: "0 6 * * 1" # Mondays, 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    steps:
+      # Present for the same reason self-test.yml keeps its copy: this repo has
+      # one sanctioned fork predicate, and a job here that omits it is a second
+      # answer to "is this a fork?". It cannot fire on a hosted runner — see
+      # README.md "Fork guard" — and tests/test_fork_guard.py derives which jobs
+      # REQUIRE the guard, so this step is consistency, not protection.
+      - name: Refuse to run fork-authored code on self-hosted infrastructure
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          runner.environment == 'self-hosted'
+        run: |
+          set -euo pipefail
+          echo "::error title=Fork PR blocked::Fork-authored code is not run on the self-hosted Spartan pool."
+          echo "head repo: ${{ github.event.pull_request.head.repo.full_name }}  base repo: ${{ github.repository }}"
+          echo "To review this contribution, adopt its branch into ${{ github.repository }} and open a same-repo PR:"
+          echo "  gh pr checkout ${{ github.event.pull_request.number }} && git push origin HEAD:review/pr-${{ github.event.pull_request.number }}"
+          exit 1
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+      # Stdlib only: the checker imports nothing outside the standard library,
+      # deliberately, so this job cannot be broken by a dependency moving.
+      - name: build the interpreter
+        run: |
+          set -euo pipefail
+          uv venv --seed --python 3.12 .venv
+      - name: check every link and image the profile READMEs depend on
+        run: .venv/bin/python scripts/check_profile_links.py
+      # The file-only half of the same contract, for the runs where the network
+      # is doing something strange: relative targets, asset weight, provenance.
+      - name: profile contract tests
+        run: |
+          set -euo pipefail
+          uv pip install --python .venv/bin/python pytest
+          .venv/bin/python -m pytest tests/test_profile_readme.py -v
