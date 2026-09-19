@@ -129,14 +129,20 @@ jobs:
             [ "$base" = "develop" ] || { echo "skip #$pr (base=$base, not develop)"; continue; }
             draft=$(gh pr view "$pr" --repo "$REPO" --json isDraft --jq .isDraft 2>/dev/null || echo true)
             [ "$draft" = "true" ] && continue
-            # SAFETY GATE (2026-07-22): admin-merge is opt-in via the
-            # `automerge-ok` label. Without it, an ungated body would merge
-            # ANY green develop-PR the moment a third-party check suite
-            # fires — the only thing preventing that historically was
-            # GitHub's GITHUB_TOKEN check_suite recursion prevention,
-            # which is incidental, not a designed guard.
-            has_label=$(gh pr view "$pr" --repo "$REPO" --json labels --jq '[.labels[].name] | index("automerge-ok") != null' 2>/dev/null || echo false)
-            [ "$has_label" = "true" ] || { echo "skip #$pr (no automerge-ok label — opt-in required)"; continue; }
+            # OPT-IN GATE REMOVED — operator decision, 2026-09-19: the
+            # `automerge-ok` label requirement is abolished. Green is
+            # sufficient; there is no opt-in step.
+            #
+            # THE EXPOSURE THIS REINSTATES, recorded on the operator's
+            # instruction so it is not rediscovered as a surprise: the gate was
+            # added 2026-07-22 because a THIRD-PARTY check suite — not one of
+            # our agents — induced a merge of an ungated green PR. The only
+            # thing preventing that historically was GitHub's GITHUB_TOKEN
+            # check_suite recursion prevention, which is incidental, not a
+            # designed guard. Removing this gate makes that exposure the
+            # ACCEPTED RISK FOR EVERY develop PR, including ones we did not
+            # open. The operator weighed that against speed and chose speed,
+            # deliberately and with the shape of the risk named.
             # GREENNESS IS THREE-VALUED: pass / fail / NOT-YET-KNOWN.
             #
             # The previous filter ended in `and . != ""`, and that trailing
