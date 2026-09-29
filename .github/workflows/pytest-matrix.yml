@@ -690,7 +690,10 @@ jobs:
 
   pytest-aggregate:
     name: pytest aggregate gate
-    runs-on: ubuntu-latest
+    runs-on: >-
+      ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
+          && fromJSON('["ubuntu-latest"]')
+          || fromJSON(inputs.runs_on) }}
     needs: [pytest-matrix]
     if: always()
     steps:
