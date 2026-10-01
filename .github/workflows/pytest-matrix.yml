@@ -352,6 +352,43 @@ jobs:
           echo "  gh pr checkout ${{ github.event.pull_request.number }} && git push origin HEAD:review/pr-${{ github.event.pull_request.number }}"
           exit 1
       - uses: actions/checkout@v5
+      - name: Ensure Rust fd for audit discovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Audits require Rust fd; keep existing fd/fdfind without global installs.
+          if command -v fd >/dev/null 2>&1; then
+            fd --version
+            exit 0
+          fi
+          if command -v fdfind >/dev/null 2>&1; then
+            fdfind --version
+            exit 0
+          fi
+          case "${RUNNER_OS}:${RUNNER_ARCH}" in
+            Linux:X64)
+              target=x86_64-unknown-linux-musl
+              digest=2b6bfaae8c48f12050813c2ffe1884c61ea26e750d803df9c9114550a314cd14
+              ;;
+            Linux:ARM64)
+              target=aarch64-unknown-linux-musl
+              digest=996b9b1366433b211cb3bbedba91c9dbce2431842144d925428ead0adf32020b
+              ;;
+            *)
+              echo "::error::Rust fd is missing; no pinned bootstrap for ${RUNNER_OS}:${RUNNER_ARCH}."
+              exit 1
+              ;;
+          esac
+          # One directory per job invocation avoids shared toolcache races.
+          tools=$(mktemp -d "${RUNNER_TEMP:?}/scitex-fd.XXXXXXXX")
+          archive="$tools/fd.tar.gz"
+          release="fd-v10.3.0-$target"
+          curl --fail --silent --show-error --location --retry 3 \
+            --output "$archive" "https://github.com/sharkdp/fd/releases/download/v10.3.0/$release.tar.gz"
+          printf '%s  %s\n' "$digest" "$archive" | sha256sum --check --status
+          tar -xzf "$archive" -C "$tools" --strip-components=1 "$release/fd"
+          "$tools/fd" --version
+          printf '%s\n' "$tools" >> "${GITHUB_PATH:?}"
       - name: Repository-specific test preparation
         if: inputs.pre_test_command != ''
         env:
