@@ -1,8 +1,15 @@
-"""Execute the actual reusable fd bootstrap in temporary runner directories."""
+"""Execute reusable bootstrap integrity and ordering with owned fixtures.
+
+Runtime always uses the pinned official release. Executor fixtures substitute
+only an owned file transport and known archive digest; they do not claim fd
+functionality or require a host installation/network dependency.
+"""
 
 from __future__ import annotations
 
-import json
+import hashlib
+import io
+import tarfile
 import os
 import shutil
 import subprocess
@@ -13,7 +20,6 @@ import yaml
 
 _REPO = Path(__file__).resolve().parents[1]
 _JOB_IDS = {"pytest-matrix.yml": "pytest-matrix", "quality-audit.yml": "audit"}
-_PYTHON = Path(os.environ.get("SCITEX_TEST_PYTHON", os.sys.executable))
 
 
 def _step(workflow: str) -> tuple[dict, list[dict]]:
@@ -52,6 +58,32 @@ def _run(script: str, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _owned_archive(tmp_path: Path, script: str) -> tuple[str, bytes, str]:
+    """Use a real owned tar and executable; no network or host fd prerequisite.
+
+    This tests the host bootstrap's integrity/extraction/registration contract.
+    Real upstream fd execution and Dev strict discovery are separate evidence.
+    """
+    payload = b"#!/bin/sh\nprintf 'owned archive executable\\n'\n"
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    archive = assets / "fd-v10.3.0-x86_64-unknown-linux-musl.tar.gz"
+    with tarfile.open(archive, "w:gz") as stream:
+        member = tarfile.TarInfo("fd-v10.3.0-x86_64-unknown-linux-musl/fd")
+        member.size = len(payload)
+        member.mode = 0o755
+        stream.addfile(member, io.BytesIO(payload))
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    command = script.replace(
+        "https://github.com/sharkdp/fd/releases/download/v10.3.0/",
+        assets.as_uri() + "/",
+    ).replace(
+        "digest=2b6bfaae8c48f12050813c2ffe1884c61ea26e750d803df9c9114550a314cd14",
+        "digest=" + digest,
+    )
+    return command, payload, digest
+
+
 @pytest.mark.parametrize("workflow", _JOB_IDS)
 def test_bootstrap_precedes_workspace_code_and_keeps_first_guard(workflow):
     # Arrange
@@ -74,35 +106,28 @@ def test_both_workflows_execute_identical_bootstrap_commands():
     assert commands[0] == commands[1]
 
 
-def test_missing_fd_downloads_verified_tool_for_real_strict_discovery(tmp_path):
+def test_verified_archive_registers_the_exact_owned_executable(tmp_path):
     # Arrange
     step, _ = _step("pytest-matrix.yml")
     env = _environment(tmp_path)
-    project = tmp_path / "synthetic"
-    project.mkdir()
-    (project / "visible.py").write_text("value = 1\n")
-    (project / ".hidden.py").write_text("hidden = 1\n")
+    script, payload, _ = _owned_archive(tmp_path, step["run"])
     # Act
-    completed = _run(step["run"], env)
-    paths = Path(env["GITHUB_PATH"]).read_text().splitlines()
+    completed = _run(script, env)
     completed.check_returncode()
-    env["PATH"] = paths[-1] + os.pathsep + env["PATH"]
-    probe = subprocess.run(
-        [str(_PYTHON), "-c", "from pathlib import Path; import json; from scitex_dev._cli.audit._fd import fd_find_files; print(json.dumps([p.name for p in fd_find_files(Path(__import__('sys').argv[1]), glob='*.py', require_fd=True)]))", str(project)],
-        env=env, text=True, capture_output=True, check=False, timeout=30,
-    )
+    paths = Path(env["GITHUB_PATH"]).read_text().splitlines()
+    installed = Path(paths[-1]) / "fd"
     # Assert
-    assert (probe.returncode, json.loads(probe.stdout)) == (0, ["visible.py"])
+    assert (installed.read_bytes(), completed.stdout.strip()) == (payload, "owned archive executable")
 
 
 @pytest.mark.parametrize("name", ("fd", "fdfind"))
-def test_existing_real_fd_alias_avoids_download_and_path_mutation(tmp_path, name):
+def test_existing_executable_alias_avoids_download_and_path_mutation(tmp_path, name):
     # Arrange
     step, _ = _step("quality-audit.yml")
     env = _environment(tmp_path)
-    origin = shutil.which("fdfind") or shutil.which("fd")
-    if origin is None:
-        raise RuntimeError("existing-tool control requires real fd/fdfind")
+    origin = tmp_path / "owned-existing-tool"
+    origin.write_text("#!/bin/sh\nprintf 'owned existing executable\\n'\n")
+    origin.chmod(0o755)
     (Path(env["PATH"]) / name).symlink_to(origin)
     # Act
     completed = _run(step["run"], env)
@@ -114,7 +139,9 @@ def test_wrong_checksum_refuses_extraction_and_path_registration(tmp_path):
     # Arrange
     step, _ = _step("quality-audit.yml")
     env = _environment(tmp_path)
-    script = step["run"].replace("digest=2b6bf", "digest=0b6bf")
+    script, _, digest = _owned_archive(tmp_path, step["run"])
+    wrong = ("0" if digest[0] != "0" else "1") + digest[1:]
+    script = script.replace("digest=" + digest, "digest=" + wrong)
     # Act
     completed = _run(script, env)
     # Assert
