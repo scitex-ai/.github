@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 NATIVE = '["self-hosted","Linux","X64","scitex-org-cpu"]'
 NODE_BIN = shutil.which("node")
 FILES = ["pytest-matrix.yml", "import-smoke.yml", "quality-audit.yml", "rtd-sphinx-build.yml",
-         "cla.yml", "auto-merge-to-develop.yml", "promote-develop-to-main-on-tag.yml"]
+         "cla.yml", "auto-merge-to-develop.yml", "promote-develop-to-main-on-tag.yml", "runner-health.yml"]
 
 
 def execute(tmp_path, **changes):
