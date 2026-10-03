@@ -231,10 +231,10 @@ class SIFPolicyTests(unittest.TestCase):
             and result["value"]["native"] is False
         )
 
-    def test_current_unqualified_producer_fails_closed(self):
+    def test_current_unqualified_public_producer_fails_closed(self):
         # Arrange
         # Act
-        result = contract("plan")
+        result = contract("plan", native=False)
 
         # Assert
         assert result == {"ok": False, "reason": "image-unqualified"}
