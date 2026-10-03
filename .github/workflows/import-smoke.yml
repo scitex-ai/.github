@@ -3,7 +3,9 @@ name: import-smoke
 # REUSABLE WORKFLOW — org-level pilot (scitex-stats, 2026-07-10).
 # Mechanically extracted from the `import-smoke` job in
 # scitex-ai/scitex-stats `.github/workflows/ci.yml`. No inputs: the package
-# name is auto-derived from `src/<pkg>` in the checkout, same as source.
+# name is auto-derived from `src/<pkg>` for generic callers. Dev and SAC
+# retain their literal main-module/version gates; SAC ships a second bootstrap
+# package that sorts before the runtime package and cannot replace its import.
 
 on:
   workflow_call:
@@ -111,8 +113,30 @@ jobs:
           set -euo pipefail
           uv venv --python 3.12 .venv
           uv pip install --python .venv/bin/python -e .
-          PKG=$(basename "$(find src -maxdepth 1 -mindepth 1 -type d ! -name '*.egg-info' | sort | head -1)")
-          .venv/bin/python -c "import importlib; importlib.import_module('$PKG'); print('import OK:', '$PKG')"
+          case "$GITHUB_REPOSITORY" in
+            scitex-ai/scitex-dev)
+              .venv/bin/python -c "import scitex_dev; print(scitex_dev.__version__)"
+              ;;
+            scitex-ai/scitex-agent-container)
+              .venv/bin/python -c "import scitex_agent_container; print(scitex_agent_container.__version__)"
+              ;;
+            *)
+              PKG=$(basename "$(find src -maxdepth 1 -mindepth 1 -type d ! -name '*.egg-info' | sort | head -1)")
+              .venv/bin/python -c "import importlib; importlib.import_module('$PKG'); print('import OK:', '$PKG')"
+              ;;
+          esac
+
+      # SAC's existing source gate also invokes its literal installed command.
+      # Keep it for silent callers, without duplicating an explicit sac input.
+      - name: SAC console script resolves (sac --version)
+        if: github.repository == 'scitex-ai/scitex-agent-container' && inputs.console_script != 'sac'
+        run: |
+          set -euo pipefail
+          if [ ! -x .venv/bin/sac ]; then
+            echo '::error title=Console script missing::SAC requires the installed sac console script.'
+            exit 1
+          fi
+          .venv/bin/sac --version
 
       # A SEPARATE STEP, NOT A LINE APPENDED ABOVE, so its failure is
       # attributable: "the package imports but its command is broken" and "the

@@ -747,11 +747,11 @@ class SIFWorkflowSourceTests(unittest.TestCase):
         assert "inputs.suite == 'nightly' && '[\"ubuntu-latest\"]'" in admission
 
     def test_existing_protected_workflow_bodies_unchanged(self):
-        # Arrange: exact whole-body pins from 8c646081, independent of checkout depth.
+        # Arrange: 8c646081 pins, plus the reviewed main-module import successor.
         expected = {
             "auto-merge-to-develop.yml": "a28d9b92576590903290809643f21c93f680a6b2a1a8913d6c6e2fed89993de0",
             "cla.yml": "55b422a674acb918d247b3a025bf413fe751de16b85f5f06f1251331c4d98c06",
-            "import-smoke.yml": "df8fb3d63e91612353b3fcbfcaf6f0e43d7c0102f799b48e82d8a47e32956f06",
+            "import-smoke.yml": "6b336bb6cedf7b174106f22a9cf3fd83ad15b6f0ccc08501df1b849420d17626",
             "promote-develop-to-main-on-tag.yml": "1e3cec556f96612ff987f1bc2969dd145f85ebfff48297a3bf3adccd0b8c0c69",
             "pytest-matrix.yml": "e822cffc869bde67a19b97755aa5844c2c83ee717c168540562ee0984a72f0ae",
             "quality-audit.yml": "f44a2e6b5c479c2975d1cedf66738fdbf402a74cf1d8e26340bb9895524e7b4a",
