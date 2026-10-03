@@ -80,4 +80,30 @@ jobs:
           uv venv --seed --python 3.12 .venv
           uv pip install --python .venv/bin/python pytest pyyaml
       - name: run workflow contract tests
-        run: .venv/bin/python -m pytest tests/ -v
+        run: |
+          .venv/bin/python .github/ci/observe-command.py \
+            --artifact "$RUNNER_TEMP/passive-ci-observation-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json" \
+            --summary "$GITHUB_STEP_SUMMARY" \
+            -- .venv/bin/python -m pytest tests/ -v
+      - name: Report missing passive observation
+        if: always()
+        run: |
+          if ! test -s "$RUNNER_TEMP/passive-ci-observation-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"; then
+            echo '::warning title=CI observation UNKNOWN::The command observation did not finish. Read the original job log; missing data does not establish or exclude OOM.'
+            printf '\n### Passive CI observation: UNKNOWN\n\nThe observer did not complete. Read the original failing step log; no OOM attribution is available.\n' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload passive CI observation
+        id: observation-upload
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: passive-ci-observation
+          path: ${{ runner.temp }}/passive-ci-observation-${{ github.run_id }}-${{ github.run_attempt }}.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Report unavailable diagnostic upload
+        if: always() && steps.observation-upload.outcome == 'failure'
+        run: |
+          echo '::warning title=CI diagnostic artifact unavailable::Upload failed. The original test verdict is retained; inspect the Job Summary and original failed-step logs.'
+          printf '\nDiagnostic artifact upload failed; the original test verdict is retained.\n' >> "$GITHUB_STEP_SUMMARY"
