@@ -42,10 +42,10 @@ def execute(tmp_path, **changes):
     return output
 
 
-def test_confirmed_internal_event_selects_original_company_group(tmp_path):
+def test_confirmed_internal_event_selects_restricted_company_group(tmp_path):
     r = execute(tmp_path)
     assert r["native_authorized"] == "true"
-    assert r["runs_on"] == {"group": "Organization", "labels": json.loads(NATIVE)}
+    assert r["runs_on"] == {"group": "scitex-company-ci", "labels": json.loads(NATIVE)}
 
 
 @pytest.mark.parametrize("status", [404, 403, 429, 500, 200, "error"])

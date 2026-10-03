@@ -84,7 +84,7 @@ jobs:
             }
             // Group restriction is the server-side boundary. Labels only select
             // hardware inside the declared organization group after admission.
-            write(native ? {group: 'Organization', labels: requested} : requested,
+            write(native ? {group: 'scitex-company-ci', labels: requested} : requested,
               native, native ? 'confirmed-organization-members' : 'requested-hosted');
           }
           select().catch(() => { /* Fixed hosted outputs already exist; no error body is logged. */ });
