@@ -9,6 +9,11 @@ permissions: {}
 
 jobs:
   sample:
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['02', '03', '04']
     uses: ./.github/workflows/runner-health.yml
     with:
-      runs_on: '["self-hosted","Linux","X64","scitex-org-cpu"]'
+      runs_on: '["self-hosted","Linux","X64","scitex-org-cpu","scitex-compute-${{ matrix.node }}"]'
+      verify_docker: true

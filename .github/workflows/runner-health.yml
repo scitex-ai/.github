@@ -7,6 +7,10 @@ on:
         type: string
         required: false
         default: '["ubuntu-latest"]'
+      verify_docker:
+        type: boolean
+        required: false
+        default: false
 
 permissions: {}
 
@@ -46,3 +50,46 @@ jobs:
             timeout 5s cat /proc/pressure/cpu
           fi
           printf '%s\n' 'scope=one-admitted-runner-sample;not-whole-pool-or-package-CI'
+      - name: Verify Docker execution on the admitted company runner
+        if: inputs.verify_docker && runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          set -euo pipefail
+          health_image='docker.io/library/busybox@sha256:66a6306db78bf2dbf3487f293aa8d6990d8e506fdffab9cc43fe422becf886e4'
+          health_auth=$(mktemp -d "$RUNNER_TEMP/docker-health.XXXXXXXX")
+          health_name="scitex-ci-health-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          health_label="scitex.infra.health=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          printf '%s\n' '{"auths":{}}' > "$health_auth/config.json"
+          health_docker=(docker --host unix:///var/run/docker.sock --config "$health_auth")
+          cleanup_health() {
+            health_status=$?
+            trap - EXIT
+            if timeout 5s "${health_docker[@]}" container inspect "$health_name" >/dev/null 2>&1; then
+              health_owner=$(timeout 5s "${health_docker[@]}" inspect --format '{{ index .Config.Labels "scitex.infra.health" }} {{ .Config.Image }}' "$health_name")
+              if [[ "$health_owner" == "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT} $health_image" ]]; then
+                timeout 8s "${health_docker[@]}" container rm --force "$health_name" || health_status=1
+              else
+                health_status=1
+              fi
+            fi
+            rm -f -- "$health_auth/config.json"
+            rmdir -- "$health_auth" || health_status=1
+            exit "$health_status"
+          }
+          trap cleanup_health EXIT
+          health_info=$(timeout 5s "${health_docker[@]}" info --format '{{ .ServerVersion }} {{ .DockerRootDir }}')
+          [[ "$health_info" == *' /scratch/docker' ]]
+          printf 'docker=%s\n' "$health_info"
+          if ! timeout 5s "${health_docker[@]}" image inspect "$health_image" >/dev/null 2>&1; then
+            timeout 60s "${health_docker[@]}" pull --platform linux/amd64 "$health_image"
+          fi
+          timeout 5s "${health_docker[@]}" image inspect "$health_image" --format '{{ json .RepoDigests }}'
+          timeout 20s "${health_docker[@]}" run --rm --pull never \
+            --name "$health_name" --label "$health_label" --platform linux/amd64 \
+            --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true \
+            --cpus 0.25 --memory 64m --memory-swap 64m --pids-limit 32 \
+            --user 1000:1000 --ipc none --stop-timeout 2 "$health_image" sh -c \
+            'set -eu; test "$(id -u)" = 1000; test "$(ls /sys/class/net)" = lo; if touch /scitex-write-probe 2>/dev/null; then exit 42; fi; grep -E "^(CapEff|NoNewPrivs|Seccomp):" /proc/self/status; test "$(cat /sys/fs/cgroup/memory.max)" = 67108864; test "$(cat /sys/fs/cgroup/pids.max)" = 32; test "$(cat /sys/fs/cgroup/cpu.max)" = "25000 100000"; echo DOCKER_CI_ISOLATED_OK'
+          health_remaining=$(timeout 5s "${health_docker[@]}" ps -aq --filter "name=^/${health_name}$")
+          [[ -z "$health_remaining" ]]
+          printf '%s\n' 'docker_scope=one-immutable-isolated-container;not-package-or-image-release-CI'

@@ -66,3 +66,7 @@ def test_periodic_caller_uses_same_revision_shared_admission_without_secrets():
     assert caller["jobs"]["sample"]["uses"] == "./.github/workflows/runner-health.yml"
     assert caller["permissions"] == {}
     assert "secrets" not in caller["jobs"]["sample"]
+    assert caller["jobs"]["sample"]["strategy"] == {
+        "fail-fast": False, "matrix": {"node": ["02", "03", "04"]}
+    }
+    assert caller["jobs"]["sample"]["with"]["verify_docker"] is True

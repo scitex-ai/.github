@@ -48,6 +48,30 @@ def test_confirmed_internal_event_selects_restricted_company_group(tmp_path):
     assert r["runs_on"] == {"group": "Organization", "labels": json.loads(NATIVE)}
 
 
+@pytest.mark.parametrize("node", ["02", "03", "04"])
+def test_confirmed_member_can_select_each_company_compute_node(tmp_path, node):
+    requested = json.loads(NATIVE) + ["scitex-compute-" + node]
+    result = execute(tmp_path, REQUESTED_RUNS_ON=json.dumps(requested))
+    assert result["runs_on"] == {"group": "Organization", "labels": requested}
+    assert result["native_authorized"] == "true"
+
+
+@pytest.mark.parametrize("node", ["02", "03", "04"])
+def test_compute_node_label_does_not_authorize_external_actor(tmp_path, node):
+    requested = json.loads(NATIVE) + ["scitex-compute-" + node]
+    result = execute(tmp_path, REQUESTED_RUNS_ON=json.dumps(requested),
+                     ORIGINAL_ACTOR="external", statuses={"external": 404})
+    assert result["runs_on"] == ["ubuntu-latest"]
+    assert result["native_authorized"] == "false"
+
+
+def test_unowned_compute_node_remains_an_undeclared_destination(tmp_path):
+    requested = json.loads(NATIVE) + ["scitex-compute-05"]
+    result = execute(tmp_path, REQUESTED_RUNS_ON=json.dumps(requested))
+    assert result["runs_on"] == ["ubuntu-latest"]
+    assert result["reason"] == "undeclared-native-destination"
+
+
 @pytest.mark.parametrize("status", [404, 403, 429, 500, 200, "error"])
 def test_unconfirmed_membership_defaults_hosted_without_failing_ci(tmp_path, status):
     r = execute(tmp_path, statuses={"internal": status})
