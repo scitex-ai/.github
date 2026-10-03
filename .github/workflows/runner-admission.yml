@@ -68,7 +68,8 @@ jobs:
                 requested.some(s => typeof s !== 'string' || s.length > 80)) return;
             const native = requested.includes('self-hosted');
             const known = new Set(['self-hosted', 'Linux', 'X64', 'scitex-ci', 'scitex-org-cpu',
-              'scitex-local-cpu', 'scitex-docker', 'sac-control-plane']);
+              'scitex-local-cpu', 'scitex-docker', 'sac-control-plane',
+              'scitex-compute-02', 'scitex-compute-03', 'scitex-compute-04']);
             if (native && (requested.some(s => !known.has(s)) ||
                 !requested.some(s => ['scitex-ci', 'scitex-org-cpu', 'scitex-local-cpu', 'scitex-docker'].includes(s)))) {
               write(hosted, false, 'undeclared-native-destination');
