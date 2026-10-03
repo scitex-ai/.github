@@ -3,12 +3,14 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
 
 import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 NATIVE = '["self-hosted","Linux","X64","scitex-org-cpu"]'
+NODE_BIN = shutil.which("node")
 FILES = ["pytest-matrix.yml", "import-smoke.yml", "quality-audit.yml", "rtd-sphinx-build.yml",
          "cla.yml", "auto-merge-to-develop.yml", "promote-develop-to-main-on-tag.yml"]
 
@@ -29,7 +31,9 @@ def execute(tmp_path, **changes):
                "let statuses=" + json.dumps(statuses) + ";let status=statuses[who]??204;"
                "if(status==='error')throw Error('PRIVATE_ERROR_BODY');"
                "return {status};};\n")
-    p = subprocess.run(["node", "-"], input=harness + body, capture_output=True,
+    if NODE_BIN is None:
+        raise RuntimeError("Existing Node interpreter is required for workflow tests")
+    p = subprocess.run([NODE_BIN, "-"], input=harness + body, capture_output=True,
                        text=True, env=env, timeout=5)
     assert p.returncode == 0, p.stderr
     assert "PRIVATE_ERROR_BODY" not in p.stdout + p.stderr
