@@ -1,0 +1,128 @@
+name: fd-fclones-integration
+
+# Shared fd/fclones integration callee — literal scope scitex-ai/scitex-storage.
+# Proposed placement: scitex-ai/.github/.github/workflows/fd-fclones-integration.yml
+# (placement/policy is Infrastructure authority; this file is the exact proposed
+# source, body-preserving the storage leaf commands verbatim).
+#
+# Order: hosted membership/fork gate BEFORE any native checkout. Fork-authored
+# code is never checked out or executed on self-hosted infrastructure.
+on:
+  workflow_call: {}
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    permissions: {}
+    timeout-minutes: 2
+    outputs:
+      authorized: ${{ steps.select.outputs.authorized }}
+    steps:
+      # No checkout, API credential, secret inheritance or caller-script execution.
+      - id: select
+        name: Refuse non-storage scope, forks and unconfirmed membership
+        env:
+          REPOSITORY: ${{ github.repository }}
+          ORIGINAL_ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const write = (authorized, reason) => {
+            fs.appendFileSync(process.env.GITHUB_OUTPUT,
+              `authorized=${authorized}\nreason=${reason}\n`);
+          };
+          write(false, 'not-evaluated');
+          async function select() {
+            const env = process.env;
+            if (env.REPOSITORY !== 'scitex-ai/scitex-storage') return;
+            if (!['push', 'pull_request', 'schedule', 'workflow_dispatch'].includes(env.EVENT_NAME)) return;
+            const subjects = [env.ORIGINAL_ACTOR, env.TRIGGERING_ACTOR];
+            if (env.EVENT_NAME === 'pull_request') {
+              if (!env.HEAD_REPOSITORY || env.HEAD_REPOSITORY.toLowerCase() !== env.REPOSITORY.toLowerCase()) {
+                write(false, 'fork-or-missing-origin');
+                return;
+              }
+              subjects.push(env.PR_AUTHOR);
+            }
+            const login = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
+            if (subjects.some(s => typeof s !== 'string' || !login.test(s))) return;
+            for (const subject of new Set(subjects.map(s => s.toLowerCase()))) {
+              const response = await fetch(`https://api.github.com/orgs/scitex-ai/public_members/${encodeURIComponent(subject)}`, {
+                redirect: 'error', signal: AbortSignal.timeout(5000),
+                headers: {Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28'}
+              });
+              if (response.status !== 204) return;
+            }
+            write(true, 'confirmed-organization-members');
+          }
+          select().catch(() => { /* Fixed negative outputs already exist; no error body is logged. */ });
+          NODE
+
+  native:
+    needs: gate
+    if: needs.gate.outputs.authorized == 'true'
+    runs-on: >-
+      ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
+          && fromJSON('["ubuntu-latest"]')
+          || fromJSON('{"group":"Organization","labels":["self-hosted","Linux","X64","scitex-org-cpu"]}') }}
+    env:
+      PYTHONNOUSERSITE: 1
+    steps:
+      - name: Refuse to run fork-authored code on self-hosted infrastructure
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          runner.environment == 'self-hosted'
+        run: |
+          set -euo pipefail
+          echo "::error title=Fork PR blocked::Fork-authored code is not run on the self-hosted SciTeX organization CPU pool."
+          echo "head repo: ${{ github.event.pull_request.head.repo.full_name }}  base repo: ${{ github.repository }}"
+          echo "To review this contribution, adopt its branch into ${{ github.repository }} and open a same-repo PR:"
+          echo "  gh pr checkout ${{ github.event.pull_request.number }} && git push origin HEAD:review/pr-${{ github.event.pull_request.number }}"
+          exit 1
+      - name: Require confirmed organization membership on native runners
+        if: runner.environment == 'self-hosted' && needs.gate.outputs.authorized != 'true'
+        run: exit 1
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install fd + fclones
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo apt-get install -y fd-find
+          FCLONES_VERSION=0.35.0
+          FCLONES_URL="https://github.com/pkolaczk/fclones/releases/download/v${FCLONES_VERSION}/fclones_${FCLONES_VERSION}-1_amd64.deb"
+          # Retry: this is the ONLY job that exercises fd and fclones for real
+          # (the matrix skips those tests -- see tests/conftest.py), so a
+          # transient network blip here does not merely red a check, it means
+          # that coverage SILENTLY DID NOT RUN. Seen 2026-08-15: a bare
+          # `curl -fsSL` died with "curl: (35) Recv failure: Connection reset
+          # by peer" and the job never reached pytest at all.
+          if ! curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors \
+                 -o /tmp/fclones.deb "$FCLONES_URL"; then
+            # Name the artifact and the URL. The bare exit code 35 that this
+            # replaces looks identical to a test failure in the checks list,
+            # which cost an investigation before anyone read the log.
+            echo "::error::Could not download the fclones .deb after 3 retries."
+            echo "::error::URL: ${FCLONES_URL}"
+            echo "::error::This is a NETWORK failure in the install step, NOT a test failure."
+            exit 1
+          fi
+          sudo apt-get install -y /tmp/fclones.deb
+          fdfind --version
+          fclones --version
+      - name: Install scitex-storage[dev]
+        run: pip install -e '.[dev]'
+      - name: Run tests with fd/fclones on PATH
+        run: pytest "$GITHUB_WORKSPACE/tests/" -q

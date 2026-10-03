@@ -1,0 +1,313 @@
+name: writer-release-sif
+
+# Fixed repository, preflight-resolved commit and retained full leaf drivers.
+# Source contract only: no image/runtime is registered by this change.
+on:
+  workflow_call:
+    inputs:
+      operation:
+        required: true
+        type: string
+      source_commit:
+        required: true
+        type: string
+      release_tag:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  runner-admission:
+    uses: ./.github/workflows/runner-admission.yml
+    with:
+      runs_on: '["self-hosted","Linux","X64","scitex-org-cpu"]'
+
+  profile:
+    needs: runner-admission
+    runs-on: ubuntu-latest
+    permissions: {}
+    timeout-minutes: 5
+    outputs:
+      plan: ${{ steps.contract.outputs.plan }}
+      versions: ${{ steps.contract.outputs.versions }}
+    steps:
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        id: contract
+        env:
+          NATIVE_AUTHORIZED: ${{ needs.runner-admission.outputs.native_authorized }}
+          OPERATION: ${{ inputs.operation }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        with:
+          script: |
+            // BEGIN WRITER_RELEASE_CONTRACT
+            // Registration follows actual image/runtime qualification, never a placeholder.
+            const REGISTRATION = null;
+            const LEAF_SOURCES = Object.freeze({
+              ".github/ci/exec-in-sif.sh": "c07c3bb883b35c7260636f60cc718bad02fffb6bdea6ab5b9002f5e606eeec12",
+              ".github/ci/run-in-sif.sh": "c99a82eb73ac4a371d1b2702bd43351f8ac0d40ad450fd3ec406a99454522066",
+              ".github/ci/build-in-sif.sh": "5c61ca6d74cd56a84e70d6ac55cbaf229438486161e849b2d5e798eade00f0e8",
+              ".github/ci/release-identity.py": "5d8abc813d07163ba1551df18e130a71b7a60f025ed0b364370b952792945ffb"
+            });
+            function requireContract(value, reason) {
+              if (!value) throw new Error(reason);
+            }
+            function exactKeys(value, names) {
+              return value && typeof value === 'object' && !Array.isArray(value)
+                && Object.keys(value).sort().join('|') === [...names].sort().join('|');
+            }
+            function digest(value) {
+              return typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+            }
+            function publicDelivery(value) {
+              if (!exactKeys(value, ['url', 'release_id', 'asset_id', 'redirect_hosts'])) return false;
+              if (!Number.isSafeInteger(value.release_id) || value.release_id <= 0
+                  || !Number.isSafeInteger(value.asset_id) || value.asset_id <= 0) return false;
+              const allowed = ['github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com'];
+              return typeof value.url === 'string' && /^https:\/\/github\.com\/scitex-ai\/(scitex-dev|scitex-container)\/releases\/download\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+\.sif$/.test(value.url)
+                && Array.isArray(value.redirect_hosts) && value.redirect_hosts.length > 0
+                && new Set(value.redirect_hosts).size === value.redirect_hosts.length
+                && value.redirect_hosts.every(host => allowed.includes(host));
+            }
+            function qualifyImage(value, hosted, kind = 'ci') {
+              requireContract(exactKeys(value, ['sha256', 'bytes', 'producer_revision',
+                'source_manifest_sha256', 'public_inventory_sha256', 'delivery', 'capabilities', 'native_paths']), 'image-unqualified');
+              requireContract(digest(value.sha256) && Number.isSafeInteger(value.bytes)
+                && value.bytes > 0 && value.bytes <= 32 * 1024 ** 3, 'image-byte-pin-invalid');
+              requireContract(typeof value.producer_revision === 'string'
+                && /^[a-f0-9]{40}$/.test(value.producer_revision)
+                && digest(value.source_manifest_sha256) && digest(value.public_inventory_sha256), 'image-producer-unqualified');
+              const keys = kind === 'pg' ? ['postgres'] : ['3.11', '3.12', '3.13', 'postgres'];
+              requireContract(exactKeys(value.capabilities, keys)
+                && keys.every(key => typeof value.capabilities[key] === 'string'), 'image-capabilities-unqualified');
+              requireContract(value.delivery === null || publicDelivery(value.delivery), 'image-delivery-invalid');
+              requireContract(Array.isArray(value.native_paths) && value.native_paths.length > 0
+                && new Set(value.native_paths).size === value.native_paths.length
+                && value.native_paths.every(path => typeof path === 'string'
+                  && /^\/[A-Za-z0-9_./-]+\.sif$/.test(path)
+                  && !path.split('/').includes('..') && !path.includes('//')), 'native-image-authority-unqualified');
+              requireContract(!hosted || publicDelivery(value.delivery), 'hosted-image-delivery-unqualified');
+              return value;
+            }
+            function qualifyRuntime(value, hosted) {
+              requireContract(exactKeys(value, ['path', 'sha256', 'bytes', 'qualification_sha256',
+                'user_namespace', 'sif_mount', 'hosted_delivery_sha256']), 'runtime-unqualified');
+              requireContract(typeof value.path === 'string' && /^\/[A-Za-z0-9_./-]+$/.test(value.path)
+                && !value.path.split('/').includes('..') && digest(value.sha256)
+                && Number.isSafeInteger(value.bytes) && value.bytes > 0
+                && digest(value.qualification_sha256) && value.user_namespace === true
+                && value.sif_mount === true, 'runtime-capability-unqualified');
+              requireContract(value.hosted_delivery_sha256 === null || digest(value.hosted_delivery_sha256), 'runtime-delivery-invalid');
+              requireContract(!hosted || digest(value.hosted_delivery_sha256), 'hosted-runtime-delivery-unqualified');
+              return value;
+            }
+            
+            function writerPlan(repository, eventName, native, operation, sourceCommit, releaseTag, registration = REGISTRATION) {
+              requireContract(repository === 'scitex-ai/scitex-writer', 'writer-repository-refused');
+              requireContract(['push', 'workflow_dispatch'].includes(eventName), 'writer-release-event-refused');
+              requireContract(native === true, 'writer-release-membership-required');
+              requireContract(['test', 'build'].includes(operation), 'writer-release-operation-refused');
+              requireContract(typeof sourceCommit === 'string' && sourceCommit.length === 40
+                && /^[a-f0-9]{40}$/.test(sourceCommit), 'writer-source-commit-refused');
+              requireContract(typeof releaseTag === 'string' && releaseTag === releaseTag.trim()
+                && /^v[0-9]+\.[0-9]+\.[0-9]+$/.test(releaseTag), 'writer-release-tag-refused');
+              requireContract(exactKeys(registration, ['image', 'runtime']), 'writer-runtime-unregistered');
+              const image = qualifyImage(registration.image, false);
+              const versions = operation === 'test' ? ['3.11', '3.12', '3.13'] : ['3.12'];
+              for (const version of versions) {
+                requireContract(image.capabilities[version].startsWith(version + '.'), 'writer-image-python-unqualified');
+              }
+              const runtime = qualifyRuntime(registration.runtime, false);
+              return {profile: 'writer', operation, sourceCommit, releaseTag, versions, image,
+                runtime, leafSources: LEAF_SOURCES, pgImage: null, native: true};
+            }
+            // END WRITER_RELEASE_CONTRACT
+            const plan = writerPlan(context.payload.repository.full_name, context.eventName,
+              process.env.NATIVE_AUTHORIZED === 'true', process.env.OPERATION,
+              process.env.SOURCE_COMMIT, process.env.RELEASE_TAG);
+            core.setOutput('plan', JSON.stringify(plan));
+            core.setOutput('versions', JSON.stringify(plan.versions));
+
+  native:
+    needs: [runner-admission, profile]
+    if: needs.runner-admission.outputs.native_authorized == 'true'
+    name: writer-${{ inputs.operation }}-py${{ matrix.python-version }}
+    runs-on: >-
+      ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
+          && fromJSON('["ubuntu-latest"]')
+          || fromJSON('{"group":"Organization","labels":["self-hosted","Linux","X64","scitex-org-cpu"]}') }}
+    timeout-minutes: ${{ inputs.operation == 'build' && 30 || 60 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJSON(needs.profile.outputs.versions) }}
+    env:
+      RELEASE_COMMIT: ${{ inputs.source_commit }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - name: Refuse to run fork-authored code on self-hosted infrastructure
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          runner.environment == 'self-hosted'
+        run: |
+          set -euo pipefail
+          echo "::error title=Fork PR blocked::Fork-authored code is not run on the self-hosted SciTeX organization CPU pool."
+          echo "head repo: ${{ github.event.pull_request.head.repo.full_name }}  base repo: ${{ github.repository }}"
+          echo "To review this contribution, adopt its branch into ${{ github.repository }} and open a same-repo PR:"
+          echo "  gh pr checkout ${{ github.event.pull_request.number }} && git push origin HEAD:review/pr-${{ github.event.pull_request.number }}"
+          exit 1
+      - name: Require confirmed organization membership before checkout
+        env:
+          AUTHORIZED: ${{ needs.runner-admission.outputs.native_authorized }}
+        run: test "$AUTHORIZED" = true
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.source_commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify resolved source commit
+        env:
+          EXPECTED: ${{ inputs.source_commit }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED"
+      - name: Verify fixed leaf drivers, runtime and whole image
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        id: inputs
+        env:
+          PLAN: ${{ needs.profile.outputs.plan }}
+          NATIVE_CI_SIF: ${{ vars.SCITEX_CI_SIF }}
+        with:
+          script: |
+            // BEGIN SIF_FILE_GATE
+            const fs = require('fs');
+            const fsp = fs.promises;
+            const path = require('path');
+            const crypto = require('crypto');
+            const plan = JSON.parse(process.env.PLAN);
+            const deadline = Date.now() + 15 * 60 * 1000;
+            function check(value, reason) { if (!value) throw new Error(reason); }
+            function timeFence() { check(Date.now() < deadline, 'image-acquisition-deadline'); }
+            async function regularBytes(file, expected, expectedSize = null) {
+              timeFence();
+              const handle = await fsp.open(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+              try {
+                const before = await handle.stat();
+                check(before.isFile() && (expectedSize === null || before.size === expectedSize), 'file-metadata-mismatch');
+                const hash = crypto.createHash('sha256');
+                const chunk = Buffer.alloc(1024 * 1024);
+                let count = 0;
+                while (true) {
+                  timeFence();
+                  const {bytesRead} = await handle.read(chunk, 0, chunk.length, null);
+                  if (!bytesRead) break;
+                  count += bytesRead;
+                  check(count <= before.size, 'file-size-changed');
+                  hash.update(chunk.subarray(0, bytesRead));
+                }
+                const after = await handle.stat();
+                const current = await fsp.lstat(file);
+                timeFence();
+                check(after.dev === before.dev && after.ino === before.ino && after.size === before.size
+                  && after.mtimeMs === before.mtimeMs && after.ctimeMs === before.ctimeMs
+                  && current.dev === before.dev && current.ino === before.ino
+                  && count === before.size && hash.digest('hex') === expected, 'file-byte-pin-mismatch');
+              } finally { await handle.close(); }
+            }
+            const workspace = path.resolve(process.env.GITHUB_WORKSPACE);
+            for (const [relative, digest] of Object.entries(plan.leafSources)) {
+              let current = workspace;
+              check((await fsp.lstat(current)).isDirectory(), 'source-root-invalid');
+              const parts = relative.split('/');
+              for (const part of parts.slice(0, -1)) {
+                current = path.join(current, part);
+                const value = await fsp.lstat(current);
+                check(value.isDirectory() && !value.isSymbolicLink(), 'source-parent-not-owned');
+              }
+              await regularBytes(path.join(workspace, relative), digest);
+            }
+            await regularBytes(plan.runtime.path, plan.runtime.sha256, plan.runtime.bytes);
+            let owned = null;
+            if (!plan.native) {
+              const base = path.resolve(process.env.RUNNER_TEMP);
+              check((await fsp.lstat(base)).isDirectory(), 'runner-scratch-invalid');
+              owned = await fsp.mkdtemp(path.join(base, 'scitex-sif-'));
+              await fsp.chmod(owned, 0o700);
+              const value = await fsp.lstat(owned);
+              core.setOutput('owned', JSON.stringify({root: owned, dev: value.dev, ino: value.ino, uid: value.uid}));
+            }
+            async function acquire(image, locator, name) {
+              if (plan.native) {
+                check(typeof locator === 'string' && path.isAbsolute(locator)
+                  && image.native_paths.includes(locator), 'native-image-locator-unapproved');
+                const actual = await fsp.realpath(locator);
+                await regularBytes(actual, image.sha256, image.bytes);
+                return actual;
+              }
+              const target = path.join(owned, name);
+              const output = await fsp.open(target, 'wx', 0o600);
+              try {
+                let location = image.delivery.url;
+                let response;
+                for (let redirects = 0; redirects <= 5; redirects++) {
+                  const url = new URL(location);
+                  check(url.protocol === 'https:' && !url.username && !url.password
+                    && image.delivery.redirect_hosts.includes(url.hostname), 'public-image-redirect-refused');
+                  response = await fetch(url.href, {
+                    redirect: 'manual', signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
+                  });
+                  if (![301, 302, 303, 307, 308].includes(response.status)) break;
+                  const next = response.headers.get('location');
+                  check(next && redirects < 5, 'public-image-redirect-refused');
+                  location = new URL(next, url).href;
+                }
+                check(response.ok && response.body, 'public-image-download-refused');
+                let count = 0;
+                for await (const chunk of response.body) {
+                  timeFence();
+                  count += chunk.length;
+                  check(count <= image.bytes, 'public-image-size-exceeded');
+                  let offset = 0;
+                  while (offset < chunk.length) {
+                    timeFence();
+                    const {bytesWritten} = await output.write(chunk, offset, chunk.length - offset, null);
+                    timeFence();
+                    check(Number.isSafeInteger(bytesWritten) && bytesWritten > 0
+                      && bytesWritten <= chunk.length - offset, 'public-image-write-stalled');
+                    offset += bytesWritten;
+                  }
+                }
+                check(count === image.bytes, 'public-image-size-mismatch');
+                await output.sync();
+              } finally { await output.close(); }
+              await regularBytes(target, image.sha256, image.bytes);
+              await fsp.chmod(target, 0o400);
+              return target;
+            }
+            core.setOutput('sif', await acquire(plan.image, process.env.NATIVE_CI_SIF, 'ci.sif'));
+            core.setOutput('pg_sif', plan.pgImage
+              ? await acquire(plan.pgImage, process.env.NATIVE_PG_SIF, 'pg.sif') : '');
+            timeFence();
+            core.setOutput('apptainer', plan.runtime.path);
+            // END SIF_FILE_GATE
+      - name: Run the retained complete Writer suite
+        if: inputs.operation == 'test'
+        env:
+          SCITEX_CI_SIF: ${{ steps.inputs.outputs.sif }}
+          SCITEX_CI_SIF_SHA256: ${{ fromJSON(needs.profile.outputs.plan).image.sha256 }}
+          SCITEX_CI_APPTAINER: ${{ steps.inputs.outputs.apptainer }}
+        run: bash .github/ci/exec-in-sif.sh run-in-sif.sh ${{ matrix.python-version }}
+      - name: Build and verify the retained whole wheel and sdist
+        if: inputs.operation == 'build'
+        env:
+          SCITEX_CI_SIF: ${{ steps.inputs.outputs.sif }}
+          SCITEX_CI_SIF_SHA256: ${{ fromJSON(needs.profile.outputs.plan).image.sha256 }}
+          SCITEX_CI_APPTAINER: ${{ steps.inputs.outputs.apptainer }}
+        run: bash .github/ci/exec-in-sif.sh build-in-sif.sh 3.12
+      - uses: actions/upload-artifact@v4
+        if: inputs.operation == 'build'
+        with:
+          name: writer-dist-${{ inputs.source_commit }}
+          path: dist/
+          if-no-files-found: error
