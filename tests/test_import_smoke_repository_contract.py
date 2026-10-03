@@ -2,6 +2,7 @@
 
 import json
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -190,6 +191,13 @@ def test_sac_console_gate_does_not_duplicate_explicit_sac_input():
     )
 
 
+@pytest.fixture
+def node_executable():
+    node = shutil.which("node")
+    assert node is not None, "Node is required for the real JavaScript gate controls"
+    return node
+
+
 @pytest.mark.parametrize(
     "repository,console,expected",
     [
@@ -201,9 +209,10 @@ def test_sac_console_gate_does_not_duplicate_explicit_sac_input():
     ],
 )
 def test_actual_sac_gate_is_finite_and_preserves_optional_callers(
-    repository, console, expected
+    repository, console, expected, node_executable
 ):
     # Arrange
+    node = node_executable
     gate = next(step["if"] for step in steps() if step.get("if") == SAC_GATE)
     source = (
         "const github = {repository: " + json.dumps(repository) + "};\n"
@@ -212,7 +221,7 @@ def test_actual_sac_gate_is_finite_and_preserves_optional_callers(
     )
     # Act
     result = subprocess.run(
-        ["node", "-e", source],
+        [node, "-e", source],
         env={"PATH": "/usr/bin:/bin"},
         capture_output=True,
         text=True,
