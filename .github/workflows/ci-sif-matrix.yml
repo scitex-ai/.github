@@ -1,8 +1,9 @@
 name: immutable-sif-matrix
 
-# Source-only successor. Image/producer/runtime and leaf closures are deliberately
-# unregistered until their actual owning receipts are reviewed. Unknown means a
-# failed hosted profile gate, never bare-host tests or reduced dependencies.
+# Public delivery and retained private execution have separate authority.
+# Unknown source/image/runtime closures remain failed profile gates. A private
+# image is selected only after organization admission and is never downloaded
+# by hosted or fork jobs.
 on:
   workflow_call:
     inputs:
@@ -53,11 +54,36 @@ jobs:
               'scitex-ai/scitex-dev': {
                 id: 'dev', pgKind: 'embedded', pgBin: '/usr/lib/postgresql/16/bin',
                 pgVersion: '16.15', image: null, pgImage: null,
-                nativeRuntime: null, hostedRuntime: null, leafSources: null,
+                // Retained private authority: actual nine node/minor probes
+                // and whole bytes, receipt22362dd8. No public producer claim.
+                nativeImage: {
+                  authority_kind: 'retained-private-ci',
+                  sha256: 'aa5836a6c317640d7e20f01eb79aa7385b3dca2f369b595065c50ba3dd34a7d5',
+                  bytes: 1328443392,
+                  qualification_sha256: '22362dd8da22aa93653613d899e9ab6232d3a099576d7da646ea617a35f2e036',
+                  capabilities: {'3.11': '3.11.16', '3.12': '3.12.14', '3.13': '3.13.15', postgres: '16.15'},
+                  native_paths: ['/home/ywatanabe/.scitex/dev/runtime/containers/ci-cpu-sha256-aa5836a6c317640d7e20f01eb79aa7385b3dca2f369b595065c50ba3dd34a7d5.sif'],
+                },
+                nativePgImage: null,
+                nativeRuntime: {
+                  path: '/usr/bin/apptainer',
+                  sha256: '7bdb501fdddbb7264b4e4d6038e0ec27201f63e217519e5f7f0db950c9285ddd',
+                  bytes: 48096048,
+                  qualification_sha256: '22362dd8da22aa93653613d899e9ab6232d3a099576d7da646ea617a35f2e036',
+                  user_namespace: true, sif_mount: true, hosted_delivery_sha256: null,
+                },
+                hostedRuntime: null,
+                leafSources: {
+                  '.github/ci/exec-in-sif.sh': 'dffc356c99c0deb8c031580ea667f6e4ea695dd1ce000d19a1a127442b8c9cf0',
+                  '.github/ci/run-in-sif.sh': 'cc690aeca6770e980652f499d50571e0e2fc759abbf2b870c650fcc3dd493786',
+                  '.github/ci/release-context.sh': 'd7433cacdd9098bdbe77994ba7a78d91b90edc7164a00a40450db19978ac57f8',
+                  '.github/ci/verify-postgres-capability.py': 'af610a811b19f746c9a717fbebbc67639b16df962544acac9b51a3dd38a43455',
+                },
               },
               'scitex-ai/scitex-agent-container': {
                 id: 'sac', pgKind: 'separate', pgBin: null, pgVersion: '18',
                 image: null, pgImage: null,
+                nativeImage: null, nativePgImage: null,
                 nativeRuntime: null, hostedRuntime: null, leafSources: null,
               },
             });
@@ -120,6 +146,24 @@ jobs:
               requireContract(!hosted || digest(value.hosted_delivery_sha256), 'hosted-runtime-delivery-unqualified');
               return value;
             }
+            function qualifyRetainedPrivateImage(value, native, kind = 'ci') {
+              requireContract(native === true, 'private-image-hosted-refused');
+              requireContract(exactKeys(value, ['authority_kind', 'sha256', 'bytes',
+                'qualification_sha256', 'capabilities', 'native_paths'])
+                && value.authority_kind === 'retained-private-ci', 'private-image-authority-unqualified');
+              requireContract(digest(value.sha256) && Number.isSafeInteger(value.bytes)
+                && value.bytes > 0 && value.bytes <= 32 * 1024 ** 3
+                && digest(value.qualification_sha256), 'private-image-byte-pin-invalid');
+              const keys = kind === 'pg' ? ['postgres'] : ['3.11', '3.12', '3.13', 'postgres'];
+              requireContract(exactKeys(value.capabilities, keys)
+                && keys.every(key => typeof value.capabilities[key] === 'string'), 'private-image-capabilities-unqualified');
+              requireContract(Array.isArray(value.native_paths) && value.native_paths.length > 0
+                && new Set(value.native_paths).size === value.native_paths.length
+                && value.native_paths.every(path => typeof path === 'string'
+                  && /^\/[A-Za-z0-9_./-]+\.sif$/.test(path)
+                  && !path.split('/').includes('..') && !path.includes('//')), 'private-image-locator-unqualified');
+              return value;
+            }
             function profileSelection(repository, eventName, suite = 'matrix') {
               requireContract(Object.hasOwn(PROFILES, repository), 'repository-unregistered');
               requireContract(['push', 'pull_request', 'schedule', 'workflow_dispatch'].includes(eventName), 'event-unsupported');
@@ -140,7 +184,9 @@ jobs:
               requireContract(selected.suite !== 'nightly' || !native, 'nightly-native-refused');
               const value = registry[repository];
               requireContract(value && value.id === selected.profile, 'profile-mismatch');
-              const image = qualifyImage(value.image, !native);
+              const image = native && value.nativeImage
+                ? qualifyRetainedPrivateImage(value.nativeImage, native)
+                : qualifyImage(value.image, !native);
               for (const version of selected.versions) {
                 requireContract(typeof image.capabilities[version] === 'string'
                   && image.capabilities[version].startsWith(version + '.'), 'image-python-unqualified');
@@ -151,7 +197,9 @@ jobs:
                   && value.pgVersion === '16.15' && image.capabilities.postgres === '16.15', 'dev-pg-capability-unqualified');
               } else {
                 requireContract(value.pgKind === 'separate' && value.pgVersion === '18', 'sac-pg-architecture-invalid');
-                pgImage = qualifyImage(value.pgImage, !native, 'pg');
+                pgImage = native && value.nativePgImage
+                  ? qualifyRetainedPrivateImage(value.nativePgImage, native, 'pg')
+                  : qualifyImage(value.pgImage, !native, 'pg');
                 requireContract(typeof pgImage.capabilities.postgres === 'string'
                   && /^18\.[0-9]+$/.test(pgImage.capabilities.postgres), 'sac-pg18-unqualified');
               }
