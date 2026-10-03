@@ -1,0 +1,779 @@
+name: immutable-sif-matrix
+
+# Source-only successor. Image/producer/runtime and leaf closures are deliberately
+# unregistered until their actual owning receipts are reviewed. Unknown means a
+# failed hosted profile gate, never bare-host tests or reduced dependencies.
+on:
+  workflow_call:
+    inputs:
+      suite:
+        type: string
+        required: false
+        default: matrix
+      runs_on:
+        type: string
+        required: false
+        default: '["ubuntu-latest"]'
+      ci_xdist_workers:
+        type: string
+        required: false
+        default: ''
+    secrets:
+      CODECOV_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  runner-admission:
+    uses: ./.github/workflows/runner-admission.yml
+    with:
+      runs_on: ${{ inputs.suite == 'nightly' && '["ubuntu-latest"]' || inputs.runs_on }}
+
+  profile:
+    needs: [runner-admission]
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      plan: ${{ steps.contract.outputs.plan }}
+      versions: ${{ steps.contract.outputs.versions }}
+      profile: ${{ steps.contract.outputs.profile }}
+      suite: ${{ steps.contract.outputs.suite }}
+    steps:
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        id: contract
+        env:
+          NATIVE_AUTHORIZED: ${{ needs.runner-admission.outputs.native_authorized }}
+          SIF_SUITE: ${{ inputs.suite }}
+        with:
+          script: |
+            // BEGIN SIF_CONTRACT
+            const PROFILES = Object.freeze({
+              'scitex-ai/scitex-dev': {
+                id: 'dev', pgKind: 'embedded', pgBin: '/usr/lib/postgresql/16/bin',
+                pgVersion: '16.15', image: null, pgImage: null,
+                nativeRuntime: null, hostedRuntime: null, leafSources: null,
+              },
+              'scitex-ai/scitex-agent-container': {
+                id: 'sac', pgKind: 'separate', pgBin: null, pgVersion: '18',
+                image: null, pgImage: null,
+                nativeRuntime: null, hostedRuntime: null, leafSources: null,
+              },
+            });
+            const LEAF_PATHS = Object.freeze({
+              dev: ['.github/ci/exec-in-sif.sh', '.github/ci/run-in-sif.sh',
+                    '.github/ci/release-context.sh', '.github/ci/verify-postgres-capability.py'],
+              sac: ['.github/ci/exec-in-sif.sh', '.github/ci/run-in-sif.sh',
+                    '.github/ci/tmpdir-lib.sh', '.github/ci/clean-tmpdir.sh',
+                    '.github/ci/sif-runtime-lib.sh'],
+            });
+            function requireContract(value, reason) {
+              if (!value) throw new Error(reason);
+            }
+            function exactKeys(value, names) {
+              return value && typeof value === 'object' && !Array.isArray(value)
+                && Object.keys(value).sort().join('|') === [...names].sort().join('|');
+            }
+            function digest(value) {
+              return typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+            }
+            function publicDelivery(value) {
+              if (!exactKeys(value, ['url', 'release_id', 'asset_id', 'redirect_hosts'])) return false;
+              if (!Number.isSafeInteger(value.release_id) || value.release_id <= 0
+                  || !Number.isSafeInteger(value.asset_id) || value.asset_id <= 0) return false;
+              const allowed = ['github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com'];
+              return typeof value.url === 'string' && /^https:\/\/github\.com\/scitex-ai\/(scitex-dev|scitex-container)\/releases\/download\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+\.sif$/.test(value.url)
+                && Array.isArray(value.redirect_hosts) && value.redirect_hosts.length > 0
+                && new Set(value.redirect_hosts).size === value.redirect_hosts.length
+                && value.redirect_hosts.every(host => allowed.includes(host));
+            }
+            function qualifyImage(value, hosted, kind = 'ci') {
+              requireContract(exactKeys(value, ['sha256', 'bytes', 'producer_revision',
+                'source_manifest_sha256', 'public_inventory_sha256', 'delivery', 'capabilities', 'native_paths']), 'image-unqualified');
+              requireContract(digest(value.sha256) && Number.isSafeInteger(value.bytes)
+                && value.bytes > 0 && value.bytes <= 32 * 1024 ** 3, 'image-byte-pin-invalid');
+              requireContract(typeof value.producer_revision === 'string'
+                && /^[a-f0-9]{40}$/.test(value.producer_revision)
+                && digest(value.source_manifest_sha256) && digest(value.public_inventory_sha256), 'image-producer-unqualified');
+              const keys = kind === 'pg' ? ['postgres'] : ['3.11', '3.12', '3.13', 'postgres'];
+              requireContract(exactKeys(value.capabilities, keys)
+                && keys.every(key => typeof value.capabilities[key] === 'string'), 'image-capabilities-unqualified');
+              requireContract(value.delivery === null || publicDelivery(value.delivery), 'image-delivery-invalid');
+              requireContract(Array.isArray(value.native_paths) && value.native_paths.length > 0
+                && new Set(value.native_paths).size === value.native_paths.length
+                && value.native_paths.every(path => typeof path === 'string'
+                  && /^\/[A-Za-z0-9_./-]+\.sif$/.test(path)
+                  && !path.split('/').includes('..') && !path.includes('//')), 'native-image-authority-unqualified');
+              requireContract(!hosted || publicDelivery(value.delivery), 'hosted-image-delivery-unqualified');
+              return value;
+            }
+            function qualifyRuntime(value, hosted) {
+              requireContract(exactKeys(value, ['path', 'sha256', 'bytes', 'qualification_sha256',
+                'user_namespace', 'sif_mount', 'hosted_delivery_sha256']), 'runtime-unqualified');
+              requireContract(typeof value.path === 'string' && /^\/[A-Za-z0-9_./-]+$/.test(value.path)
+                && !value.path.split('/').includes('..') && digest(value.sha256)
+                && Number.isSafeInteger(value.bytes) && value.bytes > 0
+                && digest(value.qualification_sha256) && value.user_namespace === true
+                && value.sif_mount === true, 'runtime-capability-unqualified');
+              requireContract(value.hosted_delivery_sha256 === null || digest(value.hosted_delivery_sha256), 'runtime-delivery-invalid');
+              requireContract(!hosted || digest(value.hosted_delivery_sha256), 'hosted-runtime-delivery-unqualified');
+              return value;
+            }
+            function profileSelection(repository, eventName, suite = 'matrix') {
+              requireContract(Object.hasOwn(PROFILES, repository), 'repository-unregistered');
+              requireContract(['push', 'pull_request', 'schedule', 'workflow_dispatch'].includes(eventName), 'event-unsupported');
+              requireContract(['matrix', 'nightly'].includes(suite), 'suite-unsupported');
+              const profile = PROFILES[repository];
+              if (suite === 'nightly') {
+                requireContract(profile.id === 'sac', 'nightly-profile-unsupported');
+                requireContract(['pull_request', 'schedule', 'workflow_dispatch'].includes(eventName), 'nightly-event-unsupported');
+                return {profile: profile.id, suite, versions: ['3.12']};
+              }
+              const versions = profile.id === 'sac' && eventName === 'pull_request'
+                ? ['3.11', '3.13'] : ['3.11', '3.12', '3.13'];
+              return {profile: profile.id, suite, versions};
+            }
+            function planFor(repository, eventName, native, registry = PROFILES, suite = 'matrix') {
+              const selected = profileSelection(repository, eventName, suite);
+              requireContract(typeof native === 'boolean', 'admission-invalid');
+              requireContract(selected.suite !== 'nightly' || !native, 'nightly-native-refused');
+              const value = registry[repository];
+              requireContract(value && value.id === selected.profile, 'profile-mismatch');
+              const image = qualifyImage(value.image, !native);
+              for (const version of selected.versions) {
+                requireContract(typeof image.capabilities[version] === 'string'
+                  && image.capabilities[version].startsWith(version + '.'), 'image-python-unqualified');
+              }
+              let pgImage = null;
+              if (value.id === 'dev') {
+                requireContract(value.pgKind === 'embedded' && value.pgBin === '/usr/lib/postgresql/16/bin'
+                  && value.pgVersion === '16.15' && image.capabilities.postgres === '16.15', 'dev-pg-capability-unqualified');
+              } else {
+                requireContract(value.pgKind === 'separate' && value.pgVersion === '18', 'sac-pg-architecture-invalid');
+                pgImage = qualifyImage(value.pgImage, !native, 'pg');
+                requireContract(typeof pgImage.capabilities.postgres === 'string'
+                  && /^18\.[0-9]+$/.test(pgImage.capabilities.postgres), 'sac-pg18-unqualified');
+              }
+              const runtime = qualifyRuntime(native ? value.nativeRuntime : value.hostedRuntime, !native);
+              const paths = LEAF_PATHS[selected.profile];
+              requireContract(exactKeys(value.leafSources, paths)
+                && paths.every(path => digest(value.leafSources[path])), 'leaf-source-closure-unqualified');
+              return {profile: selected.profile, suite: selected.suite, versions: selected.versions, image, pgImage, runtime,
+                leafSources: value.leafSources, pgBin: value.pgBin,
+                pgVersion: pgImage ? pgImage.capabilities.postgres : value.pgVersion, native};
+            }
+            // END SIF_CONTRACT
+            const plan = planFor(context.payload.repository.full_name, context.eventName,
+              process.env.NATIVE_AUTHORIZED === 'true', PROFILES, process.env.SIF_SUITE);
+            core.setOutput('plan', JSON.stringify(plan));
+            core.setOutput('versions', JSON.stringify(plan.versions));
+            core.setOutput('profile', plan.profile);
+            core.setOutput('suite', plan.suite);
+
+  test-dev:
+    needs: [runner-admission, profile]
+    if: needs.profile.outputs.profile == 'dev' && needs.profile.outputs.suite == 'matrix'
+    name: test-dev-py${{ matrix.python-version }}
+    runs-on: >-
+      ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
+          && fromJSON('["ubuntu-latest"]')
+          || fromJSON(needs.runner-admission.outputs.runs_on) }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJSON(needs.profile.outputs.versions) }}
+    env:
+      CI_XDIST_WORKERS: ${{ inputs.ci_xdist_workers }}
+    steps:
+      - name: Refuse to run fork-authored code on self-hosted infrastructure
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          runner.environment == 'self-hosted'
+        run: |
+          set -euo pipefail
+          echo "::error title=Fork PR blocked::Fork-authored code is not run on the self-hosted Spartan pool."
+          echo "head repo: ${{ github.event.pull_request.head.repo.full_name }}  base repo: ${{ github.repository }}"
+          echo "To review this contribution, adopt its branch into ${{ github.repository }} and open a same-repo PR:"
+          echo "  gh pr checkout ${{ github.event.pull_request.number }} && git push origin HEAD:review/pr-${{ github.event.pull_request.number }}"
+          exit 1
+      - name: Require confirmed organization membership on native runners
+        if: runner.environment == 'self-hosted' && needs.runner-admission.outputs.native_authorized != 'true'
+        run: exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        id: checkout
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify source/runtime and acquire whole images
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        id: inputs
+        env:
+          PLAN: ${{ needs.profile.outputs.plan }}
+          NATIVE_CI_SIF: ${{ vars.SCITEX_CI_SIF }}
+          NATIVE_PG_SIF: ${{ vars.SCITEX_CI_PG_SIF }}
+        with:
+          script: |
+            // BEGIN SIF_FILE_GATE
+            const fs = require('fs');
+            const fsp = fs.promises;
+            const path = require('path');
+            const crypto = require('crypto');
+            const plan = JSON.parse(process.env.PLAN);
+            const deadline = Date.now() + 15 * 60 * 1000;
+            function check(value, reason) { if (!value) throw new Error(reason); }
+            function timeFence() { check(Date.now() < deadline, 'image-acquisition-deadline'); }
+            async function regularBytes(file, expected, expectedSize = null) {
+              timeFence();
+              const handle = await fsp.open(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+              try {
+                const before = await handle.stat();
+                check(before.isFile() && (expectedSize === null || before.size === expectedSize), 'file-metadata-mismatch');
+                const hash = crypto.createHash('sha256');
+                const chunk = Buffer.alloc(1024 * 1024);
+                let count = 0;
+                while (true) {
+                  timeFence();
+                  const {bytesRead} = await handle.read(chunk, 0, chunk.length, null);
+                  if (!bytesRead) break;
+                  count += bytesRead;
+                  check(count <= before.size, 'file-size-changed');
+                  hash.update(chunk.subarray(0, bytesRead));
+                }
+                const after = await handle.stat();
+                const current = await fsp.lstat(file);
+                timeFence();
+                check(after.dev === before.dev && after.ino === before.ino && after.size === before.size
+                  && after.mtimeMs === before.mtimeMs && after.ctimeMs === before.ctimeMs
+                  && current.dev === before.dev && current.ino === before.ino
+                  && count === before.size && hash.digest('hex') === expected, 'file-byte-pin-mismatch');
+              } finally { await handle.close(); }
+            }
+            const workspace = path.resolve(process.env.GITHUB_WORKSPACE);
+            for (const [relative, digest] of Object.entries(plan.leafSources)) {
+              let current = workspace;
+              check((await fsp.lstat(current)).isDirectory(), 'source-root-invalid');
+              const parts = relative.split('/');
+              for (const part of parts.slice(0, -1)) {
+                current = path.join(current, part);
+                const value = await fsp.lstat(current);
+                check(value.isDirectory() && !value.isSymbolicLink(), 'source-parent-not-owned');
+              }
+              await regularBytes(path.join(workspace, relative), digest);
+            }
+            await regularBytes(plan.runtime.path, plan.runtime.sha256, plan.runtime.bytes);
+            let owned = null;
+            if (!plan.native) {
+              const base = path.resolve(process.env.RUNNER_TEMP);
+              check((await fsp.lstat(base)).isDirectory(), 'runner-scratch-invalid');
+              owned = await fsp.mkdtemp(path.join(base, 'scitex-sif-'));
+              await fsp.chmod(owned, 0o700);
+              const value = await fsp.lstat(owned);
+              core.setOutput('owned', JSON.stringify({root: owned, dev: value.dev, ino: value.ino, uid: value.uid}));
+            }
+            async function acquire(image, locator, name) {
+              if (plan.native) {
+                check(typeof locator === 'string' && path.isAbsolute(locator)
+                  && image.native_paths.includes(locator), 'native-image-locator-unapproved');
+                const actual = await fsp.realpath(locator);
+                await regularBytes(actual, image.sha256, image.bytes);
+                return actual;
+              }
+              const target = path.join(owned, name);
+              const output = await fsp.open(target, 'wx', 0o600);
+              try {
+                let location = image.delivery.url;
+                let response;
+                for (let redirects = 0; redirects <= 5; redirects++) {
+                  const url = new URL(location);
+                  check(url.protocol === 'https:' && !url.username && !url.password
+                    && image.delivery.redirect_hosts.includes(url.hostname), 'public-image-redirect-refused');
+                  response = await fetch(url.href, {
+                    redirect: 'manual', signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
+                  });
+                  if (![301, 302, 303, 307, 308].includes(response.status)) break;
+                  const next = response.headers.get('location');
+                  check(next && redirects < 5, 'public-image-redirect-refused');
+                  location = new URL(next, url).href;
+                }
+                check(response.ok && response.body, 'public-image-download-refused');
+                let count = 0;
+                for await (const chunk of response.body) {
+                  timeFence();
+                  count += chunk.length;
+                  check(count <= image.bytes, 'public-image-size-exceeded');
+                  let offset = 0;
+                  while (offset < chunk.length) {
+                    timeFence();
+                    const {bytesWritten} = await output.write(chunk, offset, chunk.length - offset, null);
+                    timeFence();
+                    check(Number.isSafeInteger(bytesWritten) && bytesWritten > 0
+                      && bytesWritten <= chunk.length - offset, 'public-image-write-stalled');
+                    offset += bytesWritten;
+                  }
+                }
+                check(count === image.bytes, 'public-image-size-mismatch');
+                await output.sync();
+              } finally { await output.close(); }
+              await regularBytes(target, image.sha256, image.bytes);
+              await fsp.chmod(target, 0o400);
+              return target;
+            }
+            core.setOutput('sif', await acquire(plan.image, process.env.NATIVE_CI_SIF, 'ci.sif'));
+            core.setOutput('pg_sif', plan.pgImage
+              ? await acquire(plan.pgImage, process.env.NATIVE_PG_SIF, 'pg.sif') : '');
+            timeFence();
+            core.setOutput('apptainer', plan.runtime.path);
+            // END SIF_FILE_GATE
+      - name: Run the genuine full leaf SIF suite
+        env:
+          SCITEX_CI_SIF: ${{ steps.inputs.outputs.sif }}
+          SCITEX_CI_SIF_SHA256: ${{ fromJSON(needs.profile.outputs.plan).image.sha256 }}
+          SCITEX_CI_APPTAINER: ${{ steps.inputs.outputs.apptainer }}
+          SCITEX_CI_APPTAINER_SHA256: ${{ fromJSON(needs.profile.outputs.plan).runtime.sha256 }}
+          SCITEX_CI_PG_SIF: ${{ steps.inputs.outputs.pg_sif }}
+          SCITEX_CI_PG_SIF_SHA256: ${{ fromJSON(needs.profile.outputs.plan).pgImage.sha256 || '' }}
+          SCITEX_CI_PG_BIN: ${{ fromJSON(needs.profile.outputs.plan).pgBin || '' }}
+          SCITEX_CI_PG_VERSION: ${{ fromJSON(needs.profile.outputs.plan).pgVersion }}
+        run: bash .github/ci/exec-in-sif.sh run-in-sif.sh ${{ matrix.python-version }}
+      - name: Dev coverage
+        if: always() && needs.profile.outputs.profile == 'dev' && matrix.python-version == '3.12'
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
+        env:
+          HOME: ${{ runner.temp }}
+        with:
+          files: ./coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+          disable_safe_directory: true
+      - name: Remove this leg's owned hosted image copies
+        if: always() && steps.inputs.outputs.owned != ''
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          OWNED: ${{ steps.inputs.outputs.owned }}
+        with:
+          script: |
+            const fs = require('fs').promises;
+            const path = require('path');
+            const owned = JSON.parse(process.env.OWNED);
+            const base = path.resolve(process.env.RUNNER_TEMP);
+            if (path.dirname(owned.root) !== base || !path.basename(owned.root).startsWith('scitex-sif-')) throw new Error('scratch-owner-mismatch');
+            const value = await fs.lstat(owned.root);
+            if (!value.isDirectory() || value.isSymbolicLink() || value.dev !== owned.dev
+                || value.ino !== owned.ino || value.uid !== owned.uid || (value.mode & 0o777) !== 0o700) throw new Error('scratch-incarnation-mismatch');
+            const entries = await fs.readdir(owned.root);
+            if (entries.some(name => !['ci.sif', 'pg.sif'].includes(name))) throw new Error('scratch-unowned-member');
+            for (const name of entries) {
+              const file = path.join(owned.root, name);
+              const stat = await fs.lstat(file);
+              if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== owned.uid) throw new Error('scratch-member-mismatch');
+              await fs.unlink(file);
+            }
+            await fs.rmdir(owned.root);
+
+  test-sac:
+    needs: [runner-admission, profile]
+    if: needs.profile.outputs.profile == 'sac' && needs.profile.outputs.suite == 'matrix'
+    name: test-sac-py${{ matrix.python-version }}
+    runs-on: >-
+      ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
+          && fromJSON('["ubuntu-latest"]')
+          || fromJSON(needs.runner-admission.outputs.runs_on) }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJSON(needs.profile.outputs.versions) }}
+    env:
+      CI_XDIST_WORKERS: ${{ inputs.ci_xdist_workers }}
+    steps:
+      - name: Refuse to run fork-authored code on self-hosted infrastructure
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          runner.environment == 'self-hosted'
+        run: |
+          set -euo pipefail
+          echo "::error title=Fork PR blocked::Fork-authored code is not run on the self-hosted Spartan pool."
+          echo "head repo: ${{ github.event.pull_request.head.repo.full_name }}  base repo: ${{ github.repository }}"
+          echo "To review this contribution, adopt its branch into ${{ github.repository }} and open a same-repo PR:"
+          echo "  gh pr checkout ${{ github.event.pull_request.number }} && git push origin HEAD:review/pr-${{ github.event.pull_request.number }}"
+          exit 1
+      - name: Require confirmed organization membership on native runners
+        if: runner.environment == 'self-hosted' && needs.runner-admission.outputs.native_authorized != 'true'
+        run: exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        id: checkout
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify source/runtime and acquire whole images
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        id: inputs
+        env:
+          PLAN: ${{ needs.profile.outputs.plan }}
+          NATIVE_CI_SIF: ${{ vars.SCITEX_CI_SIF }}
+          NATIVE_PG_SIF: ${{ vars.SCITEX_CI_PG_SIF }}
+        with:
+          script: |
+            // BEGIN SIF_FILE_GATE
+            const fs = require('fs');
+            const fsp = fs.promises;
+            const path = require('path');
+            const crypto = require('crypto');
+            const plan = JSON.parse(process.env.PLAN);
+            const deadline = Date.now() + 15 * 60 * 1000;
+            function check(value, reason) { if (!value) throw new Error(reason); }
+            function timeFence() { check(Date.now() < deadline, 'image-acquisition-deadline'); }
+            async function regularBytes(file, expected, expectedSize = null) {
+              timeFence();
+              const handle = await fsp.open(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+              try {
+                const before = await handle.stat();
+                check(before.isFile() && (expectedSize === null || before.size === expectedSize), 'file-metadata-mismatch');
+                const hash = crypto.createHash('sha256');
+                const chunk = Buffer.alloc(1024 * 1024);
+                let count = 0;
+                while (true) {
+                  timeFence();
+                  const {bytesRead} = await handle.read(chunk, 0, chunk.length, null);
+                  if (!bytesRead) break;
+                  count += bytesRead;
+                  check(count <= before.size, 'file-size-changed');
+                  hash.update(chunk.subarray(0, bytesRead));
+                }
+                const after = await handle.stat();
+                const current = await fsp.lstat(file);
+                timeFence();
+                check(after.dev === before.dev && after.ino === before.ino && after.size === before.size
+                  && after.mtimeMs === before.mtimeMs && after.ctimeMs === before.ctimeMs
+                  && current.dev === before.dev && current.ino === before.ino
+                  && count === before.size && hash.digest('hex') === expected, 'file-byte-pin-mismatch');
+              } finally { await handle.close(); }
+            }
+            const workspace = path.resolve(process.env.GITHUB_WORKSPACE);
+            for (const [relative, digest] of Object.entries(plan.leafSources)) {
+              let current = workspace;
+              check((await fsp.lstat(current)).isDirectory(), 'source-root-invalid');
+              const parts = relative.split('/');
+              for (const part of parts.slice(0, -1)) {
+                current = path.join(current, part);
+                const value = await fsp.lstat(current);
+                check(value.isDirectory() && !value.isSymbolicLink(), 'source-parent-not-owned');
+              }
+              await regularBytes(path.join(workspace, relative), digest);
+            }
+            await regularBytes(plan.runtime.path, plan.runtime.sha256, plan.runtime.bytes);
+            let owned = null;
+            if (!plan.native) {
+              const base = path.resolve(process.env.RUNNER_TEMP);
+              check((await fsp.lstat(base)).isDirectory(), 'runner-scratch-invalid');
+              owned = await fsp.mkdtemp(path.join(base, 'scitex-sif-'));
+              await fsp.chmod(owned, 0o700);
+              const value = await fsp.lstat(owned);
+              core.setOutput('owned', JSON.stringify({root: owned, dev: value.dev, ino: value.ino, uid: value.uid}));
+            }
+            async function acquire(image, locator, name) {
+              if (plan.native) {
+                check(typeof locator === 'string' && path.isAbsolute(locator)
+                  && image.native_paths.includes(locator), 'native-image-locator-unapproved');
+                const actual = await fsp.realpath(locator);
+                await regularBytes(actual, image.sha256, image.bytes);
+                return actual;
+              }
+              const target = path.join(owned, name);
+              const output = await fsp.open(target, 'wx', 0o600);
+              try {
+                let location = image.delivery.url;
+                let response;
+                for (let redirects = 0; redirects <= 5; redirects++) {
+                  const url = new URL(location);
+                  check(url.protocol === 'https:' && !url.username && !url.password
+                    && image.delivery.redirect_hosts.includes(url.hostname), 'public-image-redirect-refused');
+                  response = await fetch(url.href, {
+                    redirect: 'manual', signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
+                  });
+                  if (![301, 302, 303, 307, 308].includes(response.status)) break;
+                  const next = response.headers.get('location');
+                  check(next && redirects < 5, 'public-image-redirect-refused');
+                  location = new URL(next, url).href;
+                }
+                check(response.ok && response.body, 'public-image-download-refused');
+                let count = 0;
+                for await (const chunk of response.body) {
+                  timeFence();
+                  count += chunk.length;
+                  check(count <= image.bytes, 'public-image-size-exceeded');
+                  let offset = 0;
+                  while (offset < chunk.length) {
+                    timeFence();
+                    const {bytesWritten} = await output.write(chunk, offset, chunk.length - offset, null);
+                    timeFence();
+                    check(Number.isSafeInteger(bytesWritten) && bytesWritten > 0
+                      && bytesWritten <= chunk.length - offset, 'public-image-write-stalled');
+                    offset += bytesWritten;
+                  }
+                }
+                check(count === image.bytes, 'public-image-size-mismatch');
+                await output.sync();
+              } finally { await output.close(); }
+              await regularBytes(target, image.sha256, image.bytes);
+              await fsp.chmod(target, 0o400);
+              return target;
+            }
+            core.setOutput('sif', await acquire(plan.image, process.env.NATIVE_CI_SIF, 'ci.sif'));
+            core.setOutput('pg_sif', plan.pgImage
+              ? await acquire(plan.pgImage, process.env.NATIVE_PG_SIF, 'pg.sif') : '');
+            timeFence();
+            core.setOutput('apptainer', plan.runtime.path);
+            // END SIF_FILE_GATE
+      - name: Run the genuine full leaf SIF suite
+        env:
+          SCITEX_CI_SIF: ${{ steps.inputs.outputs.sif }}
+          SCITEX_CI_SIF_SHA256: ${{ fromJSON(needs.profile.outputs.plan).image.sha256 }}
+          SCITEX_CI_APPTAINER: ${{ steps.inputs.outputs.apptainer }}
+          SCITEX_CI_APPTAINER_SHA256: ${{ fromJSON(needs.profile.outputs.plan).runtime.sha256 }}
+          SCITEX_CI_PG_SIF: ${{ steps.inputs.outputs.pg_sif }}
+          SCITEX_CI_PG_SIF_SHA256: ${{ fromJSON(needs.profile.outputs.plan).pgImage.sha256 || '' }}
+          SCITEX_CI_PG_BIN: ${{ fromJSON(needs.profile.outputs.plan).pgBin || '' }}
+          SCITEX_CI_PG_VERSION: ${{ fromJSON(needs.profile.outputs.plan).pgVersion }}
+        run: bash .github/ci/exec-in-sif.sh run-in-sif.sh ${{ matrix.python-version }}
+      - name: SAC coverage
+        if: always() && needs.profile.outputs.profile == 'sac' && matrix.python-version == '3.11'
+        continue-on-error: true
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7
+        with:
+          files: ./coverage.xml
+          use_oidc: true
+          fail_ci_if_error: true
+      - name: Preserve SAC per-leg always cleanup
+        if: always() && needs.profile.outputs.profile == 'sac' && steps.checkout.outcome == 'success'
+        run: bash .github/ci/clean-tmpdir.sh run-in-sif.sh ${{ matrix.python-version }}
+      - name: Remove this leg's owned hosted image copies
+        if: always() && steps.inputs.outputs.owned != ''
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          OWNED: ${{ steps.inputs.outputs.owned }}
+        with:
+          script: |
+            const fs = require('fs').promises;
+            const path = require('path');
+            const owned = JSON.parse(process.env.OWNED);
+            const base = path.resolve(process.env.RUNNER_TEMP);
+            if (path.dirname(owned.root) !== base || !path.basename(owned.root).startsWith('scitex-sif-')) throw new Error('scratch-owner-mismatch');
+            const value = await fs.lstat(owned.root);
+            if (!value.isDirectory() || value.isSymbolicLink() || value.dev !== owned.dev
+                || value.ino !== owned.ino || value.uid !== owned.uid || (value.mode & 0o777) !== 0o700) throw new Error('scratch-incarnation-mismatch');
+            const entries = await fs.readdir(owned.root);
+            if (entries.some(name => !['ci.sif', 'pg.sif'].includes(name))) throw new Error('scratch-unowned-member');
+            for (const name of entries) {
+              const file = path.join(owned.root, name);
+              const stat = await fs.lstat(file);
+              if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== owned.uid) throw new Error('scratch-member-mismatch');
+              await fs.unlink(file);
+            }
+            await fs.rmdir(owned.root);
+
+  nightly-sac:
+    needs: [runner-admission, profile]
+    if: needs.profile.outputs.profile == 'sac' && needs.profile.outputs.suite == 'nightly'
+    name: nightly-py${{ matrix.python-version }}-on-github-hosted
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJSON(needs.profile.outputs.versions) }}
+    env:
+      CI_XDIST_WORKERS: ${{ inputs.ci_xdist_workers }}
+    steps:
+      - name: Refuse to run fork-authored code on self-hosted infrastructure
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          runner.environment == 'self-hosted'
+        run: |
+          set -euo pipefail
+          echo "::error title=Fork PR blocked::Fork-authored code is not run on the self-hosted Spartan pool."
+          echo "head repo: ${{ github.event.pull_request.head.repo.full_name }}  base repo: ${{ github.repository }}"
+          echo "To review this contribution, adopt its branch into ${{ github.repository }} and open a same-repo PR:"
+          echo "  gh pr checkout ${{ github.event.pull_request.number }} && git push origin HEAD:review/pr-${{ github.event.pull_request.number }}"
+          exit 1
+      - name: Require confirmed organization membership on native runners
+        if: runner.environment == 'self-hosted' && needs.runner-admission.outputs.native_authorized != 'true'
+        run: exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        id: checkout
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify source/runtime and acquire whole images
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        id: inputs
+        env:
+          PLAN: ${{ needs.profile.outputs.plan }}
+          NATIVE_CI_SIF: ${{ vars.SCITEX_CI_SIF }}
+          NATIVE_PG_SIF: ${{ vars.SCITEX_CI_PG_SIF }}
+        with:
+          script: |
+            // BEGIN SIF_FILE_GATE
+            const fs = require('fs');
+            const fsp = fs.promises;
+            const path = require('path');
+            const crypto = require('crypto');
+            const plan = JSON.parse(process.env.PLAN);
+            const deadline = Date.now() + 15 * 60 * 1000;
+            function check(value, reason) { if (!value) throw new Error(reason); }
+            function timeFence() { check(Date.now() < deadline, 'image-acquisition-deadline'); }
+            async function regularBytes(file, expected, expectedSize = null) {
+              timeFence();
+              const handle = await fsp.open(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+              try {
+                const before = await handle.stat();
+                check(before.isFile() && (expectedSize === null || before.size === expectedSize), 'file-metadata-mismatch');
+                const hash = crypto.createHash('sha256');
+                const chunk = Buffer.alloc(1024 * 1024);
+                let count = 0;
+                while (true) {
+                  timeFence();
+                  const {bytesRead} = await handle.read(chunk, 0, chunk.length, null);
+                  if (!bytesRead) break;
+                  count += bytesRead;
+                  check(count <= before.size, 'file-size-changed');
+                  hash.update(chunk.subarray(0, bytesRead));
+                }
+                const after = await handle.stat();
+                const current = await fsp.lstat(file);
+                timeFence();
+                check(after.dev === before.dev && after.ino === before.ino && after.size === before.size
+                  && after.mtimeMs === before.mtimeMs && after.ctimeMs === before.ctimeMs
+                  && current.dev === before.dev && current.ino === before.ino
+                  && count === before.size && hash.digest('hex') === expected, 'file-byte-pin-mismatch');
+              } finally { await handle.close(); }
+            }
+            const workspace = path.resolve(process.env.GITHUB_WORKSPACE);
+            for (const [relative, digest] of Object.entries(plan.leafSources)) {
+              let current = workspace;
+              check((await fsp.lstat(current)).isDirectory(), 'source-root-invalid');
+              const parts = relative.split('/');
+              for (const part of parts.slice(0, -1)) {
+                current = path.join(current, part);
+                const value = await fsp.lstat(current);
+                check(value.isDirectory() && !value.isSymbolicLink(), 'source-parent-not-owned');
+              }
+              await regularBytes(path.join(workspace, relative), digest);
+            }
+            await regularBytes(plan.runtime.path, plan.runtime.sha256, plan.runtime.bytes);
+            let owned = null;
+            if (!plan.native) {
+              const base = path.resolve(process.env.RUNNER_TEMP);
+              check((await fsp.lstat(base)).isDirectory(), 'runner-scratch-invalid');
+              owned = await fsp.mkdtemp(path.join(base, 'scitex-sif-'));
+              await fsp.chmod(owned, 0o700);
+              const value = await fsp.lstat(owned);
+              core.setOutput('owned', JSON.stringify({root: owned, dev: value.dev, ino: value.ino, uid: value.uid}));
+            }
+            async function acquire(image, locator, name) {
+              if (plan.native) {
+                check(typeof locator === 'string' && path.isAbsolute(locator)
+                  && image.native_paths.includes(locator), 'native-image-locator-unapproved');
+                const actual = await fsp.realpath(locator);
+                await regularBytes(actual, image.sha256, image.bytes);
+                return actual;
+              }
+              const target = path.join(owned, name);
+              const output = await fsp.open(target, 'wx', 0o600);
+              try {
+                let location = image.delivery.url;
+                let response;
+                for (let redirects = 0; redirects <= 5; redirects++) {
+                  const url = new URL(location);
+                  check(url.protocol === 'https:' && !url.username && !url.password
+                    && image.delivery.redirect_hosts.includes(url.hostname), 'public-image-redirect-refused');
+                  response = await fetch(url.href, {
+                    redirect: 'manual', signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
+                  });
+                  if (![301, 302, 303, 307, 308].includes(response.status)) break;
+                  const next = response.headers.get('location');
+                  check(next && redirects < 5, 'public-image-redirect-refused');
+                  location = new URL(next, url).href;
+                }
+                check(response.ok && response.body, 'public-image-download-refused');
+                let count = 0;
+                for await (const chunk of response.body) {
+                  timeFence();
+                  count += chunk.length;
+                  check(count <= image.bytes, 'public-image-size-exceeded');
+                  let offset = 0;
+                  while (offset < chunk.length) {
+                    timeFence();
+                    const {bytesWritten} = await output.write(chunk, offset, chunk.length - offset, null);
+                    timeFence();
+                    check(Number.isSafeInteger(bytesWritten) && bytesWritten > 0
+                      && bytesWritten <= chunk.length - offset, 'public-image-write-stalled');
+                    offset += bytesWritten;
+                  }
+                }
+                check(count === image.bytes, 'public-image-size-mismatch');
+                await output.sync();
+              } finally { await output.close(); }
+              await regularBytes(target, image.sha256, image.bytes);
+              await fsp.chmod(target, 0o400);
+              return target;
+            }
+            core.setOutput('sif', await acquire(plan.image, process.env.NATIVE_CI_SIF, 'ci.sif'));
+            core.setOutput('pg_sif', plan.pgImage
+              ? await acquire(plan.pgImage, process.env.NATIVE_PG_SIF, 'pg.sif') : '');
+            timeFence();
+            core.setOutput('apptainer', plan.runtime.path);
+            // END SIF_FILE_GATE
+      - name: Run the genuine full leaf SIF suite
+        env:
+          SCITEX_CI_SIF: ${{ steps.inputs.outputs.sif }}
+          SCITEX_CI_SIF_SHA256: ${{ fromJSON(needs.profile.outputs.plan).image.sha256 }}
+          SCITEX_CI_APPTAINER: ${{ steps.inputs.outputs.apptainer }}
+          SCITEX_CI_APPTAINER_SHA256: ${{ fromJSON(needs.profile.outputs.plan).runtime.sha256 }}
+          SCITEX_CI_PG_SIF: ${{ steps.inputs.outputs.pg_sif }}
+          SCITEX_CI_PG_SIF_SHA256: ${{ fromJSON(needs.profile.outputs.plan).pgImage.sha256 || '' }}
+          SCITEX_CI_PG_BIN: ${{ fromJSON(needs.profile.outputs.plan).pgBin || '' }}
+          SCITEX_CI_PG_VERSION: ${{ fromJSON(needs.profile.outputs.plan).pgVersion }}
+        run: bash .github/ci/exec-in-sif.sh run-in-sif.sh ${{ matrix.python-version }} nightly
+      - name: Preserve SAC per-leg always cleanup
+        if: always() && needs.profile.outputs.profile == 'sac' && steps.checkout.outcome == 'success'
+        run: bash .github/ci/clean-tmpdir.sh run-in-sif.sh ${{ matrix.python-version }}
+      - name: Remove this leg's owned hosted image copies
+        if: always() && steps.inputs.outputs.owned != ''
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          OWNED: ${{ steps.inputs.outputs.owned }}
+        with:
+          script: |
+            const fs = require('fs').promises;
+            const path = require('path');
+            const owned = JSON.parse(process.env.OWNED);
+            const base = path.resolve(process.env.RUNNER_TEMP);
+            if (path.dirname(owned.root) !== base || !path.basename(owned.root).startsWith('scitex-sif-')) throw new Error('scratch-owner-mismatch');
+            const value = await fs.lstat(owned.root);
+            if (!value.isDirectory() || value.isSymbolicLink() || value.dev !== owned.dev
+                || value.ino !== owned.ino || value.uid !== owned.uid || (value.mode & 0o777) !== 0o700) throw new Error('scratch-incarnation-mismatch');
+            const entries = await fs.readdir(owned.root);
+            if (entries.some(name => !['ci.sif', 'pg.sif'].includes(name))) throw new Error('scratch-unowned-member');
+            for (const name of entries) {
+              const file = path.join(owned.root, name);
+              const stat = await fs.lstat(file);
+              if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== owned.uid) throw new Error('scratch-member-mismatch');
+              await fs.unlink(file);
+            }
+            await fs.rmdir(owned.root);
