@@ -1,0 +1,14 @@
+name: company CI pool health
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+
+permissions: {}
+
+jobs:
+  sample:
+    uses: ./.github/workflows/runner-health.yml
+    with:
+      runs_on: '["self-hosted","Linux","X64","scitex-org-cpu"]'

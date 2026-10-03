@@ -1,0 +1,48 @@
+name: organization runner health
+
+on:
+  workflow_call:
+    inputs:
+      runs_on:
+        type: string
+        required: false
+        default: '["ubuntu-latest"]'
+
+permissions: {}
+
+jobs:
+  runner-admission:
+    uses: ./.github/workflows/runner-admission.yml
+    with:
+      runs_on: ${{ inputs.runs_on }}
+
+  health:
+    needs: [runner-admission]
+    runs-on: ${{ fromJSON(needs.runner-admission.outputs.runs_on) }}
+    timeout-minutes: 3
+    permissions: {}
+    steps:
+      - name: Require confirmed organization membership on native runners
+        if: runner.environment == 'self-hosted' && needs.runner-admission.outputs.native_authorized != 'true'
+        run: |
+          echo '::error::Organization membership admission was not confirmed.'
+          exit 1
+      - name: Observe the admitted runner without checkout or installation
+        env:
+          OBSERVED_RUNNER_NAME: ${{ runner.name }}
+          OBSERVED_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'runner=%s\nenvironment=%s\n' "$OBSERVED_RUNNER_NAME" "$OBSERVED_RUNNER_ENVIRONMENT"
+          health_available_cpus=$(timeout 5s nproc)
+          health_online_cpus=$(timeout 5s nproc --all)
+          health_nice=$(timeout 5s ps -o ni= -p "$$")
+          [[ "$health_available_cpus" =~ ^[1-9][0-9]*$ && "$health_online_cpus" =~ ^[1-9][0-9]*$ ]]
+          printf 'available_cpus=%s\nonline_cpus=%s\nnice=%s\n' "$health_available_cpus" "$health_online_cpus" "$health_nice"
+          timeout 5s awk '/^MemTotal:|^MemAvailable:/ {print}' /proc/meminfo
+          timeout 5s df -P -- "$RUNNER_TEMP"
+          if [ -r /proc/pressure/cpu ]; then
+            timeout 5s cat /proc/pressure/cpu
+          fi
+          printf '%s\n' 'scope=one-admitted-runner-sample;not-whole-pool-or-package-CI'
