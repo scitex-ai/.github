@@ -158,7 +158,7 @@ jobs:
   # changed.
   # --------------------------------------------------------------------------
   ci:
-    uses: scitex-ai/.github/.github/workflows/pytest-matrix.yml@main
+    uses: ./.github/workflows/pytest-matrix.yml
     with:
       runs_on: ${{ inputs.ci-runs-on-json }}
     secrets:

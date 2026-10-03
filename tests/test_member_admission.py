@@ -138,3 +138,10 @@ def test_admission_has_no_checkout_credential_or_self_hosted_authority():
         "HEAD_REPOSITORY": "${{ github.event.pull_request.head.repo.full_name }}",
         "REQUESTED_RUNS_ON": "${{ inputs.runs_on }}",
     }
+
+
+def test_native_definitions_keep_all_nested_workflows_at_the_selected_revision():
+    workflows = [yaml.safe_load((ROOT / ".github/workflows" / name).read_text()) for name in FILES]
+    mutable = [job["uses"] for workflow in workflows for job in workflow["jobs"].values()
+               if "uses" in job and not job["uses"].startswith("./.github/workflows/")]
+    assert mutable == []
