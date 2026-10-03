@@ -482,8 +482,23 @@ const vm = require('vm');
 const input = JSON.parse(process.argv[1]);
 const outputs = {};
 let fetches = 0;
+let writes = 0;
+const actualFs = require('fs');
+const fileFs = {...actualFs, promises: {...actualFs.promises, open: async (...args) => {
+  const handle = await actualFs.promises.open(...args);
+  if (args[1] === 'wx' && ['hosted-partial-write', 'hosted-stalled-write'].includes(input.case)) {
+    const write = handle.write.bind(handle);
+    handle.write = async (buffer, offset, length, position) => {
+      writes++;
+      if (input.case === 'hosted-stalled-write') return {bytesWritten: 0};
+      return write(buffer, offset, Math.min(length, 3), position);
+    };
+  }
+  return handle;
+}}};
+const writeReceipt = () => input.case.endsWith('-write') ? {writes} : {};
 const sandbox = {
-  require, Buffer, Date, URL, AbortSignal,
+  require: name => name === 'fs' ? fileFs : require(name), Buffer, Date, URL, AbortSignal,
   process: {env: input.environment},
   core: {setOutput: (name, value) => { outputs[name] = value; }},
   fetch: async () => {
@@ -498,10 +513,11 @@ const sandbox = {
 };
 vm.runInNewContext('(async () => {\\n' + input.source + '\\n})()', sandbox)
   .then(() => console.log(JSON.stringify({
-    ok: true, fetches, keys: Object.keys(outputs).sort(),
+    ok: true, fetches, keys: Object.keys(outputs).sort(), ...writeReceipt(),
   })))
   .catch(error => console.log(JSON.stringify({ok: false, fetches,
-    reason: ['ELOOP', 'ENOENT'].includes(error.code) ? error.code : error.message})));
+    reason: ['ELOOP', 'ENOENT'].includes(error.code) ? error.code : error.message,
+    ...writeReceipt()})));
 """
         return node(
             program,
@@ -599,8 +615,58 @@ class SIFFileBoundaryTests(unittest.TestCase):
         # Assert
         assert not (result["ok"])
 
+    def test_real_partial_descriptor_writes_complete_verified_copy(self):
+        # Arrange
+        # Act
+        result = gate_case("hosted-partial-write")
+
+        # Assert
+        assert (
+            result["ok"]
+            and result["writes"] > 1
+            and result["keys"] == ["apptainer", "owned", "pg_sif", "sif"]
+        )
+
+    def test_zero_descriptor_write_refuses_before_image_acceptance(self):
+        # Arrange
+        # Act
+        result = gate_case("hosted-stalled-write")
+
+        # Assert
+        assert result == {
+            "ok": False,
+            "fetches": 1,
+            "writes": 1,
+            "reason": "public-image-write-stalled",
+        }
+
 
 class SIFWorkflowSourceTests(unittest.TestCase):
+    def test_owned_image_cleanup_cannot_mask_a_failed_leg(self):
+        # Arrange
+        source = WORKFLOW.read_text()
+        # Act
+        cleanups = source.split(
+            "      - name: Remove this leg's owned hosted image copies\n"
+        )[1:]
+
+        # Assert
+        assert len(cleanups) == 3 and all(
+            "continue-on-error:" not in "\n".join(block.splitlines()[:6]) for block in cleanups
+        )
+
+    def test_existing_sac_coverage_error_policy_remains_explicit(self):
+        # Arrange
+        # Act
+        coverage = (
+            WORKFLOW.read_text()
+            .split("      - name: SAC coverage\n")[1]
+            .split("      - name:", 1)[0]
+        )
+
+        # Assert
+        assert "continue-on-error: true" in coverage
+
     def test_both_profile_source_gates_are_identical(self):
         # Arrange
         # Act

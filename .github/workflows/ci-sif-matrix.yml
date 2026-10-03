@@ -307,7 +307,15 @@ jobs:
                   timeFence();
                   count += chunk.length;
                   check(count <= image.bytes, 'public-image-size-exceeded');
-                  await output.write(chunk);
+                  let offset = 0;
+                  while (offset < chunk.length) {
+                    timeFence();
+                    const {bytesWritten} = await output.write(chunk, offset, chunk.length - offset, null);
+                    timeFence();
+                    check(Number.isSafeInteger(bytesWritten) && bytesWritten > 0
+                      && bytesWritten <= chunk.length - offset, 'public-image-write-stalled');
+                    offset += bytesWritten;
+                  }
                 }
                 check(count === image.bytes, 'public-image-size-mismatch');
                 await output.sync();
@@ -345,7 +353,6 @@ jobs:
           disable_safe_directory: true
       - name: Remove this leg's owned hosted image copies
         if: always() && steps.inputs.outputs.owned != ''
-        continue-on-error: true
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           OWNED: ${{ steps.inputs.outputs.owned }}
@@ -506,7 +513,15 @@ jobs:
                   timeFence();
                   count += chunk.length;
                   check(count <= image.bytes, 'public-image-size-exceeded');
-                  await output.write(chunk);
+                  let offset = 0;
+                  while (offset < chunk.length) {
+                    timeFence();
+                    const {bytesWritten} = await output.write(chunk, offset, chunk.length - offset, null);
+                    timeFence();
+                    check(Number.isSafeInteger(bytesWritten) && bytesWritten > 0
+                      && bytesWritten <= chunk.length - offset, 'public-image-write-stalled');
+                    offset += bytesWritten;
+                  }
                 }
                 check(count === image.bytes, 'public-image-size-mismatch');
                 await output.sync();
@@ -545,7 +560,6 @@ jobs:
         run: bash .github/ci/clean-tmpdir.sh run-in-sif.sh ${{ matrix.python-version }}
       - name: Remove this leg's owned hosted image copies
         if: always() && steps.inputs.outputs.owned != ''
-        continue-on-error: true
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           OWNED: ${{ steps.inputs.outputs.owned }}
@@ -702,7 +716,15 @@ jobs:
                   timeFence();
                   count += chunk.length;
                   check(count <= image.bytes, 'public-image-size-exceeded');
-                  await output.write(chunk);
+                  let offset = 0;
+                  while (offset < chunk.length) {
+                    timeFence();
+                    const {bytesWritten} = await output.write(chunk, offset, chunk.length - offset, null);
+                    timeFence();
+                    check(Number.isSafeInteger(bytesWritten) && bytesWritten > 0
+                      && bytesWritten <= chunk.length - offset, 'public-image-write-stalled');
+                    offset += bytesWritten;
+                  }
                 }
                 check(count === image.bytes, 'public-image-size-mismatch');
                 await output.sync();
@@ -733,7 +755,6 @@ jobs:
         run: bash .github/ci/clean-tmpdir.sh run-in-sif.sh ${{ matrix.python-version }}
       - name: Remove this leg's owned hosted image copies
         if: always() && steps.inputs.outputs.owned != ''
-        continue-on-error: true
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           OWNED: ${{ steps.inputs.outputs.owned }}
