@@ -87,7 +87,13 @@ permissions:
   actions: write
 
 jobs:
+  runner-admission:
+    uses: ./.github/workflows/runner-admission.yml
+    with:
+      runs_on: ${{ inputs.runs_on }}
+
   automerge:
+    needs: [runner-admission]
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.check_suite.conclusion == 'success' }}
     # The "ZERO GitHub-hosted runners (operator mandate 2026-07-14)" rule that
     # stood here is SUPERSEDED by the operator's 2026-08-05 direction: stop
@@ -100,8 +106,13 @@ jobs:
     # is still the DEFAULT and still serves every repo. What changed is that a
     # consumer may now override it per repo, which is the whole point of the
     # input: repos migrate off Spartan one at a time instead of all at once.
-    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    runs-on: ${{ fromJSON(needs.runner-admission.outputs.runs_on) }}
     steps:
+      - name: Require confirmed organization membership on native runners
+        if: runner.environment == 'self-hosted' && needs.runner-admission.outputs.native_authorized != 'true'
+        run: |
+          echo '::error::Organization membership admission was not confirmed.'
+          exit 1
       - name: merge green PRs targeting develop
         env:
           GH_TOKEN: ${{ github.token }}

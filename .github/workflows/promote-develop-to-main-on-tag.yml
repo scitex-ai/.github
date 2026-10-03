@@ -139,6 +139,11 @@ on:
         required: false
 
 jobs:
+  runner-admission:
+    uses: ./.github/workflows/runner-admission.yml
+    with:
+      runs_on: ${{ inputs.runs-on-json }}
+
   # --------------------------------------------------------------------------
   # CI on the tagged commit — org-standard pytest-matrix. Reusable `uses:`
   # must be a literal (no expressions), so the CI WORKFLOW is fixed here; its
@@ -164,7 +169,7 @@ jobs:
   # with a MERGE commit. Only runs if `ci` succeeded.
   # --------------------------------------------------------------------------
   promote:
-    needs: ci
+    needs: [ci, runner-admission]
     # FORK-AUTHORED PRs ARE ROUTED TO ubuntu-latest HERE, UNCONDITIONALLY —
     # never to `inputs.runs-on-json`, which may be self-hosted. Same fork
     # predicate as the guard step below on purpose. In practice this job is
@@ -175,7 +180,7 @@ jobs:
     runs-on: >-
       ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
           && fromJSON('["ubuntu-latest"]')
-          || fromJSON(inputs.runs-on-json) }}
+          || fromJSON(needs.runner-admission.outputs.runs_on) }}
     timeout-minutes: 20
     permissions:
       contents: write
@@ -210,6 +215,11 @@ jobs:
           echo "  gh pr checkout ${{ github.event.pull_request.number }} && git push origin HEAD:review/pr-${{ github.event.pull_request.number }}"
           exit 1
 
+      - name: Require confirmed organization membership on native runners
+        if: runner.environment == 'self-hosted' && needs.runner-admission.outputs.native_authorized != 'true'
+        run: |
+          echo '::error::Organization membership admission was not confirmed.'
+          exit 1
       - name: Resolve version from the triggering tag
         id: ver
         run: |

@@ -254,7 +254,13 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  runner-admission:
+    uses: ./.github/workflows/runner-admission.yml
+    with:
+      runs_on: ${{ inputs.runs_on }}
+
   pytest-matrix:
+    needs: [runner-admission]
     # This name is the SECOND half of the required status check. The full context
     # a caller emits is "pytest-matrix / pytest-matrix-on-ubuntu-py3.11" (given the
     # mandated caller job id above). Renaming this breaks branch protection in
@@ -264,14 +270,14 @@ jobs:
     # never to `inputs.runs_on`, which may be self-hosted. Same fork
     # predicate as the guard step below on purpose: one sanctioned answer to
     # "is this a fork?", not two that can drift apart. Non-fork runs are
-    # unaffected — exactly `inputs.runs_on`, as before. The guard step is the
+    # additionally require the shared original-actor/member admission. The guard is the
     # BACKSTOP: it independently checks `runner.environment` and refuses
     # checkout if this expression is ever wrong. See README.md "Fork guard"
     # and tests/test_fork_guard.py.
     runs-on: >-
       ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
           && fromJSON('["ubuntu-latest"]')
-          || fromJSON(inputs.runs_on) }}
+          || fromJSON(needs.runner-admission.outputs.runs_on) }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -350,6 +356,11 @@ jobs:
           echo "head repo: ${{ github.event.pull_request.head.repo.full_name }}  base repo: ${{ github.repository }}"
           echo "To review this contribution, adopt its branch into ${{ github.repository }} and open a same-repo PR:"
           echo "  gh pr checkout ${{ github.event.pull_request.number }} && git push origin HEAD:review/pr-${{ github.event.pull_request.number }}"
+          exit 1
+      - name: Require confirmed organization membership on native runners
+        if: runner.environment == 'self-hosted' && needs.runner-admission.outputs.native_authorized != 'true'
+        run: |
+          echo '::error::Organization membership admission was not confirmed.'
           exit 1
       - uses: actions/checkout@v5
       - name: Ensure Rust fd for audit discovery
@@ -730,10 +741,15 @@ jobs:
     runs-on: >-
       ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
           && fromJSON('["ubuntu-latest"]')
-          || fromJSON(inputs.runs_on) }}
-    needs: [pytest-matrix]
+          || fromJSON(needs.runner-admission.outputs.runs_on) }}
+    needs: [pytest-matrix, runner-admission]
     if: always()
     steps:
+      - name: Require confirmed organization membership on native runners
+        if: runner.environment == 'self-hosted' && needs.runner-admission.outputs.native_authorized != 'true'
+        run: |
+          echo '::error::Organization membership admission was not confirmed.'
+          exit 1
       - name: Require every selected compatibility leg
         env:
           RESULT: ${{ needs.pytest-matrix.result }}

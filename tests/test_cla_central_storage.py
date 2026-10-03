@@ -41,5 +41,9 @@ def test_outsider_triggerable_cla_jobs_keep_hosted_default_and_no_checkout() -> 
     )
 
     for job in workflow["jobs"].values():
-        assert job["runs-on"] == "${{ fromJSON(inputs.runs_on) }}"
+        if "uses" in job:
+            assert job["uses"] == "./.github/workflows/runner-admission.yml"
+            continue
+        assert job["runs-on"] == "${{ fromJSON(needs.runner-admission.outputs.runs_on) }}"
+        assert "runner-admission" in job["needs"]
         assert all("actions/checkout" not in str(step.get("uses", "")) for step in job["steps"])

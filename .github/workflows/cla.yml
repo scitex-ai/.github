@@ -92,7 +92,13 @@ permissions:
   statuses: write
 
 jobs:
+  runner-admission:
+    uses: ./.github/workflows/runner-admission.yml
+    with:
+      runs_on: ${{ inputs.runs_on }}
+
   owner-bypass:
+    needs: [runner-admission]
     if: github.event_name == 'push' && github.actor == inputs.owner_login
     # Defaults to the org pool. The blanket "ZERO GitHub-hosted runners
     # (operator mandate 2026-07-14)" rule that stood here is SUPERSEDED by the
@@ -133,10 +139,15 @@ jobs:
     # destination THEY choose, not just the one written here. CLA runs on
     # outsider-triggerable events; picking its runner is a safety decision, not
     # a policy one. Do not override it here as part of a routine CI migration.
-    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    runs-on: ${{ fromJSON(needs.runner-admission.outputs.runs_on) }}
     permissions:
       statuses: write
     steps:
+      - name: Require confirmed organization membership on native runners
+        if: runner.environment == 'self-hosted' && needs.runner-admission.outputs.native_authorized != 'true'
+        run: |
+          echo '::error::Organization membership admission was not confirmed.'
+          exit 1
       - name: Mark CLAssistant=success on this SHA (owner-allowlisted direct push)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -150,6 +161,7 @@ jobs:
             -f description="Owner-triggered direct push (CLA bypass per repo allowlist)"
 
   CLAssistant:
+    needs: [runner-admission]
     if: github.event_name != 'push'
     # Defaults to the org pool. The blanket "ZERO GitHub-hosted runners
     # (operator mandate 2026-07-14)" rule that stood here is SUPERSEDED by the
@@ -190,8 +202,13 @@ jobs:
     # destination THEY choose, not just the one written here. CLA runs on
     # outsider-triggerable events; picking its runner is a safety decision, not
     # a policy one. Do not override it here as part of a routine CI migration.
-    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    runs-on: ${{ fromJSON(needs.runner-admission.outputs.runs_on) }}
     steps:
+      - name: Require confirmed organization membership on native runners
+        if: runner.environment == 'self-hosted' && needs.runner-admission.outputs.native_authorized != 'true'
+        run: |
+          echo '::error::Organization membership admission was not confirmed.'
+          exit 1
       - name: CLA Assistant
         # Upstream v2.6.1 still declares node20. This SciTeX fork changes only
         # action.yml to node24; pin the reviewed commit, not a mutable branch.

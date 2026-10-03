@@ -33,7 +33,7 @@ def test_reusable_matrix_uses_dynamic_cpu_and_low_priority():
 def test_reusable_matrix_has_stable_fail_closed_aggregate():
     gate = workflow()["jobs"]["pytest-aggregate"]
     assert gate["name"] == "pytest aggregate gate"
-    assert gate["needs"] == ["pytest-matrix"]
+    assert gate["needs"] == ["pytest-matrix", "runner-admission"]
     assert gate["if"] == "always()"
     assert '!= "success"' in str(gate["steps"])
 

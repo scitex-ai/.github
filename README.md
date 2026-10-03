@@ -143,28 +143,32 @@ backstop guard step still refuses, loudly, if it is ever wrong. The guard
 **fails** rather than skipping: a skipped job's check can be reported as
 successful to branch protection, which is a red that looks green.
 
-### What the guard does not do
+### Organization membership and workflow access
 
-For `pull_request`, GitHub runs the workflow definition from the PR's own
-head. A hostile fork can therefore edit the **caller's** `ci.yml` to skip
-these reusable workflows entirely and declare its own self-hosted job. This
-guard (routing + backstop) closes the default path; it is not a boundary.
+The 2026-10-03 operator mandate limits the compute02/03/04 company runner
+pool to organization members. Each of the seven reusable workflows first
+calls `runner-admission.yml` at the same source revision on a GitHub-hosted
+runner. It checks the original actor and the triggering actor separately;
+same-repository pull requests also require the PR author to qualify. Only
+an anonymous public-membership response of HTTP 204 confirms membership.
+Forks, private or unavailable membership, unsupported events, and failed
+checks receive hosted CI. A member's rerun cannot authorize an external
+original actor. This adds no membership token or secret authority.
 
-The boundary is the fork-PR approval policy — measured
-`all_external_contributors` on 74 of 74 public `scitex-ai` repos and as the
-org default for new repos (2026-07-30), so no external contributor's workflow
-runs without a maintainer's click. Treat that click as "execute this
-stranger's code on a shared university node", because that is what it is.
+Workflow source alone cannot prevent a caller from declaring its own
+native job. The organization runner group must also restrict workflow
+access to the seven reviewed reusable workflows at their full commit SHA.
+GitHub applies that restriction to jobs directly defined in each selected
+workflow: the pytest workflow called by promotion needs its own entry.
+The hosted admission workflow needs no company runner access. Common
+labels and a fork-run approval do not grant membership authorization.
 
-To review an external contribution safely, adopt its branch instead of
-approving a fork run:
-
-```bash
-gh pr checkout <n>
-git push origin HEAD:refs/heads/review/pr-<n>
-```
-
-and open a same-repo pull request, which runs CI over code you have read.
+Source publication and the group API readback are separate checks. Do not
+claim enforcement until the group reports the exact seven selected
+revisions and `restricted_to_workflows: true`. Keep public contributions
+on hosted runners when membership or source qualification is unknown.
+See [GitHub runner-group access](https://docs.github.com/en/enterprise-cloud@latest/actions/how-tos/manage-runners/self-hosted-runners/manage-access)
+and [public membership responses](https://docs.github.com/en/rest/orgs/members#check-public-organization-membership-for-a-user).
 
 ## Self-hosted runner npm-cache preflight
 
