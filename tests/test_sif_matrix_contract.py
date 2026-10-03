@@ -652,7 +652,8 @@ class SIFWorkflowSourceTests(unittest.TestCase):
 
         # Assert
         assert len(cleanups) == 3 and all(
-            "continue-on-error:" not in "\n".join(block.splitlines()[:6]) for block in cleanups
+            "continue-on-error:" not in "\n".join(block.splitlines()[:6])
+            for block in cleanups
         )
 
     def test_existing_sac_coverage_error_policy_remains_explicit(self):
@@ -746,38 +747,27 @@ class SIFWorkflowSourceTests(unittest.TestCase):
         assert "inputs.suite == 'nightly' && '[\"ubuntu-latest\"]'" in admission
 
     def test_existing_protected_workflow_bodies_unchanged(self):
-        # Arrange
-        names = [
-            "auto-merge-to-develop.yml",
-            "cla.yml",
-            "import-smoke.yml",
-            "promote-develop-to-main-on-tag.yml",
-            "pytest-matrix.yml",
-            "quality-audit.yml",
-            "rtd-sphinx-build.yml",
-            "runner-admission.yml",
-        ]
-        comparisons = []
+        # Arrange: exact whole-body pins from 8c646081, independent of checkout depth.
+        expected = {
+            "auto-merge-to-develop.yml": "a28d9b92576590903290809643f21c93f680a6b2a1a8913d6c6e2fed89993de0",
+            "cla.yml": "55b422a674acb918d247b3a025bf413fe751de16b85f5f06f1251331c4d98c06",
+            "import-smoke.yml": "df8fb3d63e91612353b3fcbfcaf6f0e43d7c0102f799b48e82d8a47e32956f06",
+            "promote-develop-to-main-on-tag.yml": "1e3cec556f96612ff987f1bc2969dd145f85ebfff48297a3bf3adccd0b8c0c69",
+            "pytest-matrix.yml": "e822cffc869bde67a19b97755aa5844c2c83ee717c168540562ee0984a72f0ae",
+            "quality-audit.yml": "f44a2e6b5c479c2975d1cedf66738fdbf402a74cf1d8e26340bb9895524e7b4a",
+            "rtd-sphinx-build.yml": "51be02f591beeeb5398b6447a7c26f0959e5487cad5b974bf62d2cf56fd51b5d",
+            "runner-admission.yml": "e4eb6c5cc5aedd8a460380f796047c2ea33a446846235001355697350d36c915",
+        }
         # Act
-        for name in names:
-            original = subprocess.run(
-                [
-                    "git",
-                    "show",
-                    "8c646081e9f1352077d3d8674052cce7ec75a1b7:.github/workflows/"
-                    + name,
-                ],
-                cwd=ROOT,
-                capture_output=True,
-                timeout=5,
-                check=True,
-            ).stdout
-            comparisons.append(
-                original == (ROOT / ".github/workflows" / name).read_bytes()
-            )
+        actual = {
+            name: hashlib.sha256(
+                (ROOT / ".github/workflows" / name).read_bytes()
+            ).hexdigest()
+            for name in expected
+        }
 
         # Assert
-        assert comparisons == [True] * 8
+        assert actual == expected
 
 
 if __name__ == "__main__":
