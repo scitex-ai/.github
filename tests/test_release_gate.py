@@ -51,7 +51,7 @@ _REPO = Path(__file__).resolve().parents[1]
 _PROMOTE = _REPO / ".github" / "workflows" / "promote-develop-to-main-on-tag.yml"
 _CALLER = _REPO / "workflow-templates" / "release.yml"
 
-_PYTEST_MATRIX = "scitex-ai/.github/.github/workflows/pytest-matrix.yml@main"
+_PYTEST_MATRIX = "./.github/workflows/pytest-matrix.yml"
 
 
 def _load(path: Path) -> dict:

@@ -1,0 +1,91 @@
+name: organization runner admission
+
+on:
+  workflow_call:
+    inputs:
+      runs_on:
+        type: string
+        required: false
+        default: '["ubuntu-latest"]'
+    outputs:
+      runs_on:
+        value: ${{ jobs.admission.outputs.runs_on }}
+      native_authorized:
+        value: ${{ jobs.admission.outputs.native_authorized }}
+      reason:
+        value: ${{ jobs.admission.outputs.reason }}
+
+jobs:
+  admission:
+    runs-on: ubuntu-latest
+    permissions: {}
+    timeout-minutes: 2
+    outputs:
+      runs_on: ${{ steps.select.outputs.runs_on }}
+      native_authorized: ${{ steps.select.outputs.native_authorized }}
+      reason: ${{ steps.select.outputs.reason }}
+    steps:
+      # No checkout, API credential, secret inheritance or caller-script execution.
+      # Private/unavailable membership is UNKNOWN and receives hosted CI.
+      - id: select
+        name: Select a runner from original event identity
+        env:
+          REPOSITORY: ${{ github.repository }}
+          ORIGINAL_ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          REQUESTED_RUNS_ON: ${{ inputs.runs_on }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const hosted = ['ubuntu-latest'];
+          const org = 'scitex-ai';
+          const write = (runsOn, authorized, reason) => {
+            fs.appendFileSync(process.env.GITHUB_OUTPUT,
+              `runs_on=${JSON.stringify(runsOn)}\nnative_authorized=${authorized}\nreason=${reason}\n`);
+          };
+          write(hosted, false, 'membership-not-confirmed');
+          async function select() {
+            const env = process.env;
+            if (!/^scitex-ai\/[A-Za-z0-9_.-]+$/i.test(env.REPOSITORY || '')) return;
+            if (!['push', 'pull_request', 'schedule', 'workflow_dispatch'].includes(env.EVENT_NAME)) return;
+            const subjects = [env.ORIGINAL_ACTOR, env.TRIGGERING_ACTOR];
+            if (env.EVENT_NAME === 'pull_request') {
+              if (!env.HEAD_REPOSITORY || env.HEAD_REPOSITORY.toLowerCase() !== env.REPOSITORY.toLowerCase()) {
+                write(hosted, false, 'fork-or-missing-origin');
+                return;
+              }
+              subjects.push(env.PR_AUTHOR);
+            }
+            const login = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
+            if (subjects.some(s => typeof s !== 'string' || !login.test(s))) return;
+            let requested;
+            try { requested = JSON.parse(env.REQUESTED_RUNS_ON || ''); } catch { return; }
+            if (typeof requested === 'string') requested = [requested];
+            if (!Array.isArray(requested) || !requested.length || requested.length > 12 ||
+                requested.some(s => typeof s !== 'string' || s.length > 80)) return;
+            const native = requested.includes('self-hosted');
+            const known = new Set(['self-hosted', 'Linux', 'X64', 'scitex-ci', 'scitex-org-cpu',
+              'scitex-local-cpu', 'scitex-docker', 'sac-control-plane']);
+            if (native && (requested.some(s => !known.has(s)) ||
+                !requested.some(s => ['scitex-ci', 'scitex-org-cpu', 'scitex-local-cpu', 'scitex-docker'].includes(s)))) {
+              write(hosted, false, 'undeclared-native-destination');
+              return;
+            }
+            if (!native && requested.some(s => !/^(ubuntu|windows|macos)-(latest|[0-9]+(?:\.[0-9]+)?(?:-arm64)?)$/.test(s))) return;
+            for (const subject of new Set(subjects.map(s => s.toLowerCase()))) {
+              const response = await fetch(`https://api.github.com/orgs/${org}/public_members/${encodeURIComponent(subject)}`, {
+                redirect: 'error', signal: AbortSignal.timeout(5000),
+                headers: {Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28'}
+              });
+              if (response.status !== 204) return;
+            }
+            // Group restriction is the server-side boundary. Labels only select
+            // hardware inside the declared organization group after admission.
+            write(native ? {group: 'Organization', labels: requested} : requested,
+              native, native ? 'confirmed-organization-members' : 'requested-hosted');
+          }
+          select().catch(() => { /* Fixed hosted outputs already exist; no error body is logged. */ });
+          NODE
