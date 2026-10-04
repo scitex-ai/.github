@@ -62,7 +62,7 @@ def test_periodic_caller_uses_same_revision_shared_admission_without_secrets():
     # Act
     events = caller.get("on", caller.get(True))
     # Assert
-    assert events == {"workflow_dispatch": None, "schedule": [{"cron": "7,22,37,52 * * * *"}]}
+    assert events == {"workflow_dispatch": None, "schedule": [{"cron": "17 * * * *"}]}
     assert caller["jobs"]["sample"]["uses"] == "./.github/workflows/runner-health.yml"
     assert caller["permissions"] == {}
     assert "secrets" not in caller["jobs"]["sample"]
