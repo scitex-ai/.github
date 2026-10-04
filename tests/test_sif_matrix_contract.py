@@ -750,7 +750,7 @@ class SIFWorkflowSourceTests(unittest.TestCase):
         # Arrange: retained pins, reviewed import and restricted-group successors.
         expected = {
             "auto-merge-to-develop.yml": "a28d9b92576590903290809643f21c93f680a6b2a1a8913d6c6e2fed89993de0",
-            "cla.yml": "55b422a674acb918d247b3a025bf413fe751de16b85f5f06f1251331c4d98c06",
+            "cla.yml": "d39672edd41d5689c4d3f203bd94b7fb7ecfd1dce589e07f40ccff8b494d1732",
             "import-smoke.yml": "3df1f4d4abd9da553b36484e37b8c5588e5684f6618d1b102c698893595fe8d6",
             "promote-develop-to-main-on-tag.yml": "1e3cec556f96612ff987f1bc2969dd145f85ebfff48297a3bf3adccd0b8c0c69",
             "pytest-matrix.yml": "e822cffc869bde67a19b97755aa5844c2c83ee717c168540562ee0984a72f0ae",
