@@ -756,7 +756,7 @@ class SIFWorkflowSourceTests(unittest.TestCase):
             "pytest-matrix.yml": "e822cffc869bde67a19b97755aa5844c2c83ee717c168540562ee0984a72f0ae",
             "quality-audit.yml": "f44a2e6b5c479c2975d1cedf66738fdbf402a74cf1d8e26340bb9895524e7b4a",
             "rtd-sphinx-build.yml": "cc680b6ceecac73566b212a0db96ba016b3aa28766700e95b04691981ededaad",
-            "runner-admission.yml": "f2e92f6a50526c2133cd12ae7c5cbd98ce2922354bd85c628ca48aad4acc6d18",
+            "runner-admission.yml": "541e776a17d4b7ba9d01889ad7226ed6405828e19ac4a7fea1c20bc943e326d9",
         }
         # Act
         actual = {

@@ -57,7 +57,7 @@ class TestDevOriginalProfile(unittest.TestCase):
             (admission.decode(), hashlib.sha256(admission).hexdigest()),
             (
                 fixture["runner_admission"]["body"],
-                "f2e92f6a50526c2133cd12ae7c5cbd98ce2922354bd85c628ca48aad4acc6d18",
+                fixture["runner_admission"]["sha256"],
             ),
         )
 

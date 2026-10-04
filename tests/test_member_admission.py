@@ -21,7 +21,8 @@ def execute(tmp_path, **changes):
     body = script.split("node <<'NODE'\n", 1)[1].rsplit("\nNODE", 1)[0]
     env = {"PATH": "/usr/bin:/bin", "LANG": "C", "REPOSITORY": "scitex-ai/package",
            "ORIGINAL_ACTOR": "internal", "TRIGGERING_ACTOR": "internal", "EVENT_NAME": "push",
-           "PR_AUTHOR": "", "HEAD_REPOSITORY": "", "REQUESTED_RUNS_ON": NATIVE}
+           "PR_AUTHOR": "", "PR_AUTHOR_ASSOCIATION": "", "HEAD_REPOSITORY": "",
+           "RUN_ATTEMPT": "1", "REQUESTED_RUNS_ON": NATIVE}
     statuses = changes.pop("statuses", {})
     env.update(changes)
     out = tmp_path / "outputs"
@@ -102,6 +103,29 @@ def test_member_fork_and_missing_pr_origin_both_stay_hosted(tmp_path):
         assert r["runs_on"] == ["ubuntu-latest"]
 
 
+def test_private_member_same_repo_pr_uses_group_without_public_members_api(tmp_path):
+    r = execute(tmp_path, EVENT_NAME="pull_request", PR_AUTHOR="internal",
+                PR_AUTHOR_ASSOCIATION="MEMBER", HEAD_REPOSITORY="scitex-ai/package",
+                statuses={"internal": 404})
+    assert r["native_authorized"] == "true"
+    assert r["reason"] == "member-pull-request-event"
+    assert r["runs_on"] == {"group": "Organization", "labels": json.loads(NATIVE)}
+
+
+@pytest.mark.parametrize("changes", [
+    {"PR_AUTHOR_ASSOCIATION": "COLLABORATOR"},
+    {"PR_AUTHOR_ASSOCIATION": "MEMBER", "TRIGGERING_ACTOR": "maintainer"},
+    {"PR_AUTHOR_ASSOCIATION": "MEMBER", "RUN_ATTEMPT": "2"},
+])
+def test_member_event_shortcut_fails_closed_for_collaborator_rerun_or_retry(tmp_path, changes):
+    base = {"EVENT_NAME": "pull_request", "PR_AUTHOR": "internal",
+            "HEAD_REPOSITORY": "scitex-ai/package", "statuses": {"internal": 404}}
+    base.update(changes)
+    r = execute(tmp_path, **base)
+    assert r["native_authorized"] == "false"
+    assert r["runs_on"] == ["ubuntu-latest"]
+
+
 @pytest.mark.parametrize("changes", [{"REPOSITORY": "ywatanabe1989/.dotfiles"},
                                      {"EVENT_NAME": "pull_request_target"},
                                      {"EVENT_NAME": "workflow_run"},
@@ -159,7 +183,9 @@ def test_admission_has_no_checkout_credential_or_self_hosted_authority():
         "TRIGGERING_ACTOR": "${{ github.triggering_actor }}",
         "EVENT_NAME": "${{ github.event_name }}",
         "PR_AUTHOR": "${{ github.event.pull_request.user.login }}",
+        "PR_AUTHOR_ASSOCIATION": "${{ github.event.pull_request.author_association }}",
         "HEAD_REPOSITORY": "${{ github.event.pull_request.head.repo.full_name }}",
+        "RUN_ATTEMPT": "${{ github.run_attempt }}",
         "REQUESTED_RUNS_ON": "${{ inputs.runs_on }}",
     }
 
