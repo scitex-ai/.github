@@ -134,6 +134,10 @@ async function qualify({github, context, core, ownerAllowlist}) {
   for (const commit of commits) {
     if (!baselineProtected || commit.parents.totalCount !== 2 ||
         commit.parents.nodes.length !== 2 || !attributedLogin(commit)) continue;
+    // A genuine contribution anywhere in this actor's PR commits already
+    // prevents exclusion; do not spend proof requests on its other merges.
+    if (commits.some(other => attributedLogin(other) === attributedLogin(commit) &&
+        (other.parents.totalCount !== 2 || other.parents.nodes.length !== 2))) continue;
     try {
       const [first, second] = commit.parents.nodes;
       if (![commit.tree.oid, first.oid, second.oid, first.tree.oid, second.tree.oid].every(s => OID.test(s))) {
@@ -166,4 +170,3 @@ async function qualify({github, context, core, ownerAllowlist}) {
 }
 
 module.exports = {leafTree, isBaselineTransport, attributedLogin, transportOnlyLogins, samePull, qualify};
-
