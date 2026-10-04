@@ -737,8 +737,12 @@ class SIFWorkflowSourceTests(unittest.TestCase):
 
         # Assert
         assert "needs: [runner-admission, profile, test-sac]" in verdict
+        assert "continue-on-error: true" in verdict
         assert "ci_card_rail.py verdict" in verdict
         assert "sac-control-plane" in verdict
+        assert "name: Summarize auxiliary Cards delivery" in verdict
+        assert "${{ steps.verdict.outcome }}" in verdict
+        assert "does not change the test verdict" in verdict
 
     def test_nightly_has_no_coverage_or_oidc_and_keeps_hosted_budget(self):
         # Arrange

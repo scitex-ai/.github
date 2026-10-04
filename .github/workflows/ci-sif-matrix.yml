@@ -748,6 +748,9 @@ jobs:
     name: ci-verdict-to-pushing-agent
     needs: [runner-admission, profile, test-sac]
     if: always() && needs.profile.outputs.profile == 'sac' && needs.profile.outputs.suite == 'matrix'
+    # GitHub's test matrix is authoritative. Cards is an auxiliary delivery
+    # path; a Cards outage or missing recipient must not turn green tests red.
+    continue-on-error: true
     runs-on: >-
       ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
           && fromJSON('["ubuntu-latest"]')
@@ -787,6 +790,7 @@ jobs:
           test "$TEST_RESULT" = success
       - name: Write the CI verdict to the card and notify the pushing agent
         if: needs.runner-admission.outputs.native_authorized == 'true'
+        id: verdict
         env:
           SCITEX_STORE_DSN: postgresql://ywatanabe__scitex-agent-container@scitex-primary:55432/scitex
           TEST_RESULT: ${{ needs.test-sac.result }}
@@ -804,6 +808,18 @@ jobs:
               --run-id "${{ github.run_id }}" \
               --workflow "${{ github.workflow }}" \
               --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+      - name: Summarize auxiliary Cards delivery
+        if: always()
+        env:
+          VERDICT_OUTCOME: ${{ steps.verdict.outcome }}
+          TEST_RESULT: ${{ needs.test-sac.result }}
+        run: |
+          {
+            echo '### SAC CI feedback delivery'
+            echo
+            echo "Test matrix result: **$TEST_RESULT** (see the per-version test jobs above)."
+            echo "Cards delivery step: **${VERDICT_OUTCOME:-not run}**. This auxiliary delivery does not change the test verdict."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   nightly-sac:
     needs: [runner-admission, profile]
