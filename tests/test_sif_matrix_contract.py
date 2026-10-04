@@ -271,6 +271,17 @@ class SIFPolicyTests(unittest.TestCase):
         # Assert
         assert result["value"]["versions"] == ["3.11", "3.12", "3.13"]
 
+    def test_runner_pool_is_selected_from_organization_configuration(self):
+        # Arrange
+        source = WORKFLOW.read_text()
+
+        # Act
+        admission = source.split("  runner-admission:\n")[1].split("  profile:\n")[0]
+
+        # Assert
+        assert "vars.SCITEX_CI_RUNS_ON || inputs.runs_on" in admission
+        assert 'default: \'["ubuntu-latest"]\'' in source
+
     def test_sac_push_retains_all_versions(self):
         # Arrange
         # Act

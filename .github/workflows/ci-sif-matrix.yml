@@ -15,10 +15,6 @@ on:
         type: string
         required: false
         default: '["ubuntu-latest"]'
-      ci_xdist_workers:
-        type: string
-        required: false
-        default: ''
       release_tag:
         type: string
         required: false
@@ -47,7 +43,7 @@ jobs:
   runner-admission:
     uses: ./.github/workflows/runner-admission.yml
     with:
-      runs_on: ${{ inputs.suite == 'nightly' && '["ubuntu-latest"]' || inputs.runs_on }}
+      runs_on: ${{ inputs.suite == 'nightly' && '["ubuntu-latest"]' || vars.SCITEX_CI_RUNS_ON || inputs.runs_on }}
 
   profile:
     needs: [runner-admission]
@@ -347,7 +343,7 @@ jobs:
       matrix:
         python-version: ${{ fromJSON(needs.profile.outputs.versions) }}
     env:
-      CI_XDIST_WORKERS: ${{ inputs.ci_xdist_workers }}
+      CI_XDIST_WORKERS: ${{ vars.SCITEX_CI_XDIST_WORKERS }}
     steps:
       - name: Refuse to run fork-authored code on self-hosted infrastructure
         if: >-
@@ -560,7 +556,7 @@ jobs:
       matrix:
         python-version: ${{ fromJSON(needs.profile.outputs.versions) }}
     env:
-      CI_XDIST_WORKERS: ${{ inputs.ci_xdist_workers }}
+      CI_XDIST_WORKERS: ${{ vars.SCITEX_CI_XDIST_WORKERS }}
     steps:
       - name: Refuse to run fork-authored code on self-hosted infrastructure
         if: >-
@@ -755,14 +751,28 @@ jobs:
     needs: [runner-admission, profile, test-sac]
     if: always() && needs.profile.outputs.profile == 'sac' && needs.profile.outputs.suite == 'matrix'
     runs-on: >-
-      ${{ fromJSON(needs.runner-admission.outputs.native_authorized == 'true'
-                   && '{"group":"Organization","labels":["self-hosted","Linux","X64","scitex-org-cpu","sac-control-plane"]}'
-                   || '["ubuntu-latest"]') }}
+      ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
+          && fromJSON('["ubuntu-latest"]')
+          || fromJSON(needs.runner-admission.outputs.native_authorized == 'true'
+                      && '{"group":"Organization","labels":["self-hosted","Linux","X64","scitex-org-cpu","sac-control-plane"]}'
+                      || '["ubuntu-latest"]') }}
     timeout-minutes: 10
     permissions:
       actions: read
       contents: read
     steps:
+      - name: Refuse to run fork-authored code on self-hosted infrastructure
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          runner.environment == 'self-hosted'
+        run: |
+          set -euo pipefail
+          echo "::error title=Fork PR blocked::Fork-authored code is not run on the self-hosted pool."
+          echo "head repo: ${{ github.event.pull_request.head.repo.full_name }}  base repo: ${{ github.repository }}"
+          echo "To review this contribution, adopt its branch into ${{ github.repository }} and open a same-repo PR:"
+          echo "  gh pr checkout ${{ github.event.pull_request.number }} && git push origin HEAD:review/pr-${{ github.event.pull_request.number }}"
+          exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: needs.runner-admission.outputs.native_authorized == 'true'
         with:
@@ -810,7 +820,7 @@ jobs:
       matrix:
         python-version: ${{ fromJSON(needs.profile.outputs.versions) }}
     env:
-      CI_XDIST_WORKERS: ${{ inputs.ci_xdist_workers }}
+      CI_XDIST_WORKERS: ${{ vars.SCITEX_CI_XDIST_WORKERS }}
     steps:
       - name: Refuse to run fork-authored code on self-hosted infrastructure
         if: >-
