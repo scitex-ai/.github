@@ -133,11 +133,10 @@ jobs:
                 },
                 hostedRuntime: null,
                 leafSources: {
-                  '.github/ci/exec-in-sif.sh': '3687d72d25fef989317e7db6dd96d2b344c0f51508e45c92fda59d0ed4c73951',
-                  '.github/ci/run-in-sif.sh': '2950f281cfb12b5b879adf0b5bfa4bbcf66255dd1fd53fcfdbe5cecdfa2a7f6f',
-                  '.github/ci/tmpdir-lib.sh': '3d3399ba4bbf33d236abad9a0a011bcd9ec14a3f6a7f6042f14e5877a57e3f89',
-                  '.github/ci/clean-tmpdir.sh': '36421082132cf7b48564bce71470f7c2b0483cb72286ae2710f7e7dd62f3962a',
-                  '.github/ci/sif-runtime-lib.sh': 'c5fd90926c5948e5ffbf32ab095a2c27b07c5c17a6efaefb2bb125d9846c01e5',
+                  '.github/ci/exec-in-sif.sh': '80bf1b1e647d3b005c882193d184b0bc65d43ac42c8c3bf726702aa343c254c6',
+                  '.github/ci/run-in-sif.sh': 'd80a3686fc394c803c20fe9d8b68f3f4a6e9bca47a2b71dc3642ff09e7b4e402',
+                  '.github/ci/tmpdir-lib.sh': 'e742d71a68f6cc6525a5431853249529e55682ee972a6d8df0eaa6f454c139ea',
+                  '.github/ci/clean-tmpdir.sh': 'e139dd3974f926a151913d28813c812e0af01aa8f21da59dd17aba7c5ad02ce0',
                 },
               },
             });
@@ -145,8 +144,7 @@ jobs:
               dev: ['.github/ci/exec-in-sif.sh', '.github/ci/run-in-sif.sh',
                     '.github/ci/release-context.sh', '.github/ci/verify-postgres-capability.py'],
               sac: ['.github/ci/exec-in-sif.sh', '.github/ci/run-in-sif.sh',
-                    '.github/ci/tmpdir-lib.sh', '.github/ci/clean-tmpdir.sh',
-                    '.github/ci/sif-runtime-lib.sh'],
+                    '.github/ci/tmpdir-lib.sh', '.github/ci/clean-tmpdir.sh'],
             });
             function requireContract(value, reason) {
               if (!value) throw new Error(reason);

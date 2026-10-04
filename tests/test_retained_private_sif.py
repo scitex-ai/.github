@@ -63,13 +63,13 @@ def test_actual_sac_plan_requires_separate_pg18_and_keeps_original_matrix(
         result['value']['image']['capabilities']['postgres'],
         result['value']['pgImage']['sha256'],
         result['value']['pgVersion'],
-        result['value']['leafSources']['.github/ci/sif-runtime-lib.sh'],
+        result['value']['leafSources']['.github/ci/clean-tmpdir.sh'],
     ) == (
         versions,
         '16.15',
         '842a1fcf5abdc512af312c1527a0700c52e4b1a6b6e3e3dddc6edde69113ee23',
         '18.6',
-        'c5fd90926c5948e5ffbf32ab095a2c27b07c5c17a6efaefb2bb125d9846c01e5',
+        'e139dd3974f926a151913d28813c812e0af01aa8f21da59dd17aba7c5ad02ce0',
     )
 
 
