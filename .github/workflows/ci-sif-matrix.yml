@@ -791,6 +791,9 @@ jobs:
       - name: Write the CI verdict to the card and notify the pushing agent
         if: needs.runner-admission.outputs.native_authorized == 'true'
         id: verdict
+        # Card delivery is auxiliary: the test-sac job itself is the required
+        # source-test verdict, so a missing Cards recipient must not block CI.
+        continue-on-error: true
         env:
           SCITEX_STORE_DSN: postgresql://ywatanabe__scitex-agent-container@scitex-primary:55432/scitex
           TEST_RESULT: ${{ needs.test-sac.result }}
