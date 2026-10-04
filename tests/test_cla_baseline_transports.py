@@ -322,5 +322,53 @@ class BaselineTransportTests(unittest.TestCase):
         self.assertTrue(json.loads(result.stdout))
 
 
+
+class WorkflowPreservationTests(unittest.TestCase):
+    def test_full_original_workflow_restores_after_two_attribution_steps(self):
+        import hashlib
+
+        import yaml
+
+        fixture = ROOT / "tests/fixtures/cla-before-baseline-transports-125979.yml"
+        original_bytes = fixture.read_bytes()
+        self.assertEqual(hashlib.sha256(original_bytes).hexdigest(),
+                         "55b422a674acb918d247b3a025bf413fe751de16b85f5f06f1251331c4d98c06")
+        original = yaml.safe_load(original_bytes)
+        candidate = yaml.safe_load((ROOT / ".github/workflows/cla.yml").read_text())
+        steps = candidate["jobs"]["CLAssistant"]["steps"]
+        additions = [s for s in steps if s.get("name") in {
+            "Qualify baseline-only transport attribution",
+            "Verify completed CLA attribution still matches current source",
+        }]
+        self.assertEqual(len(additions), 2)
+        candidate["jobs"]["CLAssistant"]["steps"] = [
+            s for s in steps if s not in additions
+        ]
+        action = candidate["jobs"]["CLAssistant"]["steps"][-1]
+        self.assertEqual(action["with"]["allowlist"],
+                         "${{ steps.baseline-transports.outputs.allowlist }}")
+        action["with"]["allowlist"] = "${{ inputs.owner_allowlist }}"
+        self.assertEqual(candidate, original)
+
+    def test_both_trusted_bootstraps_bind_complete_current_helper(self):
+        import hashlib
+
+        import yaml
+
+        current = yaml.safe_load((ROOT / ".github/workflows/cla.yml").read_text())
+        body = HELPER.read_bytes()
+        helpers = [s for s in current["jobs"]["CLAssistant"]["steps"]
+                   if s.get("uses", "").startswith("actions/github-script@")]
+        self.assertEqual(len(helpers), 2)
+        for step in helpers:
+            script = step["with"]["script"]
+            self.assertIn("ref: '10ee482c6f70a4cb10799c407cd88c64afc5458b'", script)
+            self.assertIn(str(len(body)), script)
+            self.assertIn(hashlib.sha256(body).hexdigest(), script)
+            self.assertEqual(step["with"]["retries"], 0)
+            self.assertIn("new Function('module', 'exports', 'require'", script)
+        self.assertIn("verifyFinalBinding", helpers[1]["with"]["script"])
+
+
 if __name__ == "__main__":
     unittest.main()
