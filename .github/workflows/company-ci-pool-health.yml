@@ -3,9 +3,9 @@ name: company CI pool health
 on:
   workflow_dispatch:
   schedule:
-    # Avoid the top-of-hour Actions queue spike; GitHub may delay or drop
-    # scheduled runs under load, so keep this lightweight sample off-minute.
-    - cron: '7,22,37,52 * * * *'
+    # This three-node runtime/Docker sample can take over 30 minutes to drain.
+    # Run hourly off-minute to avoid overlapping queued samples; dispatch on demand.
+    - cron: '17 * * * *'
 
 permissions: {}
 
