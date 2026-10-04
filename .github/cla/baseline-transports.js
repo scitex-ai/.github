@@ -1,5 +1,6 @@
 'use strict';
 
+const {createHash} = require('crypto');
 const OID = /^[0-9a-f]{40}$/;
 const LOGIN = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/;
 const MODES = new Map([
@@ -72,6 +73,66 @@ function samePull(before, after) {
     before.commits === after.commits;
 }
 
+const PULL_QUERY = `query($owner:String!,$name:String!,$number:Int!) {
+  repository(owner:$owner,name:$name) { pullRequest(number:$number) {
+    baseRefOid headRefOid commits(first:100) {
+      totalCount pageInfo { hasNextPage } nodes { commit {
+        oid tree { oid }
+        author { name user { login databaseId } }
+        committer { name user { login databaseId } }
+        parents(first:3) { totalCount nodes { oid tree { oid } } }
+      } }
+    }
+  } }
+}`;
+
+function checkedCommits(before, pull, repo) {
+  const connection = pull.commits;
+  if (connection.pageInfo.hasNextPage || connection.totalCount !== before.commits ||
+      connection.totalCount > 100 || connection.nodes.length !== connection.totalCount ||
+      pull.baseRefOid !== before.base.sha || pull.headRefOid !== before.head.sha ||
+      before.base.repo.full_name !== repo.owner + '/' + repo.repo) {
+    throw new Error('Incomplete or changed PR proof');
+  }
+  const commits = connection.nodes.map(row => row.commit);
+  if (new Set(commits.map(c => c.oid)).size !== commits.length ||
+      commits.some(c => !OID.test(c.oid))) throw new Error('Invalid PR commit identities');
+  return commits;
+}
+
+function snapshotFor(before, commits, baselineProtected) {
+  const identities = commits.map(c => ({oid: c.oid, author: c.author, committer: c.committer}));
+  return {
+    base: before.base.sha, head: before.head.sha, baseRef: before.base.ref,
+    repository: before.base.repo.full_name, baselineProtected,
+    identities: createHash('sha256').update(JSON.stringify(identities)).digest('hex'),
+  };
+}
+
+async function verifyFinalBinding({github, context, snapshot}) {
+  const repo = context.repo;
+  const before = (await github.rest.pulls.get({
+    ...repo, pull_number: context.issue.number, request: {timeout: 4000},
+  })).data;
+  const data = await github.graphql(PULL_QUERY, {
+    owner: repo.owner, name: repo.repo, number: context.issue.number,
+    request: {timeout: 4000},
+  });
+  const commits = checkedCommits(before, data.repository.pullRequest, repo);
+  const current = snapshotFor(before, commits, snapshot.baselineProtected);
+  if (before.state !== 'open' || JSON.stringify(current) !== JSON.stringify(snapshot)) {
+    throw new Error('CLA attribution snapshot changed during action');
+  }
+  if (snapshot.baselineProtected) {
+    const branch = (await github.rest.repos.getBranch({
+      ...repo, branch: before.base.ref, request: {timeout: 4000},
+    })).data;
+    if (branch.protected !== true || branch.commit.sha !== before.base.sha) {
+      throw new Error('CLA protected baseline changed during action');
+    }
+  }
+}
+
 async function qualify({github, context, core, ownerAllowlist}) {
   const original = ownerAllowlist;
   const repo = context.repo;
@@ -89,33 +150,18 @@ async function qualify({github, context, core, ownerAllowlist}) {
     core.setOutput('allowlist', original);
     return;
   }
-  const query = `query($owner:String!,$name:String!,$number:Int!) {
-    repository(owner:$owner,name:$name) { pullRequest(number:$number) {
-      baseRefOid headRefOid commits(first:100) {
-        totalCount pageInfo { hasNextPage } nodes { commit {
-          oid tree { oid } author { user { login } } committer { user { login } }
-          parents(first:3) { totalCount nodes { oid tree { oid } } }
-        } }
-      }
-    } }
-  }`;
+  if (context.payload?.pull_request?.head?.sha &&
+      context.payload.pull_request.head.sha !== before.head.sha) {
+    throw new Error('Triggered PR head no longer current');
+  }
   if (++calls > 48) throw new Error('Proof budget exhausted');
-  const data = await github.graphql(query, {
+  const data = await github.graphql(PULL_QUERY, {
     owner: repo.owner, name: repo.repo, number, request: {timeout: 4000},
   });
   const pull = data.repository.pullRequest;
-  const connection = pull.commits;
   // The pinned action reads only its first 100 commits. Never label a truncated
   // actor set as complete, even if that first page contains a transport merge.
-  if (connection.pageInfo.hasNextPage || connection.totalCount !== before.commits ||
-      connection.totalCount > 100 || connection.nodes.length !== connection.totalCount ||
-      pull.baseRefOid !== before.base.sha || pull.headRefOid !== before.head.sha ||
-      before.base.repo.full_name !== repo.owner + '/' + repo.repo) {
-    throw new Error('Incomplete or changed PR proof');
-  }
-  const commits = connection.nodes.map(row => row.commit);
-  if (new Set(commits.map(c => c.oid)).size !== commits.length ||
-      commits.some(c => !OID.test(c.oid))) throw new Error('Invalid PR commit identities');
+  const commits = checkedCommits(before, pull, repo);
   const proofs = new Map();
   const treeCache = new Map();
   async function getTree(oid) {
@@ -166,7 +212,9 @@ async function qualify({github, context, core, ownerAllowlist}) {
   }
   const extras = transportOnlyLogins(commits, proofs);
   core.setOutput('allowlist', [original, ...extras].filter(Boolean).join(','));
+  core.setOutput('proof', JSON.stringify(snapshotFor(before, commits, baselineProtected)));
   core.info('Qualified baseline-only transport actors: ' + extras.length);
 }
 
-module.exports = {leafTree, isBaselineTransport, attributedLogin, transportOnlyLogins, samePull, qualify};
+module.exports = {leafTree, isBaselineTransport, attributedLogin, transportOnlyLogins,
+  samePull, checkedCommits, snapshotFor, verifyFinalBinding, qualify};

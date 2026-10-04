@@ -250,5 +250,77 @@ class BaselineTransportTests(unittest.TestCase):
         self.assertTrue(json.loads(result.stdout))
 
 
+
+    def connection(self):
+        before = {"state": "open", "base": {"sha": self.baseline, "ref": "main",
+                  "repo": {"full_name": "org/repo"}}, "head": {"sha": self.transport},
+                  "commits": 1}
+        pull = {"baseRefOid": self.baseline, "headRefOid": self.transport,
+                "commits": {"totalCount": 1, "pageInfo": {"hasNextPage": False},
+                            "nodes": [{"commit": self.node}]}}
+        return before, pull
+
+    def test_actual_git_commit_connection_is_complete(self):
+        before, pull = self.connection()
+        result = self.call("m.checkedCommits(d.before,d.pull,{owner:'org',repo:'repo'})",
+                           {"before": before, "pull": pull})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)[0]["oid"], self.transport)
+
+    def test_partial_commit_page_refuses(self):
+        before, pull = self.connection()
+        pull["commits"]["pageInfo"]["hasNextPage"] = True
+        result = self.call("m.checkedCommits(d.before,d.pull,{owner:'org',repo:'repo'})",
+                           {"before": before, "pull": pull})
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_commit_count_mismatch_refuses(self):
+        before, pull = self.connection()
+        before["commits"] = 2
+        result = self.call("m.checkedCommits(d.before,d.pull,{owner:'org',repo:'repo'})",
+                           {"before": before, "pull": pull})
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_changed_graphql_head_refuses(self):
+        before, pull = self.connection()
+        pull["headRefOid"] = self.initial
+        result = self.call("m.checkedCommits(d.before,d.pull,{owner:'org',repo:'repo'})",
+                           {"before": before, "pull": pull})
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_changed_author_identity_changes_final_snapshot(self):
+        before, _ = self.connection()
+        other = json.loads(json.dumps(self.node))
+        other["author"]["user"]["login"] = "new-source-actor"
+        result = self.call(
+            "JSON.stringify(m.snapshotFor(d.before,[d.original],true))==="
+            "JSON.stringify(m.snapshotFor(d.before,[d.other],true))",
+            {"before": before, "original": self.node, "other": other},
+        )
+        self.assertFalse(json.loads(result.stdout))
+
+    def test_changed_database_id_changes_final_snapshot(self):
+        before, _ = self.connection()
+        original = json.loads(json.dumps(self.node))
+        original["author"]["user"]["databaseId"] = 100
+        other = json.loads(json.dumps(original))
+        other["author"]["user"]["databaseId"] = 101
+        result = self.call(
+            "JSON.stringify(m.snapshotFor(d.before,[d.original],true))==="
+            "JSON.stringify(m.snapshotFor(d.before,[d.other],true))",
+            {"before": before, "original": original, "other": other},
+        )
+        self.assertFalse(json.loads(result.stdout))
+
+    def test_current_snapshot_is_stable(self):
+        before, _ = self.connection()
+        result = self.call(
+            "JSON.stringify(m.snapshotFor(d.before,[d.original],true))==="
+            "JSON.stringify(m.snapshotFor(d.before,[d.original],true))",
+            {"before": before, "original": self.node},
+        )
+        self.assertTrue(json.loads(result.stdout))
+
+
 if __name__ == "__main__":
     unittest.main()
