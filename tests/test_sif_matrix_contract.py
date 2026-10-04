@@ -123,7 +123,6 @@ def registry():
             "run-in-sif.sh",
             "tmpdir-lib.sh",
             "clean-tmpdir.sh",
-            "sif-runtime-lib.sh",
         ],
     }
     result = {}
