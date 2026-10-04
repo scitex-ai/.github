@@ -8,10 +8,10 @@ on:
         required: true
         type: string
       runs_on:
-        description: JSON runner labels; native requests are fenced to Organization.
+        description: JSON runner labels; trusted actors default to the Organization compute pool.
         required: false
         type: string
-        default: '["ubuntu-latest"]'
+        default: '["self-hosted","Linux","X64","scitex-org-cpu"]'
       timeout_minutes:
         required: false
         type: number
