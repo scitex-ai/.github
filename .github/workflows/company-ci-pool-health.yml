@@ -3,7 +3,9 @@ name: company CI pool health
 on:
   workflow_dispatch:
   schedule:
-    - cron: '*/15 * * * *'
+    # Avoid the top-of-hour Actions queue spike; GitHub may delay or drop
+    # scheduled runs under load, so keep this lightweight sample off-minute.
+    - cron: '7,22,37,52 * * * *'
 
 permissions: {}
 
