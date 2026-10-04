@@ -1,0 +1,128 @@
+name: frontend
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: true
+
+concurrency:
+  group: frontend-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  typecheck:
+    name: typecheck
+    runs-on: [self-hosted, Linux, X64, scitex-ci]
+    timeout-minutes: 15
+    steps:
+      # Preserve the UI fork boundary before checkout or npm lifecycle scripts.
+      - name: Refuse to run fork-authored code on self-hosted infrastructure
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "::error::Fork-authored code is not run on self-hosted infrastructure."
+          exit 1
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - name: Use a job-owned npm cache and temporary directory
+        run: |
+          npm_cache="$RUNNER_TEMP/scitex-sdk-npm-${GITHUB_JOB}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$npm_cache"
+          printf '%s\n' "NPM_CONFIG_CACHE=$npm_cache" \
+            "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - name: Set up checksum-verified Node in the job directory
+        run: bash scripts/setup-node-owned.sh
+      - run: npm ci --no-audit --no-fund
+      - name: Assert all UI TypeScript sources are checked
+        run: |
+          set -euo pipefail
+          on_disk=$(find src/scitex_sdk/ui/static/scitex_sdk/ui/ts \
+                         src/scitex_sdk/ui/static/scitex_sdk/ui/react \
+                         \( -name '*.ts' -o -name '*.tsx' \) | wc -l)
+          npx tsc -p tsconfig.json --listFiles --noEmit >listed.txt 2>/dev/null || true
+          loaded=$(grep -c "$PWD/src/scitex_sdk/ui/static" listed.txt || true)
+          rm -f listed.txt
+          echo "source files on disk: $on_disk / loaded by tsc: $loaded"
+          if [ "$on_disk" -eq 0 ] || [ "$loaded" -ne "$on_disk" ]; then
+            echo "::error::TypeScript source coverage is incomplete."
+            exit 1
+          fi
+      - run: npm run typecheck
+
+  lint:
+    name: lint
+    runs-on: [self-hosted, Linux, X64, scitex-ci]
+    timeout-minutes: 15
+    steps:
+      # Preserve the UI fork boundary before checkout or npm lifecycle scripts.
+      - name: Refuse to run fork-authored code on self-hosted infrastructure
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "::error::Fork-authored code is not run on self-hosted infrastructure."
+          exit 1
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - name: Use a job-owned npm cache and temporary directory
+        run: |
+          npm_cache="$RUNNER_TEMP/scitex-sdk-npm-${GITHUB_JOB}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$npm_cache"
+          printf '%s\n' "NPM_CONFIG_CACHE=$npm_cache" \
+            "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - name: Set up checksum-verified Node in the job directory
+        run: bash scripts/setup-node-owned.sh
+      - run: npm ci --no-audit --no-fund
+      - name: Assert all UI TypeScript sources are linted
+        run: |
+          set -euo pipefail
+          on_disk=$(find src/scitex_sdk/ui/static/scitex_sdk/ui/ts \
+                         src/scitex_sdk/ui/static/scitex_sdk/ui/react \
+                         \( -name '*.ts' -o -name '*.tsx' \) | wc -l)
+          npx eslint . -f json >lint-report.json 2>/dev/null || true
+          linted=$(grep -o '"filePath":"[^"]*"' lint-report.json \
+                   | grep -cE 'static/scitex_sdk/ui/(ts|react)/' || true)
+          rm -f lint-report.json
+          echo "source files on disk: $on_disk / linted in those dirs: $linted"
+          if [ "$on_disk" -eq 0 ] || [ "$linted" -lt "$on_disk" ]; then
+            echo "::error::ESLint source coverage is incomplete."
+            exit 1
+          fi
+      - run: npm run lint
+
+  vitest:
+    name: vitest
+    runs-on: [self-hosted, Linux, X64, scitex-ci]
+    timeout-minutes: 15
+    steps:
+      # Preserve the UI fork boundary before checkout or npm lifecycle scripts.
+      - name: Refuse to run fork-authored code on self-hosted infrastructure
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "::error::Fork-authored code is not run on self-hosted infrastructure."
+          exit 1
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - name: Use a job-owned npm cache and temporary directory
+        run: |
+          npm_cache="$RUNNER_TEMP/scitex-sdk-npm-${GITHUB_JOB}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$npm_cache"
+          printf '%s\n' "NPM_CONFIG_CACHE=$npm_cache" \
+            "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - name: Set up checksum-verified Node in the job directory
+        run: bash scripts/setup-node-owned.sh
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
