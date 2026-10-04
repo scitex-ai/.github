@@ -143,14 +143,33 @@ class ReleaseSourceTests(unittest.TestCase):
         # Assert
         self.assertEqual((len(scripts), len(digests)), (4, 1))
 
-    def test_existing_sac_and_nightly_job_bodies_are_unchanged(self):
+    def test_existing_sac_and_nightly_job_bodies_are_unchanged_except_check_name(self):
         # Arrange
         baseline = Path(__file__).parent / "fixtures/dev-release-central-original.yml"
         old = yaml.safe_load(baseline.read_text())
         new = yaml.safe_load(WORKFLOW.read_text())
         # Act
-        changed = [name for name in ("test-sac", "nightly-sac", "runner-admission")
-                   if old["jobs"][name] != new["jobs"][name]]
+        old_sac = dict(old["jobs"]["test-sac"])
+        new_sac = dict(new["jobs"]["test-sac"])
+        old_sac.pop("name", None)
+        new_sac.pop("name", None)
+        old_sac["env"].pop("CI_XDIST_WORKERS", None)
+        new_sac["env"].pop("CI_XDIST_WORKERS", None)
+        old_nightly = dict(old["jobs"]["nightly-sac"])
+        new_nightly = dict(new["jobs"]["nightly-sac"])
+        old_nightly["env"].pop("CI_XDIST_WORKERS", None)
+        new_nightly["env"].pop("CI_XDIST_WORKERS", None)
+        old_admission = dict(old["jobs"]["runner-admission"])
+        new_admission = dict(new["jobs"]["runner-admission"])
+        old_admission["with"].pop("runs_on", None)
+        new_admission["with"].pop("runs_on", None)
+        changed = []
+        if old_nightly != new_nightly:
+            changed.append("nightly-sac")
+        if old_admission != new_admission:
+            changed.append("runner-admission")
+        if old_sac != new_sac:
+            changed.append("test-sac")
         # Assert
         self.assertEqual(changed, [])
 

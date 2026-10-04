@@ -15,10 +15,6 @@ on:
         type: string
         required: false
         default: '["ubuntu-latest"]'
-      ci_xdist_workers:
-        type: string
-        required: false
-        default: ''
       release_tag:
         type: string
         required: false
@@ -47,7 +43,7 @@ jobs:
   runner-admission:
     uses: ./.github/workflows/runner-admission.yml
     with:
-      runs_on: ${{ inputs.suite == 'nightly' && '["ubuntu-latest"]' || inputs.runs_on }}
+      runs_on: ${{ inputs.suite == 'nightly' && '["ubuntu-latest"]' || vars.SCITEX_CI_RUNS_ON || inputs.runs_on }}
 
   profile:
     needs: [runner-admission]
@@ -236,8 +232,7 @@ jobs:
                 requireContract(['pull_request', 'schedule', 'workflow_dispatch'].includes(eventName), 'nightly-event-unsupported');
                 return {profile: profile.id, suite, versions: ['3.12']};
               }
-              const versions = profile.id === 'sac' && eventName === 'pull_request'
-                ? ['3.11', '3.13'] : ['3.11', '3.12', '3.13'];
+              const versions = ['3.11', '3.12', '3.13'];
               return {profile: profile.id, suite, versions};
             }
             function planFor(repository, eventName, native, registry = PROFILES, suite = 'matrix') {
@@ -348,7 +343,7 @@ jobs:
       matrix:
         python-version: ${{ fromJSON(needs.profile.outputs.versions) }}
     env:
-      CI_XDIST_WORKERS: ${{ inputs.ci_xdist_workers }}
+      CI_XDIST_WORKERS: ${{ vars.SCITEX_CI_XDIST_WORKERS }}
     steps:
       - name: Refuse to run fork-authored code on self-hosted infrastructure
         if: >-
@@ -545,7 +540,9 @@ jobs:
   test-sac:
     needs: [runner-admission, profile]
     if: needs.profile.outputs.profile == 'sac' && needs.profile.outputs.suite == 'matrix'
-    name: test-sac-py${{ matrix.python-version }}
+    # Preserve the established SAC branch-protection contexts while the job
+    # itself lives in this organization-owned reusable workflow.
+    name: pytest-matrix-on-ubuntu-py${{ matrix.python-version }}
     runs-on: >-
       ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
           && fromJSON('["ubuntu-latest"]')
@@ -559,7 +556,7 @@ jobs:
       matrix:
         python-version: ${{ fromJSON(needs.profile.outputs.versions) }}
     env:
-      CI_XDIST_WORKERS: ${{ inputs.ci_xdist_workers }}
+      CI_XDIST_WORKERS: ${{ vars.SCITEX_CI_XDIST_WORKERS }}
     steps:
       - name: Refuse to run fork-authored code on self-hosted infrastructure
         if: >-
@@ -749,6 +746,67 @@ jobs:
             }
             await fs.rmdir(owned.root);
 
+  sac-verdict:
+    name: ci-verdict-to-pushing-agent
+    needs: [runner-admission, profile, test-sac]
+    if: always() && needs.profile.outputs.profile == 'sac' && needs.profile.outputs.suite == 'matrix'
+    runs-on: >-
+      ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
+          && fromJSON('["ubuntu-latest"]')
+          || fromJSON(needs.runner-admission.outputs.native_authorized == 'true'
+                      && '{"group":"Organization","labels":["self-hosted","Linux","X64","scitex-org-cpu","sac-control-plane"]}'
+                      || '["ubuntu-latest"]') }}
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Refuse to run fork-authored code on self-hosted infrastructure
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          runner.environment == 'self-hosted'
+        run: |
+          set -euo pipefail
+          echo "::error title=Fork PR blocked::Fork-authored code is not run on the self-hosted pool."
+          echo "head repo: ${{ github.event.pull_request.head.repo.full_name }}  base repo: ${{ github.repository }}"
+          echo "To review this contribution, adopt its branch into ${{ github.repository }} and open a same-repo PR:"
+          echo "  gh pr checkout ${{ github.event.pull_request.number }} && git push origin HEAD:review/pr-${{ github.event.pull_request.number }}"
+          exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: needs.runner-admission.outputs.native_authorized == 'true'
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          persist-credentials: false
+      - name: Report the hosted test verdict without company credentials
+        if: needs.runner-admission.outputs.native_authorized != 'true'
+        env:
+          TEST_RESULT: ${{ needs.test-sac.result }}
+        run: |
+          set -euo pipefail
+          printf 'Hosted test verdict: %s; company feedback rail not admitted.\n' "$TEST_RESULT"
+          test "$TEST_RESULT" = success
+      - name: Write the CI verdict to the card and notify the pushing agent
+        if: needs.runner-admission.outputs.native_authorized == 'true'
+        env:
+          SCITEX_STORE_DSN: postgresql://ywatanabe__scitex-agent-container@scitex-primary:55432/scitex
+          TEST_RESULT: ${{ needs.test-sac.result }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          UV="$(command -v uv || echo "$HOME/.local/bin/uv")"
+          "$UV" run --quiet --with scitex-cards \
+            python .github/ci/ci_card_rail.py verdict \
+              --repo "${{ github.repository }}" \
+              --branch "${{ github.head_ref || github.ref_name }}" \
+              --sha "${{ github.event.pull_request.head.sha || github.sha }}" \
+              --conclusion "$TEST_RESULT" \
+              --leg "pytest-matrix" \
+              --run-id "${{ github.run_id }}" \
+              --workflow "${{ github.workflow }}" \
+              --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
   nightly-sac:
     needs: [runner-admission, profile]
     if: needs.profile.outputs.profile == 'sac' && needs.profile.outputs.suite == 'nightly'
@@ -762,7 +820,7 @@ jobs:
       matrix:
         python-version: ${{ fromJSON(needs.profile.outputs.versions) }}
     env:
-      CI_XDIST_WORKERS: ${{ inputs.ci_xdist_workers }}
+      CI_XDIST_WORKERS: ${{ vars.SCITEX_CI_XDIST_WORKERS }}
     steps:
       - name: Refuse to run fork-authored code on self-hosted infrastructure
         if: >-

@@ -49,7 +49,7 @@ def test_actual_registered_dev_retains_three_minors_and_exact_private_source_gat
 
 @pytest.mark.parametrize(
     'event,versions',
-    [('pull_request', ['3.11', '3.13']), ('push', ['3.11', '3.12', '3.13'])],
+        [('pull_request', ['3.11', '3.12', '3.13']), ('push', ['3.11', '3.12', '3.13'])],
 )
 def test_actual_sac_plan_requires_separate_pg18_and_keeps_original_matrix(
     event, versions

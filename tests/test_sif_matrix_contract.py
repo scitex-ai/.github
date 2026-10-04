@@ -263,13 +263,24 @@ class SIFPolicyTests(unittest.TestCase):
         # Assert
         assert result["value"]["versions"] == ["3.11", "3.12", "3.13"]
 
-    def test_sac_pr_retains_range_ends(self):
+    def test_sac_pr_runs_all_supported_python_versions(self):
         # Arrange
         # Act
         result = contract("select", repository=SAC)
 
         # Assert
-        assert result["value"]["versions"] == ["3.11", "3.13"]
+        assert result["value"]["versions"] == ["3.11", "3.12", "3.13"]
+
+    def test_runner_pool_is_selected_from_organization_configuration(self):
+        # Arrange
+        source = WORKFLOW.read_text()
+
+        # Act
+        admission = source.split("  runner-admission:\n")[1].split("  profile:\n")[0]
+
+        # Assert
+        assert "vars.SCITEX_CI_RUNS_ON || inputs.runs_on" in admission
+        assert 'default: \'["ubuntu-latest"]\'' in source
 
     def test_sac_push_retains_all_versions(self):
         # Arrange
@@ -715,7 +726,20 @@ class SIFWorkflowSourceTests(unittest.TestCase):
             and "use_oidc: true" in sac
             and "Preserve SAC per-leg always cleanup" in sac
             and "Dev coverage" not in sac
+            and "name: pytest-matrix-on-ubuntu-py${{ matrix.python-version }}" in sac
         )
+
+    def test_sac_verdict_is_retained_in_the_central_workflow(self):
+        # Arrange
+        source = WORKFLOW.read_text()
+
+        # Act
+        verdict = source.split("  sac-verdict:\n")[1].split("  nightly-sac:\n")[0]
+
+        # Assert
+        assert "needs: [runner-admission, profile, test-sac]" in verdict
+        assert "ci_card_rail.py verdict" in verdict
+        assert "sac-control-plane" in verdict
 
     def test_nightly_has_no_coverage_or_oidc_and_keeps_hosted_budget(self):
         # Arrange
