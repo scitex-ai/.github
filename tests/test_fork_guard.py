@@ -315,41 +315,17 @@ def test_guard_tells_the_reviewer_what_to_do_instead(
 
 
 # ---------------------------------------------------------------------------
-# EVERY `runs_on` INPUT DEFAULT MUST BE GITHUB-HOSTED.
+# DEFAULT PYTHON TESTS TO THE COMPANY POOL; CENTRAL ADMISSION FALLS BACK TO
+# GITHUB-HOSTED FOR UNTRUSTED ACTORS AND FORK PRS.
 #
-# This REPLACES `test_no_job_targets_a_github_hosted_image`, which asserted the
-# operator's 2026-07-14 mandate that hosted runners were forbidden "with no
-# exceptions". That mandate was repealed twice before this test caught up:
-#
-#   2026-07-31, quoted in pytest-matrix.yml's own `runs_on` description —
-#     "hosted is the DEFAULT CHOICE for new work, because most scitex
-#      repositories are public so hosted minutes are free; self-hosted is for
-#      jobs where our own machines are genuinely faster ... not a blanket
-#      policy."
-#   2026-08-05, constitution — "GitHub-hosted runners are free for public
-#     repositories, which most of ours are ... a reasonable fallback."
-#
-# So the old test was a gate enforcing a rule nobody held any more, and it was
-# not inert: on 2026-08-15 it FAILED the very change that unblocked the fleet,
-# because self-test.yml had to move off a dead pool. A stale mandate encoded as
-# a test does not sit quietly — it blocks the repair.
-#
-# WHAT REPLACES IT IS THE LESSON THAT OUTAGE TAUGHT. All four `spartan-cpu`
-# runners went offline; every reusable here defaulted `runs_on` to that label;
-# no shipped caller stub passes the input. GitHub does not reject a job whose
-# labels nothing serves — it QUEUES IT FOREVER. Measured that morning: 57
-# queued runs across ~30 repositories, and `CI_RUNS_ON` variables set on 76 of
-# 76 repos selected nothing, because these workflows read `inputs.runs_on`.
-#
-# A DEFAULT MUST FAIL SAFE. Hosted degrades to SLOWER. Self-hosted degrades to
-# NEVER, with no error and a run list indistinguishable from a busy queue.
-# Preferring our own hardware stays a CALLER decision via `runs_on`, and
-# Spartan remains PREFERRED where it is faster (operator, 2026-08-13). This
-# test only pins what happens when a caller says nothing.
+# Operator direction 2026-10-04: trusted work should use the Organization
+# compute pool, with `ywatanabe1989` as the initial trusted actor. The admission
+# workflow is the single gate and sends untrusted/fork work to ubuntu-latest.
+# This assertion keeps the common pytest entry point on that pool when callers
+# omit `runs_on`.
 # ---------------------------------------------------------------------------
 
 
-_HOSTED_PREFIXES = ("ubuntu-", "macos-", "windows-")
 _ALL_JOBS = [
     (path.name, job_id, job)
     for path in sorted(_WORKFLOW_DIR.glob("*.yml"))
@@ -404,27 +380,8 @@ def test_a_runner_input_declares_a_non_empty_string_default(
     )
 
 
-@pytest.mark.parametrize(
-    ("workflow", "input_name", "default"),
-    _RUNS_ON_DEFAULTS,
-    ids=[f"{w}:{n}" for w, n, _ in _RUNS_ON_DEFAULTS],
-)
-def test_a_runner_input_defaults_to_a_hosted_image(
-    workflow: str, input_name: str, default: object
-) -> None:
-    # Arrange
-    labels = json.loads(default) if isinstance(default, str) and default else []
-    # Act
-    hosted = [
-        label
-        for label in labels
-        if isinstance(label, str) and label.startswith(_HOSTED_PREFIXES)
-    ]
-    # Assert
-    assert hosted, (
-        f"{workflow}:{input_name} defaults to {labels}, which is self-hosted. "
-        "A self-hosted default degrades to NEVER when that pool goes offline — "
-        "GitHub queues the job instead of failing it, so nothing reports the "
-        "outage. Put the preference in the CALLER via `runs_on` and leave the "
-        "default hosted."
-    )
+def test_pytest_defaults_to_the_organization_compute_pool() -> None:
+    workflow = _load(_WORKFLOW_DIR / "pytest-matrix.yml")
+    events = workflow.get("on", workflow.get(True))
+    default = events["workflow_call"]["inputs"]["runs_on"]["default"]
+    assert json.loads(default) == ["self-hosted", "Linux", "X64", "scitex-org-cpu"]

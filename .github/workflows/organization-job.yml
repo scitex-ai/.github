@@ -1,0 +1,64 @@
+name: organization compute job
+
+on:
+  workflow_call:
+    inputs:
+      command:
+        description: Shell command run from the caller repository checkout.
+        required: true
+        type: string
+      runs_on:
+        description: JSON runner labels; trusted actors default to the Organization compute pool.
+        required: false
+        type: string
+        default: '["self-hosted","Linux","X64","scitex-org-cpu"]'
+      timeout_minutes:
+        required: false
+        type: number
+        default: 45
+
+permissions:
+  contents: read
+
+jobs:
+  runner-admission:
+    uses: ./.github/workflows/runner-admission.yml
+    with:
+      runs_on: ${{ inputs.runs_on }}
+
+  run:
+    needs: runner-admission
+    name: execute
+    runs-on: >-
+      ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
+          && fromJSON('["ubuntu-latest"]')
+          || fromJSON(needs.runner-admission.outputs.runs_on) }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+    steps:
+      - name: Refuse to run fork-authored code on self-hosted infrastructure
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          runner.environment == 'self-hosted'
+        run: |
+          set -euo pipefail
+          echo "::error title=Fork PR blocked::Fork-authored code is not run on self-hosted infrastructure."
+          echo "To review this contribution, adopt its branch into ${{ github.repository }} and open a same-repo PR:"
+          echo "  gh pr checkout ${{ github.event.pull_request.number }} && git push origin HEAD:review/pr-${{ github.event.pull_request.number }}"
+          exit 1
+
+      - name: Require allowlisted actor on native runners
+        if: runner.environment == 'self-hosted' && needs.runner-admission.outputs.native_authorized != 'true'
+        run: exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Run caller job
+        env:
+          CALLER_COMMAND: ${{ inputs.command }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: bash -euo pipefail -c "$CALLER_COMMAND"

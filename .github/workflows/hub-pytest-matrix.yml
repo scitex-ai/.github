@@ -80,7 +80,11 @@ jobs:
         # uv: they are correct as written — they exercise the same installer
         # the product uses, with no mocks.
         uv venv --seed --python ${{ matrix.python-version }} .venv
-        uv pip install --python .venv/bin/python -e ".[all,dev]"
+        set --
+        if [ -f requirements-dev-source.txt ]; then
+          set -- -r requirements-dev-source.txt
+        fi
+        uv pip install --python .venv/bin/python -e ".[all,dev]" "$@"
     - name: Run tests
       env:
         SCITEX_WRITER_SOURCE: ${{ github.workspace }}/.ci/scitex-writer

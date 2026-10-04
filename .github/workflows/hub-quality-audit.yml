@@ -34,7 +34,11 @@ jobs:
       run: |
         set -euo pipefail
         uv venv --python 3.12 .venv
-        uv pip install --python .venv/bin/python -e ".[dev]"
+        set --
+        if [ -f requirements-dev-source.txt ]; then
+          set -- -r requirements-dev-source.txt
+        fi
+        uv pip install --python .venv/bin/python -e ".[dev]" "$@"
         # PINNED DELIBERATELY. Unpinned, this line makes the gate
         # non-reproducible: the rule corpus IS the definition of passing, so
         # a scitex-dev release silently redefines it with no diff in this
