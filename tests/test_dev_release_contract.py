@@ -143,14 +143,20 @@ class ReleaseSourceTests(unittest.TestCase):
         # Assert
         self.assertEqual((len(scripts), len(digests)), (4, 1))
 
-    def test_existing_sac_and_nightly_job_bodies_are_unchanged(self):
+    def test_existing_sac_and_nightly_job_bodies_are_unchanged_except_check_name(self):
         # Arrange
         baseline = Path(__file__).parent / "fixtures/dev-release-central-original.yml"
         old = yaml.safe_load(baseline.read_text())
         new = yaml.safe_load(WORKFLOW.read_text())
         # Act
-        changed = [name for name in ("test-sac", "nightly-sac", "runner-admission")
+        old_sac = dict(old["jobs"]["test-sac"])
+        new_sac = dict(new["jobs"]["test-sac"])
+        old_sac.pop("name", None)
+        new_sac.pop("name", None)
+        changed = [name for name in ("nightly-sac", "runner-admission")
                    if old["jobs"][name] != new["jobs"][name]]
+        if old_sac != new_sac:
+            changed.append("test-sac")
         # Assert
         self.assertEqual(changed, [])
 

@@ -545,7 +545,9 @@ jobs:
   test-sac:
     needs: [runner-admission, profile]
     if: needs.profile.outputs.profile == 'sac' && needs.profile.outputs.suite == 'matrix'
-    name: test-sac-py${{ matrix.python-version }}
+    # Preserve the established SAC branch-protection contexts while the job
+    # itself lives in this organization-owned reusable workflow.
+    name: pytest-matrix-on-ubuntu-py${{ matrix.python-version }}
     runs-on: >-
       ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
           && fromJSON('["ubuntu-latest"]')
@@ -748,6 +750,53 @@ jobs:
               await fs.unlink(file);
             }
             await fs.rmdir(owned.root);
+
+  sac-verdict:
+    name: ci-verdict-to-pushing-agent
+    needs: [runner-admission, profile, test-sac]
+    if: always() && needs.profile.outputs.profile == 'sac' && needs.profile.outputs.suite == 'matrix'
+    runs-on: >-
+      ${{ fromJSON(needs.runner-admission.outputs.native_authorized == 'true'
+                   && '{"group":"Organization","labels":["self-hosted","Linux","X64","scitex-org-cpu","sac-control-plane"]}'
+                   || '["ubuntu-latest"]') }}
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: needs.runner-admission.outputs.native_authorized == 'true'
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          persist-credentials: false
+      - name: Report the hosted test verdict without company credentials
+        if: needs.runner-admission.outputs.native_authorized != 'true'
+        env:
+          TEST_RESULT: ${{ needs.test-sac.result }}
+        run: |
+          set -euo pipefail
+          printf 'Hosted test verdict: %s; company feedback rail not admitted.\n' "$TEST_RESULT"
+          test "$TEST_RESULT" = success
+      - name: Write the CI verdict to the card and notify the pushing agent
+        if: needs.runner-admission.outputs.native_authorized == 'true'
+        env:
+          SCITEX_STORE_DSN: postgresql://ywatanabe__scitex-agent-container@scitex-primary:55432/scitex
+          TEST_RESULT: ${{ needs.test-sac.result }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          UV="$(command -v uv || echo "$HOME/.local/bin/uv")"
+          "$UV" run --quiet --with scitex-cards \
+            python .github/ci/ci_card_rail.py verdict \
+              --repo "${{ github.repository }}" \
+              --branch "${{ github.head_ref || github.ref_name }}" \
+              --sha "${{ github.event.pull_request.head.sha || github.sha }}" \
+              --conclusion "$TEST_RESULT" \
+              --leg "pytest-matrix" \
+              --run-id "${{ github.run_id }}" \
+              --workflow "${{ github.workflow }}" \
+              --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
   nightly-sac:
     needs: [runner-admission, profile]
