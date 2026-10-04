@@ -134,7 +134,7 @@ jobs:
                 hostedRuntime: null,
                 leafSources: {
                   '.github/ci/exec-in-sif.sh': '80bf1b1e647d3b005c882193d184b0bc65d43ac42c8c3bf726702aa343c254c6',
-                  '.github/ci/run-in-sif.sh': 'd80a3686fc394c803c20fe9d8b68f3f4a6e9bca47a2b71dc3642ff09e7b4e402',
+                  '.github/ci/run-in-sif.sh': 'a8181d9f4d4669ead44e616ba48950b3be22342d9bb71a123ebf7d34d75b0545',
                   '.github/ci/tmpdir-lib.sh': 'e742d71a68f6cc6525a5431853249529e55682ee972a6d8df0eaa6f454c139ea',
                   '.github/ci/clean-tmpdir.sh': 'e139dd3974f926a151913d28813c812e0af01aa8f21da59dd17aba7c5ad02ce0',
                 },
