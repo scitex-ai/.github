@@ -303,6 +303,8 @@ jobs:
                 requireContract(request.event !== 'push' || commit === eventSha, 'release-tag-event-mismatch');
                 requireContract(before.name === 'main' && before.protected === true
                   && /^[a-f0-9]{40}$/.test(before.commit.sha), 'release-main-unprotected');
+                requireContract(request.event !== 'workflow_dispatch' || before.commit.sha === eventSha,
+                  'release-dispatch-source-changed');
                 requireContract(after.name === before.name && after.protected === true
                   && after.commit.sha === before.commit.sha, 'release-main-changed');
                 requireContract(['ahead', 'identical'].includes(comparison.status)

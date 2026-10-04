@@ -119,6 +119,13 @@ class ReleaseSourceTests(unittest.TestCase):
         # Assert
         self.assertEqual(result["reason"], "release-main-changed")
 
+    def test_dispatch_definition_must_match_current_protected_main(self):
+        # Arrange
+        # Act
+        result = source_case({"eventSha": "c" * 40})
+        # Assert
+        self.assertEqual(result["reason"], "release-dispatch-source-changed")
+
     def test_unpromoted_tag_cannot_publish(self):
         # Arrange
         comparison = {"status": "diverged", "base_commit": {"sha": "a" * 40},
