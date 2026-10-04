@@ -24,5 +24,7 @@ def test_organization_job_routes_through_membership_admission():
         "CALLER_COMMAND": "${{ inputs.command }}",
         "RUNNER_ENVIRONMENT": "${{ runner.environment }}",
     }
-    assert yaml.safe_load(workflow["on" if "on" in workflow else True]["workflow_call"]["inputs"]["runs_on"]["default"])[0] == "ubuntu-latest"
+    assert yaml.safe_load(workflow["on" if "on" in workflow else True]["workflow_call"]["inputs"]["runs_on"]["default"]) == [
+        "self-hosted", "Linux", "X64", "scitex-org-cpu"
+    ]
     assert "secrets" not in workflow
