@@ -83,8 +83,39 @@ jobs:
               'scitex-ai/scitex-agent-container': {
                 id: 'sac', pgKind: 'separate', pgBin: null, pgVersion: '18',
                 image: null, pgImage: null,
-                nativeImage: null, nativePgImage: null,
-                nativeRuntime: null, hostedRuntime: null, leafSources: null,
+                // Same qualified Python image; PostgreSQL stays a separate
+                // mandatory PG18 image. Neither is a public producer record.
+                nativeImage: {
+                  authority_kind: 'retained-private-ci',
+                  sha256: 'aa5836a6c317640d7e20f01eb79aa7385b3dca2f369b595065c50ba3dd34a7d5',
+                  bytes: 1328443392,
+                  qualification_sha256: '22362dd8da22aa93653613d899e9ab6232d3a099576d7da646ea617a35f2e036',
+                  capabilities: {'3.11': '3.11.16', '3.12': '3.12.14', '3.13': '3.13.15', postgres: '16.15'},
+                  native_paths: ['/home/ywatanabe/.scitex/dev/runtime/containers/ci-cpu-sha256-aa5836a6c317640d7e20f01eb79aa7385b3dca2f369b595065c50ba3dd34a7d5.sif'],
+                },
+                nativePgImage: {
+                  authority_kind: 'retained-private-ci',
+                  sha256: '842a1fcf5abdc512af312c1527a0700c52e4b1a6b6e3e3dddc6edde69113ee23',
+                  bytes: 157646848,
+                  qualification_sha256: '75e24f6fa3a80369b45e8c3d1029d940076109c92404d0d82a168be74859771b',
+                  capabilities: {postgres: '18.6'},
+                  native_paths: ['/home/ywatanabe/.scitex/pg/runtime/postgres18-sha256-842a1fcf5abdc512af312c1527a0700c52e4b1a6b6e3e3dddc6edde69113ee23.sif'],
+                },
+                nativeRuntime: {
+                  path: '/usr/bin/apptainer',
+                  sha256: '7bdb501fdddbb7264b4e4d6038e0ec27201f63e217519e5f7f0db950c9285ddd',
+                  bytes: 48096048,
+                  qualification_sha256: '75e24f6fa3a80369b45e8c3d1029d940076109c92404d0d82a168be74859771b',
+                  user_namespace: true, sif_mount: true, hosted_delivery_sha256: null,
+                },
+                hostedRuntime: null,
+                leafSources: {
+                  '.github/ci/exec-in-sif.sh': '3687d72d25fef989317e7db6dd96d2b344c0f51508e45c92fda59d0ed4c73951',
+                  '.github/ci/run-in-sif.sh': '2950f281cfb12b5b879adf0b5bfa4bbcf66255dd1fd53fcfdbe5cecdfa2a7f6f',
+                  '.github/ci/tmpdir-lib.sh': '3d3399ba4bbf33d236abad9a0a011bcd9ec14a3f6a7f6042f14e5877a57e3f89',
+                  '.github/ci/clean-tmpdir.sh': '36421082132cf7b48564bce71470f7c2b0483cb72286ae2710f7e7dd62f3962a',
+                  '.github/ci/sif-runtime-lib.sh': 'c5fd90926c5948e5ffbf32ab095a2c27b07c5c17a6efaefb2bb125d9846c01e5',
+                },
               },
             });
             const LEAF_PATHS = Object.freeze({

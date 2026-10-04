@@ -10,6 +10,11 @@ name: import-smoke
 on:
   workflow_call:
     inputs:
+      dev_original_commands:
+        description: Run the full original scitex-dev validation and develop-only docs refresh.
+        type: boolean
+        required: false
+        default: false
       runs_on:
         description: >-
           Runner label set for this job, as a JSON ARRAY STRING (it is consumed
@@ -62,6 +67,7 @@ jobs:
       runs_on: ${{ inputs.runs_on }}
 
   import-smoke:
+    if: ${{ !inputs.dev_original_commands }}
     needs: [runner-admission]
     name: import-smoke-on-ubuntu-py3-12
     # FORK-AUTHORED PRs ARE ROUTED TO ubuntu-latest HERE, UNCONDITIONALLY —
@@ -156,3 +162,90 @@ jobs:
             exit 1
           fi
           "$SCRIPT" --version
+
+  dev-original-install-check:
+    name: import-smoke-on-ubuntu-py3-12
+    needs: runner-admission
+    if: inputs.dev_original_commands
+    runs-on: >-
+      ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
+          && fromJSON('["ubuntu-latest"]')
+          || fromJSON(needs.runner-admission.outputs.runs_on) }}
+    steps:
+      - name: Require company admission before native work
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          NATIVE_AUTHORIZED: ${{ needs.runner-admission.outputs.native_authorized }}
+          ADMISSION_REASON: ${{ needs.runner-admission.outputs.reason }}
+          ADMISSION_RUNS_ON: ${{ needs.runner-admission.outputs.runs_on }}
+        run: |
+          set -eu
+          case "$RUNNER_ENVIRONMENT" in
+            self-hosted)
+              test "$NATIVE_AUTHORIZED" = true
+              test "$ADMISSION_REASON" = confirmed-organization-members
+              test "$ADMISSION_RUNS_ON" = '{"group":"Organization","labels":["self-hosted","Linux","X64","scitex-org-cpu"]}'
+              ;;
+            github-hosted)
+              # Unconfirmed or external membership runs the full original checks.
+              ;;
+            *)
+              printf '%s\n' 'Unknown runner environment refused' >&2
+              exit 1
+              ;;
+          esac
+
+      # fetch-depth: 0 is REQUIRED — the same defect as the pytest-matrix
+      # workflow: a shallow clone hides the tags setuptools-scm derives the
+      # version from, the install resolves to `0.1.dev1+g<sha>`, and that string
+      # cannot satisfy scitex-cards' `scitex-dev>=0.59.0` requirement.
+      - name: Refuse to run fork-authored code on self-hosted infrastructure
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && runner.environment
+          == 'self-hosted'
+        run: 'set -euo pipefail
+
+          echo "::error title=Fork PR blocked::Fork-authored code is not run on the self-hosted Spartan pool."
+
+          echo "head repo: ${{ github.event.pull_request.head.repo.full_name }}  base repo: ${{ github.repository }}"
+
+          echo "To review this contribution, adopt its branch into ${{ github.repository }} and open a same-repo PR:"
+
+          echo "  gh pr checkout ${{ github.event.pull_request.number }} && git push origin HEAD:review/pr-${{ github.event.pull_request.number
+          }}"
+
+          exit 1
+
+          '
+
+      - name: Require confirmed organization membership on native runners
+        if: runner.environment == 'self-hosted' && needs.runner-admission.outputs.native_authorized != 'true'
+        run: 'echo ''::error::Organization membership admission was not confirmed.''
+
+          exit 1
+
+          '
+
+      - name: Require the original Dev caller
+        env:
+          CALLER_REPOSITORY: ${{ github.repository }}
+        run: test "$CALLER_REPOSITORY" = scitex-ai/scitex-dev
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Use a job-owned Python tool cache
+        run: |
+          tool_cache="$RUNNER_TEMP/scitex-dev-import-python-tools-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$tool_cache"
+          printf '%s\n' "RUNNER_TOOL_CACHE=$tool_cache" \
+            "AGENT_TOOLSDIRECTORY=$tool_cache" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install (no extras)
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -e .
+      - name: Import smoke
+        run: .venv/bin/python -c "import scitex_dev; print(scitex_dev.__version__)"
