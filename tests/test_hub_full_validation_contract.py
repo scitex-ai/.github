@@ -42,6 +42,22 @@ ROWS = {
     ),
 }
 HOSTED_ONLY = {"test-summary"}
+DEV_SOURCE_PREAMBLE = (
+    "set --\n"
+    "if [ -f requirements-dev-source.txt ]; then\n"
+    "  set -- -r requirements-dev-source.txt\n"
+    "fi\n"
+)
+DEV_SOURCE_INSTALLERS = {
+    "hub-pytest-matrix.yml": [
+        ("test", "Install dependencies (py${{ matrix.python-version }})")
+    ],
+    "hub-quality-audit.yml": [("audit", "Install package + audit tooling")],
+    "hub-custom-tests.yml": [
+        ("terminal-tests", "Install dependencies"),
+        ("security-regression", "Install dependencies"),
+    ],
+}
 
 
 def source_case(name):
@@ -53,7 +69,7 @@ def source_case(name):
 
 
 def restored_jobs(original, candidate, name):
-    """Reverse only the declared routing/guard and three install seams."""
+    """Reverse only the declared routing/guard and installer seams."""
     result = copy.deepcopy(candidate["jobs"])
     result.pop("runner-admission")
     for key, job in result.items():
@@ -69,6 +85,16 @@ def restored_jobs(original, candidate, name):
             job["steps"].pop(1)
         else:
             job["steps"] = [copy.deepcopy(old["steps"][0])] + job["steps"][3:]
+        for install_key, step_name in DEV_SOURCE_INSTALLERS.get(name, []):
+            if key != install_key:
+                continue
+            changed = next(
+                step for step in job["steps"] if step.get("name") == step_name
+            )
+            assert changed["run"].count(DEV_SOURCE_PREAMBLE) == 1
+            assert changed["run"].count(' "$@"') == 1
+            changed["run"] = changed["run"].replace(DEV_SOURCE_PREAMBLE, "", 1)
+            changed["run"] = changed["run"].replace(' "$@"', "", 1)
         if name == "hub-cli-import-smoke.yml":
             setup = next(
                 index
@@ -106,6 +132,54 @@ def test_all_original_jobs_test_commands_env_services_limits_and_permissions_sur
     restored = restored_jobs(original, candidate, name)
     # Assert
     assert restored == original["jobs"]
+
+
+@pytest.mark.parametrize(
+    "name,key,step_name",
+    [
+        (name, key, step_name)
+        for name, installers in DEV_SOURCE_INSTALLERS.items()
+        for key, step_name in installers
+    ],
+)
+@pytest.mark.parametrize("has_source_file", [False, True])
+def test_dev_source_installers_pass_optional_requirements_as_separate_arguments(
+    name, key, step_name, has_source_file, tmp_path
+):
+    _original, candidate = source_case(name)
+    run = next(
+        step["run"]
+        for step in candidate["jobs"][key]["steps"]
+        if step.get("name") == step_name
+    )
+    assert run.count(DEV_SOURCE_PREAMBLE) == 1
+    # Execute the actual argument-building stanza and install command; the
+    # remaining audit/test work is covered by the unchanged whole-body fixtures.
+    command = next(line.strip() for line in run.splitlines() if ' "$@"' in line)
+    if command.startswith("if "):
+        assert command.endswith("; then")
+        command = command[3:-6]
+    uv = tmp_path / "uv"
+    uv.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$ARGUMENTS"\n')
+    uv.chmod(0o700)
+    if has_source_file:
+        (tmp_path / "requirements-dev-source.txt").write_text("# source contract\n")
+    result = subprocess.run(
+        ["/bin/bash", "-eu", "-c", DEV_SOURCE_PREAMBLE + command],
+        cwd=tmp_path,
+        env={"PATH": str(tmp_path) + ":/usr/bin:/bin", "ARGUMENTS": str(tmp_path / "argv")},
+        capture_output=True,
+        timeout=3,
+        check=False,
+    )
+    expected = [
+        "pip", "install", "--python", ".venv/bin/python", "-e",
+        ".[dev]" if name == "hub-quality-audit.yml" else ".[all,dev]",
+    ]
+    if has_source_file:
+        expected.extend(["-r", "requirements-dev-source.txt"])
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "argv").read_text().splitlines() == expected
 
 
 @pytest.mark.parametrize("name", ROWS)
