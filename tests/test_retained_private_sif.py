@@ -47,6 +47,40 @@ def test_actual_registered_dev_retains_three_minors_and_exact_private_source_gat
     )
 
 
+@pytest.mark.parametrize(
+    'event,versions',
+    [('pull_request', ['3.11', '3.13']), ('push', ['3.11', '3.12', '3.13'])],
+)
+def test_actual_sac_plan_requires_separate_pg18_and_keeps_original_matrix(
+    event, versions
+):
+    # Arrange
+    # Act
+    result = contract('plan', repository=SAC, event=event)
+    # Assert
+    assert result['ok'] and (
+        result['value']['versions'],
+        result['value']['image']['capabilities']['postgres'],
+        result['value']['pgImage']['sha256'],
+        result['value']['pgVersion'],
+        result['value']['leafSources']['.github/ci/sif-runtime-lib.sh'],
+    ) == (
+        versions,
+        '16.15',
+        '842a1fcf5abdc512af312c1527a0700c52e4b1a6b6e3e3dddc6edde69113ee23',
+        '18.6',
+        'c5fd90926c5948e5ffbf32ab095a2c27b07c5c17a6efaefb2bb125d9846c01e5',
+    )
+
+
+def test_actual_sac_private_profile_does_not_enable_public_or_fork_delivery():
+    # Arrange
+    # Act
+    result = contract('plan', repository=SAC, native=False)
+    # Assert
+    assert result == {'ok': False, 'reason': 'image-unqualified'}
+
+
 @pytest.mark.parametrize('repository', [DEV, SAC])
 def test_authorized_native_uses_private_pins_without_public_producer_claim(repository):
     # Arrange
