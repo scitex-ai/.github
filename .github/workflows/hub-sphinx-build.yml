@@ -1,0 +1,74 @@
+name: hub-sphinx-build
+jobs:
+  runner-admission:
+    uses: ./.github/workflows/runner-admission.yml
+    with:
+      runs_on: '["self-hosted","Linux","X64","scitex-org-cpu"]'
+  sphinx:
+    if: '!contains(github.event.head_commit.message, ''docs(sphinx_html): refresh from CI build'')'
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
+      && fromJSON('["ubuntu-latest"]') || fromJSON(needs.runner-admission.outputs.runs_on) }}
+    permissions:
+      contents: write
+    steps:
+    - name: Refuse to run fork-authored code on self-hosted infrastructure
+      if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && runner.environment
+        == 'self-hosted'
+      run: |
+        echo "::error::Fork-authored code is not run on self-hosted infrastructure."
+        echo "Review with gh pr checkout; public contributors receive the complete hosted validation graph."
+        exit 1
+    - name: Require confirmed organization membership on native runners
+      if: runner.environment == 'self-hosted' && needs.runner-admission.outputs.native_authorized != 'true'
+      run: |
+        echo "::error::Organization membership admission was not confirmed."
+        exit 1
+    - name: Require the fixed Hub repository before checkout
+      env:
+        EXPECTED_REPOSITORY: scitex-ai/scitex-hub
+      run: |
+        test "$GITHUB_REPOSITORY" = "$EXPECTED_REPOSITORY"
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+    - uses: astral-sh/setup-uv@v7
+      with:
+        cache-dependency-glob: pyproject.toml
+    - name: Install package + docs deps
+      run: |
+        set -euo pipefail
+        uv venv --python 3.11 .venv
+        uv pip install --python .venv/bin/python -e ".[all]"
+        # Later steps invoke sphinx-build bare, across several steps.
+        echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+    - name: Build Sphinx HTML (warnings fail PRs only)
+      run: |
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          sphinx-build -W -b html docs/sphinx docs/sphinx/_build/html
+        else
+          sphinx-build -b html docs/sphinx docs/sphinx/_build/html
+        fi
+    - name: Refresh src/scitex_hub/_sphinx_html/ (develop push only)
+      if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+      run: |
+        rm -rf src/scitex_hub/_sphinx_html
+        cp -rf docs/sphinx/_build/html src/scitex_hub/_sphinx_html
+        touch src/scitex_hub/_sphinx_html/.nojekyll
+    - name: Commit refreshed HTML if it changed (develop push only)
+      continue-on-error: true
+      if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+      run: |
+        if [ -n "$(git status --porcelain src/scitex_hub/_sphinx_html)" ]; then
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/scitex_hub/_sphinx_html
+          git commit -m "docs(sphinx_html): refresh from CI build"
+          git push
+        fi
+    needs:
+    - runner-admission
+'on':
+  workflow_call: null
+permissions:
+  contents: write

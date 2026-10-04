@@ -1,0 +1,48 @@
+name: hub-cli-import-smoke
+jobs:
+  runner-admission:
+    uses: ./.github/workflows/runner-admission.yml
+    with:
+      runs_on: '["self-hosted","Linux","X64","scitex-org-cpu"]'
+  cli-import-smoke:
+    name: cli-import-smoke-on-ubuntu-latest
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
+      && fromJSON('["ubuntu-latest"]') || fromJSON(needs.runner-admission.outputs.runs_on) }}
+    timeout-minutes: 30
+    steps:
+    - name: Refuse to run fork-authored code on self-hosted infrastructure
+      if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && runner.environment
+        == 'self-hosted'
+      run: |
+        echo "::error::Fork-authored code is not run on self-hosted infrastructure."
+        echo "Review with gh pr checkout; public contributors receive the complete hosted validation graph."
+        exit 1
+    - name: Require confirmed organization membership on native runners
+      if: runner.environment == 'self-hosted' && needs.runner-admission.outputs.native_authorized != 'true'
+      run: |
+        echo "::error::Organization membership admission was not confirmed."
+        exit 1
+    - name: Require the fixed Hub repository before checkout
+      env:
+        EXPECTED_REPOSITORY: scitex-ai/scitex-hub
+      run: |
+        test "$GITHUB_REPOSITORY" = "$EXPECTED_REPOSITORY"
+    - uses: actions/checkout@v4
+    - uses: astral-sh/setup-uv@v7
+      with:
+        cache-dependency-glob: pyproject.toml
+    - name: Install with NO extras
+      run: |
+        set -euo pipefail
+        uv venv --python 3.12 .venv
+        uv pip install --python .venv/bin/python -e .
+    - name: Import the console-script entry point
+      run: .venv/bin/python -c "import scitex_hub._cli.main; print('cli entry point imported')"
+    - name: Run the console script
+      run: .venv/bin/scitex-hub --help > /dev/null && echo "scitex-hub --help ok"
+    needs:
+    - runner-admission
+'on':
+  workflow_call: null
+permissions:
+  contents: read

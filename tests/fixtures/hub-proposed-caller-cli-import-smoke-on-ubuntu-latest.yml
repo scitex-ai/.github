@@ -1,0 +1,63 @@
+name: cli-import-smoke
+
+# Asserts the SHIPPED CLI starts from a plain `pip install .` — i.e. every
+# top-level import in the console-script chain is a declared RUNTIME
+# dependency, not something that only happens to be present via an extra.
+#
+# Why the existing import-smoke leg does not cover this: it installs bare and
+# runs `import scitex_hub`, but `scitex_hub/__init__.py` only reads package
+# metadata for __version__ — it never touches `_cli`. So an extras-only
+# top-level import anywhere under `scitex_hub._cli` is invisible to it.
+#
+# The gap was real, not theoretical (2026-08-11). `requests` was declared only
+# in the `all` extra while `_gitea_auth.py:9` imports it at module level, and
+# the console script `scitex_hub._cli.main:main` reaches it via
+# main.py:22 -> gitea.py:13 -> _gitea_auth.py:9. Two consequences:
+#   1. `pip install scitex-hub` + `scitex-hub --help` -> ModuleNotFoundError.
+#   2. The quality-audit job installs `.[dev]` and pytest-matrix installs
+#      `.[all,dev]`, so audit-cli could not import the CLI it grades and
+#      reported `not-auditable` — the CLI went UNGRADED on one leg and graded
+#      on the other, from an identical tree. A gate that silently stops
+#      grading is worse than one that is red.
+#
+# Deliberately a BARE install (no extras). Adding extras here would recreate
+# the exact hole this leg exists to close.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+# Supersede a pull request's own earlier runs, which nobody will read once a
+# newer commit exists. Keyed per workflow per ref, so different PRs never
+# cancel each other.
+#
+# cancel-in-progress is TRUE ONLY FOR pull_request. A push to main or develop
+# is never cancelled: back-to-back merges would otherwise kill the earlier
+# merge's run, and anything treating a develop run as a gate would lose it
+# silently. Superseding an in-flight PR run is free; superseding a branch run
+# is a decision nobody made.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+
+permissions:
+  contents: read
+jobs:
+  validation:
+    uses: scitex-ai/.github/.github/workflows/hub-cli-import-smoke.yml@main
+  required-cli:
+    name: cli-import-smoke-on-ubuntu-latest
+    needs: validation
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+    - name: Require actual full validation success
+      env:
+        VALIDATION_RESULT: ${{ needs.validation.result }}
+      run: |
+        test "$VALIDATION_RESULT" = "success"
