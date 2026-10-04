@@ -57,6 +57,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.11.29"
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
       - name: Run caller job
         env:
           CALLER_COMMAND: ${{ inputs.command }}
