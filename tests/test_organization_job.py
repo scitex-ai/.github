@@ -20,7 +20,10 @@ def test_organization_job_routes_through_membership_admission():
     assert run["steps"][0]["name"] == "Refuse to run fork-authored code on self-hosted infrastructure"
     assert run["steps"][1]["name"] == "Require allowlisted actor on native runners"
     assert run["steps"][2]["uses"].startswith("actions/checkout@")
-    assert run["steps"][3]["env"] == {
+    command_step = next(
+        step for step in run["steps"] if step.get("name") == "Run caller job"
+    )
+    assert command_step["env"] == {
         "CALLER_COMMAND": "${{ inputs.command }}",
         "RUNNER_ENVIRONMENT": "${{ runner.environment }}",
     }

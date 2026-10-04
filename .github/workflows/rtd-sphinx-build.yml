@@ -166,6 +166,14 @@ on:
         type: string
         required: false
         default: sphinx-html
+      bundle_dir:
+        description: >-
+          Optional repository-relative destination for the built HTML bundle.
+          On push events, a GitHub-hosted publish job copies the artifact there
+          and commits it with the workflow token. Pull requests only build.
+        type: string
+        required: false
+        default: ''
     outputs:
       html_dir:
         description: >-
@@ -321,12 +329,56 @@ jobs:
       # `contents: write`. See the `upload_artifact` input for why the
       # commit-back half is deliberately NOT done here.
       - name: Upload built HTML for the caller to publish
-        if: ${{ inputs.upload_artifact && steps.build.outputs.html_dir != '' }}
+        if: ${{ (inputs.upload_artifact || inputs.bundle_dir != '') && steps.build.outputs.html_dir != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.artifact_name }}
           path: ${{ steps.build.outputs.html_dir }}
           if-no-files-found: error
+
+  publish-sphinx-bundle:
+    if: ${{ inputs.bundle_dir != '' && github.event_name == 'push' }}
+    needs: [docs-sphinx]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: .rtd-sphinx-html
+      - name: Validate destination and refresh the bundled HTML
+        env:
+          BUNDLE_DIR: ${{ inputs.bundle_dir }}
+        run: |
+          set -euo pipefail
+          case "$BUNDLE_DIR" in
+            ""|/*|..|../*|*/../*|*/..)
+              echo "::error::bundle_dir must be a safe repository-relative path"
+              exit 1
+              ;;
+          esac
+          test -d .rtd-sphinx-html
+          rm -rf -- "$BUNDLE_DIR"
+          mkdir -p -- "$BUNDLE_DIR"
+          cp -a .rtd-sphinx-html/. "$BUNDLE_DIR/"
+          rm -rf -- "$BUNDLE_DIR/.doctrees"
+          touch "$BUNDLE_DIR/.nojekyll"
+      - name: Commit refreshed HTML if it changed
+        env:
+          BUNDLE_DIR: ${{ inputs.bundle_dir }}
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain -- "$BUNDLE_DIR")" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -- "$BUNDLE_DIR"
+            git commit -m "docs(sphinx_html): refresh from CI build"
+            git push
+          fi
 
   dev-original-sphinx:
     name: sphinx
