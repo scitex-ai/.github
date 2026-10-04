@@ -164,8 +164,12 @@ jobs:
       run: |
         uv venv --python 3.11 .venv
         echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+        set --
+        if [ -f requirements-dev-source.txt ]; then
+          set -- -r requirements-dev-source.txt
+        fi
         for attempt in 1 2 3; do
-          if uv pip install --python .venv/bin/python -e ".[all,dev]"; then
+          if uv pip install --python .venv/bin/python -e ".[all,dev]" "$@"; then
             exit 0
           fi
           echo "::warning::uv pip install -e .[all,dev] attempt ${attempt} failed; retrying in 15s"
@@ -232,8 +236,12 @@ jobs:
       run: |
         uv venv --python 3.11 .venv
         echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+        set --
+        if [ -f requirements-dev-source.txt ]; then
+          set -- -r requirements-dev-source.txt
+        fi
         for attempt in 1 2 3; do
-          if uv pip install --python .venv/bin/python -e ".[all,dev]"; then
+          if uv pip install --python .venv/bin/python -e ".[all,dev]" "$@"; then
             exit 0
           fi
           echo "::warning::uv pip install -e .[all,dev] attempt ${attempt} failed; retrying in 15s"
