@@ -18,8 +18,8 @@
     },
     "candidate": {
       "base_revision": "0da7636bae9e2f71694046f0cc2697cc86eafc65",
-      "revision": null,
-      "provenance": "central-source-branch-review-candidate",
+      "revision": "1961c8d",
+      "provenance": "committed-central-source-review-candidate",
       "path": ".github/workflows/rtd-sphinx-build.yml",
       "bytes": 25552,
       "sha256": "87c2b17235cc67967ce87bab1a88303f506f637a2bd553d89b07356b37811eb9",
