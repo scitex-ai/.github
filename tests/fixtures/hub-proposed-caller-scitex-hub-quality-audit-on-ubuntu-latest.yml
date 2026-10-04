@@ -1,0 +1,66 @@
+name: quality
+
+# Single-package quality gate — runs `scitex-dev ecosystem audit-all`
+# against this package (audit-cli / audit-mcp-tools / audit-skills /
+# audit-python-apis / audit-project). Mirrors the canonical audit that
+# `tests/develop/test_audit.py` runs inside the test suite, but as a
+# standalone gate so an audit regression is visible even when the matrix
+# is skipped.
+#
+# The previous body of this workflow shallow-cloned the entire ecosystem
+# and ran `scripts/quality/audit_ecosystem.py` — both of which live only
+# in scitex-dev, not in leaf packages. That template was copied here
+# verbatim and was always broken (FileNotFoundError on a non-existent
+# ecosystem registry file). This version audits just this package.
+
+on:
+  schedule:
+    - cron: "0 18 * * *"  # 18:00 UTC (~03:00 JST), after Test
+  workflow_dispatch:
+  push:
+    branches: [develop]
+    # NO `paths:` filter, deliberately. This previously listed only
+    # src/**, tests/**, pyproject.toml and this file — but scitex-hub is
+    # a Django app whose code lives almost entirely in apps/**, config/**,
+    # templates/** and scripts/**. None of those triggered the audit, so
+    # the gate's "green on develop" record was measured over a filtered
+    # sample that excluded nearly every real commit. A gate that does not
+    # run on the code is not a gate. The audit takes ~2 min; running it on
+    # every develop push is the correct trade.
+    # The filter also referenced this workflow BY FILENAME, so any rename
+    # would have silently stopped self-triggering — a second reason the
+    # list is gone rather than merely extended.
+  pull_request:
+    branches: [main, develop]
+
+# Supersede a pull request's own earlier runs, which nobody will read once a
+# newer commit exists. Keyed per workflow per ref, so different PRs never
+# cancel each other.
+#
+# cancel-in-progress is TRUE ONLY FOR pull_request. A push to main or develop
+# is never cancelled: back-to-back merges would otherwise kill the earlier
+# merge's run, and anything treating a develop run as a gate would lose it
+# silently. Superseding an in-flight PR run is free; superseding a branch run
+# is a decision nobody made.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+
+permissions:
+  contents: read
+jobs:
+  validation:
+    uses: scitex-ai/.github/.github/workflows/hub-quality-audit.yml@main
+  required-audit:
+    name: audit
+    needs: validation
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+    - name: Require actual full validation success
+      env:
+        VALIDATION_RESULT: ${{ needs.validation.result }}
+      run: |
+        test "$VALIDATION_RESULT" = "success"
