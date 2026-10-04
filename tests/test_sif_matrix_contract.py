@@ -734,6 +734,9 @@ class SIFWorkflowSourceTests(unittest.TestCase):
 
         # Act
         verdict = source.split("  sac-verdict:\n")[1].split("  nightly-sac:\n")[0]
+        card_report = verdict.split(
+            "      - name: Write the CI verdict to the card and notify the pushing agent\n"
+        )[1]
 
         # Assert
         assert "needs: [runner-admission, profile, test-sac]" in verdict
@@ -743,6 +746,7 @@ class SIFWorkflowSourceTests(unittest.TestCase):
         assert "name: Summarize auxiliary Cards delivery" in verdict
         assert "${{ steps.verdict.outcome }}" in verdict
         assert "does not change the test verdict" in verdict
+        assert "continue-on-error: true" in card_report
 
     def test_nightly_has_no_coverage_or_oidc_and_keeps_hosted_budget(self):
         # Arrange
