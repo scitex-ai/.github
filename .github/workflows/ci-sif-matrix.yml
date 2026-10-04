@@ -103,7 +103,7 @@ jobs:
                 },
                 releaseSources: {
                   '.github/ci/build-in-sif.sh': '30961623dc2d790adaa43356ff236e5f5ace27f708caaf096d4019660c569c08',
-                  '.github/ci/release-identity.py': '450ebd663d9b1da0894d9d059f3175fb891ce2dba3871b503b9f3867d1a3b43f',
+                  '.github/ci/release-identity.py': '0c80f6631f00190ccb24833d95a800af3d979e69c720aa66bb2b5ae0c61f220a',
                   '.github/ci/publish-in-sif.sh': '8c1aee030d76b05f650dba88c9508e6241e8fa6c779df6df9aa3c629254dac02',
                 },
               },
