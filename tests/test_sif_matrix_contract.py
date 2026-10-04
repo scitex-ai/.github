@@ -786,7 +786,7 @@ class SIFWorkflowSourceTests(unittest.TestCase):
             "promote-develop-to-main-on-tag.yml": "1e3cec556f96612ff987f1bc2969dd145f85ebfff48297a3bf3adccd0b8c0c69",
             "pytest-matrix.yml": "4c6663947b4c3727954953226e6110a703ab4fb09180d64b2f15164e2310dfcf",
             "quality-audit.yml": "f44a2e6b5c479c2975d1cedf66738fdbf402a74cf1d8e26340bb9895524e7b4a",
-            "rtd-sphinx-build.yml": "c5b0546ac42cb8daf3c723ed03c07244f5de93dc75849f9d491feca480749e66",
+            "rtd-sphinx-build.yml": "87c2b17235cc67967ce87bab1a88303f506f637a2bd553d89b07356b37811eb9",
             "runner-admission.yml": "406b82aae0183da8bf35b3fcfa424f22231e3b132ba3e002f72e09c713828205",
         }
         # Act

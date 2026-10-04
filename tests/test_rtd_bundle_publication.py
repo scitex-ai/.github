@@ -26,10 +26,21 @@ def test_rtd_bundle_publication_is_opt_in_and_push_only():
     assert "github.event_name == 'push'" in publish["if"]
     assert publish["needs"] == ["docs-sphinx"]
     assert publish["runs-on"] == "ubuntu-latest"
-    assert publish["permissions"]["contents"] == "write"
+    assert publish["permissions"] == {
+        "contents": "write",
+        "pull-requests": "write",
+    }
     assert any(
         step.get("uses") == "actions/download-artifact@v4"
         for step in publish["steps"]
     )
     assert any("bundle_dir must be a safe" in step.get("run", "") for step in publish["steps"])
-
+    create_pr = next(
+        step
+        for step in publish["steps"]
+        if step.get("uses", "").startswith("peter-evans/create-pull-request@")
+    )
+    assert create_pr["with"]["base"] == "${{ github.ref_name }}"
+    assert create_pr["with"]["branch"] == "ci/sphinx-bundle/${{ github.ref_name }}"
+    assert create_pr["with"]["add-paths"] == "${{ inputs.bundle_dir }}"
+    assert not any("git push" in step.get("run", "") for step in publish["steps"])

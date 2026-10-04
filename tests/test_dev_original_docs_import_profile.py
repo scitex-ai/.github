@@ -94,6 +94,15 @@ class TestDevOriginalProfile(unittest.TestCase):
             events["workflow_call"]["inputs"].pop("dev_original_commands")
             if name == "rtd-sphinx-build.yml":
                 events["workflow_call"]["inputs"].pop("bundle_dir")
+                # Bundle publication evolved from a direct protected-branch
+                # push to a reviewable PR; compare the unchanged build-only
+                # contract and jobs against the captured original source.
+                original_events = original.get("on", original.get(True))
+                events["workflow_call"]["inputs"]["upload_artifact"]["description"] = (
+                    original_events["workflow_call"]["inputs"]["upload_artifact"][
+                        "description"
+                    ]
+                )
                 upload = next(
                     step
                     for step in value["jobs"][standard]["steps"]
