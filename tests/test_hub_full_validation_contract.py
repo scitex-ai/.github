@@ -41,7 +41,7 @@ ROWS = {
         "4143a455115acce0c031a488f2858566e026bad9098eda7c8380926f5c540a38",
     ),
 }
-HOSTED_ONLY = {"terminal-tests", "security-regression", "test-summary"}
+HOSTED_ONLY = {"test-summary"}
 
 
 def source_case(name):
@@ -161,15 +161,35 @@ def test_all_native_legs_require_gate_repo_and_fork_refusal_before_any_checkout(
     assert observed and all(row == (True,) * 7 for row in observed)
 
 
-def test_terminal_security_and_strict_four_leg_summary_remain_hosted():
+@pytest.mark.parametrize(
+    "key", ["typescript-check", "vitest", "terminal-tests", "security-regression"]
+)
+def test_all_four_real_custom_legs_route_members_native_and_outsiders_hosted(key):
     # Arrange
     original, candidate = source_case("hub-custom-tests.yml")
     # Act
-    values = [(key, candidate["jobs"][key]["runs-on"]) for key in sorted(HOSTED_ONLY)]
+    job = candidate["jobs"][key]
     summary = candidate["jobs"]["test-summary"]
+    selector = (
+        "${{ (github.event_name == 'pull_request' && "
+        "github.event.pull_request.head.repo.full_name != github.repository) "
+        "&& fromJSON('[\"ubuntu-latest\"]') || "
+        "fromJSON(needs.runner-admission.outputs.runs_on) }}"
+    )
     # Assert
-    assert (values, summary) == (
-        [(key, "ubuntu-latest") for key in sorted(HOSTED_ONLY)],
+    assert (
+        job["runs-on"],
+        job["needs"],
+        [step["name"] for step in job["steps"][:3]],
+        summary,
+    ) == (
+        selector,
+        ["runner-admission"],
+        [
+            "Refuse to run fork-authored code on self-hosted infrastructure",
+            "Require confirmed organization membership on native runners",
+            "Require the fixed Hub repository before checkout",
+        ],
         original["jobs"]["test-summary"],
     )
 
