@@ -92,6 +92,17 @@ class TestDevOriginalProfile(unittest.TestCase):
             value = copy.deepcopy(candidate)
             events = value.get("on", value.get(True))
             events["workflow_call"]["inputs"].pop("dev_original_commands")
+            if name == "rtd-sphinx-build.yml":
+                events["workflow_call"]["inputs"].pop("bundle_dir")
+                upload = next(
+                    step
+                    for step in value["jobs"][standard]["steps"]
+                    if step.get("name") == "Upload built HTML for the caller to publish"
+                )
+                upload["if"] = (
+                    "${{ inputs.upload_artifact && steps.build.outputs.html_dir != '' }}"
+                )
+                value["jobs"].pop("publish-sphinx-bundle")
             value["jobs"].pop("dev-original-" + leaf)
             value["jobs"][standard].pop("if")
             restored.append(value == original)
