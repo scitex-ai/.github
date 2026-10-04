@@ -236,8 +236,7 @@ jobs:
                 requireContract(['pull_request', 'schedule', 'workflow_dispatch'].includes(eventName), 'nightly-event-unsupported');
                 return {profile: profile.id, suite, versions: ['3.12']};
               }
-              const versions = profile.id === 'sac' && eventName === 'pull_request'
-                ? ['3.11', '3.13'] : ['3.11', '3.12', '3.13'];
+              const versions = ['3.11', '3.12', '3.13'];
               return {profile: profile.id, suite, versions};
             }
             function planFor(repository, eventName, native, registry = PROFILES, suite = 'matrix') {

@@ -263,13 +263,13 @@ class SIFPolicyTests(unittest.TestCase):
         # Assert
         assert result["value"]["versions"] == ["3.11", "3.12", "3.13"]
 
-    def test_sac_pr_retains_range_ends(self):
+    def test_sac_pr_runs_all_supported_python_versions(self):
         # Arrange
         # Act
         result = contract("select", repository=SAC)
 
         # Assert
-        assert result["value"]["versions"] == ["3.11", "3.13"]
+        assert result["value"]["versions"] == ["3.11", "3.12", "3.13"]
 
     def test_sac_push_retains_all_versions(self):
         # Arrange
