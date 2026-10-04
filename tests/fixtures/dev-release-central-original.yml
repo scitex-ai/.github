@@ -19,23 +19,6 @@ on:
         type: string
         required: false
         default: ''
-      release_tag:
-        type: string
-        required: false
-        default: ''
-    outputs:
-      release_plan:
-        value: ${{ jobs.profile.outputs.plan }}
-      release_tag:
-        value: ${{ jobs.profile.outputs.tag }}
-      source_commit:
-        value: ${{ jobs.profile.outputs.commit }}
-      artifact:
-        value: ${{ jobs.build-dev-release.outputs.artifact }}
-      manifest_sha256:
-        value: ${{ jobs.build-dev-release.outputs.manifest_sha256 }}
-      identity_sha256:
-        value: ${{ jobs.profile.outputs.identity_sha256 }}
     secrets:
       CODECOV_TOKEN:
         required: false
@@ -58,17 +41,12 @@ jobs:
       versions: ${{ steps.contract.outputs.versions }}
       profile: ${{ steps.contract.outputs.profile }}
       suite: ${{ steps.contract.outputs.suite }}
-      tag: ${{ steps.contract.outputs.tag }}
-      commit: ${{ steps.contract.outputs.commit }}
-      identity_sha256: ${{ steps.contract.outputs.identity_sha256 }}
     steps:
       - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         id: contract
         env:
           NATIVE_AUTHORIZED: ${{ needs.runner-admission.outputs.native_authorized }}
           SIF_SUITE: ${{ inputs.suite }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
-          CALLER_WORKFLOW_REF: ${{ github.workflow_ref }}
         with:
           script: |
             // BEGIN SIF_CONTRACT
@@ -100,11 +78,6 @@ jobs:
                   '.github/ci/run-in-sif.sh': 'cc690aeca6770e980652f499d50571e0e2fc759abbf2b870c650fcc3dd493786',
                   '.github/ci/release-context.sh': 'd7433cacdd9098bdbe77994ba7a78d91b90edc7164a00a40450db19978ac57f8',
                   '.github/ci/verify-postgres-capability.py': 'af610a811b19f746c9a717fbebbc67639b16df962544acac9b51a3dd38a43455',
-                },
-                releaseSources: {
-                  '.github/ci/build-in-sif.sh': '30961623dc2d790adaa43356ff236e5f5ace27f708caaf096d4019660c569c08',
-                  '.github/ci/release-identity.py': '450ebd663d9b1da0894d9d059f3175fb891ce2dba3871b503b9f3867d1a3b43f',
-                  '.github/ci/publish-in-sif.sh': '8c1aee030d76b05f650dba88c9508e6241e8fa6c779df6df9aa3c629254dac02',
                 },
               },
               'scitex-ai/scitex-agent-container': {
@@ -225,12 +198,8 @@ jobs:
             function profileSelection(repository, eventName, suite = 'matrix') {
               requireContract(Object.hasOwn(PROFILES, repository), 'repository-unregistered');
               requireContract(['push', 'pull_request', 'schedule', 'workflow_dispatch'].includes(eventName), 'event-unsupported');
-              requireContract(['matrix', 'nightly', 'dev-release'].includes(suite), 'suite-unsupported');
+              requireContract(['matrix', 'nightly'].includes(suite), 'suite-unsupported');
               const profile = PROFILES[repository];
-              if (suite === 'dev-release') {
-                requireContract(profile.id === 'dev', 'release-profile-unsupported');
-                requireContract(['push', 'workflow_dispatch'].includes(eventName), 'release-event-unsupported');
-              }
               if (suite === 'nightly') {
                 requireContract(profile.id === 'sac', 'nightly-profile-unsupported');
                 requireContract(['pull_request', 'schedule', 'workflow_dispatch'].includes(eventName), 'nightly-event-unsupported');
@@ -269,15 +238,8 @@ jobs:
               const paths = LEAF_PATHS[selected.profile];
               requireContract(exactKeys(value.leafSources, paths)
                 && paths.every(path => digest(value.leafSources[path])), 'leaf-source-closure-unqualified');
-              let leafSources = value.leafSources;
-              if (selected.suite === 'dev-release') {
-                const releasePaths = ['.github/ci/build-in-sif.sh', '.github/ci/release-identity.py', '.github/ci/publish-in-sif.sh'];
-                requireContract(exactKeys(value.releaseSources, releasePaths)
-                  && releasePaths.every(path => digest(value.releaseSources[path])), 'release-source-closure-unqualified');
-                leafSources = {...leafSources, ...value.releaseSources};
-              }
               return {profile: selected.profile, suite: selected.suite, versions: selected.versions, image, pgImage, runtime,
-                leafSources, pgBin: value.pgBin,
+                leafSources: value.leafSources, pgBin: value.pgBin,
                 pgVersion: pgImage ? pgImage.capabilities.postgres : value.pgVersion, native};
             }
             // END SIF_CONTRACT
@@ -287,52 +249,10 @@ jobs:
             core.setOutput('versions', JSON.stringify(plan.versions));
             core.setOutput('profile', plan.profile);
             core.setOutput('suite', plan.suite);
-            if (plan.suite === 'dev-release') {
-              // BEGIN DEV_RELEASE_SOURCE
-              function releaseRequest(repository, event, ref, requested, workflow) {
-                requireContract(repository === 'scitex-ai/scitex-dev', 'release-repository-refused');
-                requireContract(['push', 'workflow_dispatch'].includes(event), 'release-event-refused');
-                const tag = event === 'push' ? ref.replace(/^refs\/tags\//, '') : requested;
-                requireContract(/^v[0-9]+\.[0-9]+\.[0-9]+$/.test(tag), 'release-tag-refused');
-                requireContract(event === 'push' ? ref === `refs/tags/${tag}` : ref === 'refs/heads/main', 'release-ref-refused');
-                requireContract(workflow === `${repository}/.github/workflows/pypi-publish-and-github-release-on-tag.yml@${ref}`, 'release-caller-refused');
-                return {tag, event};
-              }
-              function qualifyReleaseSource(request, commit, eventSha, before, comparison, after) {
-                requireContract(/^[a-f0-9]{40}$/.test(commit), 'release-commit-refused');
-                requireContract(request.event !== 'push' || commit === eventSha, 'release-tag-event-mismatch');
-                requireContract(before.name === 'main' && before.protected === true
-                  && /^[a-f0-9]{40}$/.test(before.commit.sha), 'release-main-unprotected');
-                requireContract(after.name === before.name && after.protected === true
-                  && after.commit.sha === before.commit.sha, 'release-main-changed');
-                requireContract(['ahead', 'identical'].includes(comparison.status)
-                  && comparison.base_commit.sha === commit && comparison.merge_base_commit.sha === commit,
-                  'release-not-promoted-to-main');
-                return {tag: request.tag, commit};
-              }
-              // END DEV_RELEASE_SOURCE
-              const request = releaseRequest(context.payload.repository.full_name, context.eventName,
-                context.ref, process.env.RELEASE_TAG, process.env.CALLER_WORKFLOW_REF);
-              let object = (await github.rest.git.getRef({...context.repo, ref: `tags/${request.tag}`})).data.object;
-              for (let depth = 0; object.type === 'tag' && depth < 4; depth++) {
-                requireContract(/^[a-f0-9]{40}$/.test(object.sha), 'release-tag-object-invalid');
-                object = (await github.rest.git.getTag({...context.repo, tag_sha: object.sha})).data.object;
-              }
-              requireContract(object.type === 'commit', 'release-tag-target-refused');
-              const before = (await github.rest.repos.getBranch({...context.repo, branch: 'main'})).data;
-              const comparison = (await github.rest.repos.compareCommitsWithBasehead({
-                ...context.repo, basehead: `${object.sha}...${before.commit.sha}`,
-              })).data;
-              const after = (await github.rest.repos.getBranch({...context.repo, branch: 'main'})).data;
-              const identity = qualifyReleaseSource(request, object.sha, context.sha, before, comparison, after);
-              core.setOutput('tag', identity.tag);
-              core.setOutput('commit', identity.commit);
-              core.setOutput('identity_sha256', plan.leafSources['.github/ci/release-identity.py']);
-            }
 
   test-dev:
     needs: [runner-admission, profile]
-    if: needs.profile.outputs.profile == 'dev' && (needs.profile.outputs.suite == 'matrix' || needs.profile.outputs.suite == 'dev-release')
+    if: needs.profile.outputs.profile == 'dev' && needs.profile.outputs.suite == 'matrix'
     name: test-dev-py${{ matrix.python-version }}
     runs-on: >-
       ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
@@ -366,14 +286,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         id: checkout
         with:
-          ref: ${{ needs.profile.outputs.commit || github.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Require the immutable release checkout
-        if: needs.profile.outputs.suite == 'dev-release'
-        env:
-          RELEASE_COMMIT: ${{ needs.profile.outputs.commit }}
-        run: test "$(git rev-parse HEAD)" = "$RELEASE_COMMIT"
       - name: Verify source/runtime and acquire whole images
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         id: inputs
@@ -917,219 +832,6 @@ jobs:
       - name: Preserve SAC per-leg always cleanup
         if: always() && needs.profile.outputs.profile == 'sac' && steps.checkout.outcome == 'success'
         run: bash .github/ci/clean-tmpdir.sh run-in-sif.sh ${{ matrix.python-version }}
-      - name: Remove this leg's owned hosted image copies
-        if: always() && steps.inputs.outputs.owned != ''
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
-        env:
-          OWNED: ${{ steps.inputs.outputs.owned }}
-        with:
-          script: |
-            const fs = require('fs').promises;
-            const path = require('path');
-            const owned = JSON.parse(process.env.OWNED);
-            const base = path.resolve(process.env.RUNNER_TEMP);
-            if (path.dirname(owned.root) !== base || !path.basename(owned.root).startsWith('scitex-sif-')) throw new Error('scratch-owner-mismatch');
-            const value = await fs.lstat(owned.root);
-            if (!value.isDirectory() || value.isSymbolicLink() || value.dev !== owned.dev
-                || value.ino !== owned.ino || value.uid !== owned.uid || (value.mode & 0o777) !== 0o700) throw new Error('scratch-incarnation-mismatch');
-            const entries = await fs.readdir(owned.root);
-            if (entries.some(name => !['ci.sif', 'pg.sif'].includes(name))) throw new Error('scratch-unowned-member');
-            for (const name of entries) {
-              const file = path.join(owned.root, name);
-              const stat = await fs.lstat(file);
-              if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== owned.uid) throw new Error('scratch-member-mismatch');
-              await fs.unlink(file);
-            }
-            await fs.rmdir(owned.root);
-
-  build-dev-release:
-    needs: [runner-admission, profile, test-dev]
-    if: needs.profile.outputs.suite == 'dev-release'
-    name: build-dev-release
-    runs-on: >-
-      ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
-          && fromJSON('["ubuntu-latest"]')
-          || fromJSON(needs.runner-admission.outputs.runs_on) }}
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    outputs:
-      artifact: ${{ steps.identity.outputs.artifact }}
-      manifest_sha256: ${{ steps.identity.outputs.manifest_sha256 }}
-    env:
-      RELEASE_TAG: ${{ needs.profile.outputs.tag }}
-      RELEASE_COMMIT: ${{ needs.profile.outputs.commit }}
-    steps:
-      - name: Refuse to run fork-authored code on self-hosted infrastructure
-        if: >-
-          github.event_name == 'pull_request' &&
-          github.event.pull_request.head.repo.full_name != github.repository &&
-          runner.environment == 'self-hosted'
-        run: |
-          set -euo pipefail
-          echo "::error title=Fork PR blocked::Fork-authored code is not run on the self-hosted Spartan pool."
-          echo "head repo: ${{ github.event.pull_request.head.repo.full_name }}  base repo: ${{ github.repository }}"
-          echo "To review this contribution, adopt its branch into ${{ github.repository }} and open a same-repo PR:"
-          echo "  gh pr checkout ${{ github.event.pull_request.number }} && git push origin HEAD:review/pr-${{ github.event.pull_request.number }}"
-          exit 1
-      - name: Require confirmed organization membership on native runners
-        if: runner.environment == 'self-hosted' && needs.runner-admission.outputs.native_authorized != 'true'
-        run: exit 1
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        id: checkout
-        with:
-          ref: ${{ needs.profile.outputs.commit || github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Require the immutable release checkout
-        if: needs.profile.outputs.suite == 'dev-release'
-        env:
-          RELEASE_COMMIT: ${{ needs.profile.outputs.commit }}
-        run: test "$(git rev-parse HEAD)" = "$RELEASE_COMMIT"
-      - name: Verify source/runtime and acquire whole images
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
-        id: inputs
-        env:
-          PLAN: ${{ needs.profile.outputs.plan }}
-          NATIVE_CI_SIF: ${{ vars.SCITEX_CI_SIF }}
-          NATIVE_PG_SIF: ${{ vars.SCITEX_CI_PG_SIF }}
-        with:
-          script: |
-            // BEGIN SIF_FILE_GATE
-            const fs = require('fs');
-            const fsp = fs.promises;
-            const path = require('path');
-            const crypto = require('crypto');
-            const plan = JSON.parse(process.env.PLAN);
-            const deadline = Date.now() + 15 * 60 * 1000;
-            function check(value, reason) { if (!value) throw new Error(reason); }
-            function timeFence() { check(Date.now() < deadline, 'image-acquisition-deadline'); }
-            async function regularBytes(file, expected, expectedSize = null) {
-              timeFence();
-              const handle = await fsp.open(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
-              try {
-                const before = await handle.stat();
-                check(before.isFile() && (expectedSize === null || before.size === expectedSize), 'file-metadata-mismatch');
-                const hash = crypto.createHash('sha256');
-                const chunk = Buffer.alloc(1024 * 1024);
-                let count = 0;
-                while (true) {
-                  timeFence();
-                  const {bytesRead} = await handle.read(chunk, 0, chunk.length, null);
-                  if (!bytesRead) break;
-                  count += bytesRead;
-                  check(count <= before.size, 'file-size-changed');
-                  hash.update(chunk.subarray(0, bytesRead));
-                }
-                const after = await handle.stat();
-                const current = await fsp.lstat(file);
-                timeFence();
-                check(after.dev === before.dev && after.ino === before.ino && after.size === before.size
-                  && after.mtimeMs === before.mtimeMs && after.ctimeMs === before.ctimeMs
-                  && current.dev === before.dev && current.ino === before.ino
-                  && count === before.size && hash.digest('hex') === expected, 'file-byte-pin-mismatch');
-              } finally { await handle.close(); }
-            }
-            const workspace = path.resolve(process.env.GITHUB_WORKSPACE);
-            for (const [relative, digest] of Object.entries(plan.leafSources)) {
-              let current = workspace;
-              check((await fsp.lstat(current)).isDirectory(), 'source-root-invalid');
-              const parts = relative.split('/');
-              for (const part of parts.slice(0, -1)) {
-                current = path.join(current, part);
-                const value = await fsp.lstat(current);
-                check(value.isDirectory() && !value.isSymbolicLink(), 'source-parent-not-owned');
-              }
-              await regularBytes(path.join(workspace, relative), digest);
-            }
-            await regularBytes(plan.runtime.path, plan.runtime.sha256, plan.runtime.bytes);
-            let owned = null;
-            if (!plan.native) {
-              const base = path.resolve(process.env.RUNNER_TEMP);
-              check((await fsp.lstat(base)).isDirectory(), 'runner-scratch-invalid');
-              owned = await fsp.mkdtemp(path.join(base, 'scitex-sif-'));
-              await fsp.chmod(owned, 0o700);
-              const value = await fsp.lstat(owned);
-              core.setOutput('owned', JSON.stringify({root: owned, dev: value.dev, ino: value.ino, uid: value.uid}));
-            }
-            async function acquire(image, locator, name) {
-              if (plan.native) {
-                check(typeof locator === 'string' && path.isAbsolute(locator)
-                  && image.native_paths.includes(locator), 'native-image-locator-unapproved');
-                const actual = await fsp.realpath(locator);
-                await regularBytes(actual, image.sha256, image.bytes);
-                return actual;
-              }
-              const target = path.join(owned, name);
-              const output = await fsp.open(target, 'wx', 0o600);
-              try {
-                let location = image.delivery.url;
-                let response;
-                for (let redirects = 0; redirects <= 5; redirects++) {
-                  const url = new URL(location);
-                  check(url.protocol === 'https:' && !url.username && !url.password
-                    && image.delivery.redirect_hosts.includes(url.hostname), 'public-image-redirect-refused');
-                  response = await fetch(url.href, {
-                    redirect: 'manual', signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
-                  });
-                  if (![301, 302, 303, 307, 308].includes(response.status)) break;
-                  const next = response.headers.get('location');
-                  check(next && redirects < 5, 'public-image-redirect-refused');
-                  location = new URL(next, url).href;
-                }
-                check(response.ok && response.body, 'public-image-download-refused');
-                let count = 0;
-                for await (const chunk of response.body) {
-                  timeFence();
-                  count += chunk.length;
-                  check(count <= image.bytes, 'public-image-size-exceeded');
-                  let offset = 0;
-                  while (offset < chunk.length) {
-                    timeFence();
-                    const {bytesWritten} = await output.write(chunk, offset, chunk.length - offset, null);
-                    timeFence();
-                    check(Number.isSafeInteger(bytesWritten) && bytesWritten > 0
-                      && bytesWritten <= chunk.length - offset, 'public-image-write-stalled');
-                    offset += bytesWritten;
-                  }
-                }
-                check(count === image.bytes, 'public-image-size-mismatch');
-                await output.sync();
-              } finally { await output.close(); }
-              await regularBytes(target, image.sha256, image.bytes);
-              await fsp.chmod(target, 0o400);
-              return target;
-            }
-            core.setOutput('sif', await acquire(plan.image, process.env.NATIVE_CI_SIF, 'ci.sif'));
-            core.setOutput('pg_sif', plan.pgImage
-              ? await acquire(plan.pgImage, process.env.NATIVE_PG_SIF, 'pg.sif') : '');
-            timeFence();
-            core.setOutput('apptainer', plan.runtime.path);
-            // END SIF_FILE_GATE
-      - name: Build the complete wheel and sdist in the qualified SIF
-        env:
-          SCITEX_CI_SIF: ${{ steps.inputs.outputs.sif }}
-          SCITEX_CI_SIF_SHA256: ${{ fromJSON(needs.profile.outputs.plan).image.sha256 }}
-          SCITEX_CI_APPTAINER: ${{ steps.inputs.outputs.apptainer }}
-          SCITEX_CI_APPTAINER_SHA256: ${{ fromJSON(needs.profile.outputs.plan).runtime.sha256 }}
-          SCITEX_CI_PG_SIF: ${{ steps.inputs.outputs.pg_sif }}
-          SCITEX_CI_PG_SIF_SHA256: ${{ fromJSON(needs.profile.outputs.plan).pgImage.sha256 || '' }}
-          SCITEX_CI_PG_BIN: ${{ fromJSON(needs.profile.outputs.plan).pgBin || '' }}
-          SCITEX_CI_PG_VERSION: ${{ fromJSON(needs.profile.outputs.plan).pgVersion }}
-        run: bash .github/ci/exec-in-sif.sh build-in-sif.sh 3.12
-      - name: Record complete release artifact identity
-        id: identity
-        run: |
-          set -euo pipefail
-          echo "artifact=dev-dist-$RELEASE_COMMIT" >> "$GITHUB_OUTPUT"
-          echo "manifest_sha256=$(sha256sum release-manifest.json | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: ${{ steps.identity.outputs.artifact }}
-          path: |
-            dist/
-            release-manifest.json
-          if-no-files-found: error
       - name: Remove this leg's owned hosted image copies
         if: always() && steps.inputs.outputs.owned != ''
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7

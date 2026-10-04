@@ -651,7 +651,7 @@ class SIFWorkflowSourceTests(unittest.TestCase):
         )[1:]
 
         # Assert
-        assert len(cleanups) == 3 and all(
+        assert len(cleanups) == 4 and all(
             "continue-on-error:" not in "\n".join(block.splitlines()[:6])
             for block in cleanups
         )
@@ -674,7 +674,7 @@ class SIFWorkflowSourceTests(unittest.TestCase):
         scripts = blocks("SIF_FILE_GATE")
 
         # Assert
-        assert scripts == [scripts[0]] * 3
+        assert scripts == [scripts[0]] * 4
 
     def test_native_refusals_are_before_each_checkout(self):
         # Arrange
