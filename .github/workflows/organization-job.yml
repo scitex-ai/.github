@@ -11,7 +11,7 @@ on:
         description: JSON runner labels; native requests are fenced to Organization.
         required: false
         type: string
-        default: '["self-hosted","Linux","X64","scitex-org-cpu"]'
+        default: '["ubuntu-latest"]'
       timeout_minutes:
         required: false
         type: number
@@ -29,12 +29,27 @@ jobs:
   run:
     needs: runner-admission
     name: execute
-    runs-on: ${{ fromJSON(needs.runner-admission.outputs.runs_on) }}
+    runs-on: >-
+      ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
+          && fromJSON('["ubuntu-latest"]')
+          || fromJSON(needs.runner-admission.outputs.runs_on) }}
     timeout-minutes: ${{ inputs.timeout_minutes }}
     permissions:
       contents: read
     steps:
-      - name: Refuse fork or unconfirmed actor on company hardware
+      - name: Refuse to run fork-authored code on self-hosted infrastructure
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          runner.environment == 'self-hosted'
+        run: |
+          set -euo pipefail
+          echo "::error title=Fork PR blocked::Fork-authored code is not run on self-hosted infrastructure."
+          echo "To review this contribution, adopt its branch into ${{ github.repository }} and open a same-repo PR:"
+          echo "  gh pr checkout ${{ github.event.pull_request.number }} && git push origin HEAD:review/pr-${{ github.event.pull_request.number }}"
+          exit 1
+
+      - name: Require confirmed organization membership on native runners
         if: runner.environment == 'self-hosted' && needs.runner-admission.outputs.native_authorized != 'true'
         run: exit 1
 
@@ -45,4 +60,5 @@ jobs:
       - name: Run caller job
         env:
           CALLER_COMMAND: ${{ inputs.command }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
         run: bash -euo pipefail -c "$CALLER_COMMAND"

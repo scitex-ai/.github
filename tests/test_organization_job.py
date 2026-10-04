@@ -17,7 +17,12 @@ def test_organization_job_routes_through_membership_admission():
     assert admission["uses"] == "./.github/workflows/runner-admission.yml"
     assert run["needs"] == "runner-admission"
     assert "needs.runner-admission.outputs.runs_on" in run["runs-on"]
-    assert "native_authorized != 'true'" in run["steps"][0]["if"]
-    assert run["steps"][1]["uses"].startswith("actions/checkout@")
-    assert run["steps"][2]["env"] == {"CALLER_COMMAND": "${{ inputs.command }}"}
+    assert run["steps"][0]["name"] == "Refuse to run fork-authored code on self-hosted infrastructure"
+    assert run["steps"][1]["name"] == "Require confirmed organization membership on native runners"
+    assert run["steps"][2]["uses"].startswith("actions/checkout@")
+    assert run["steps"][3]["env"] == {
+        "CALLER_COMMAND": "${{ inputs.command }}",
+        "RUNNER_ENVIRONMENT": "${{ runner.environment }}",
+    }
+    assert yaml.safe_load(workflow["on" if "on" in workflow else True]["workflow_call"]["inputs"]["runs_on"]["default"])[0] == "ubuntu-latest"
     assert "secrets" not in workflow
