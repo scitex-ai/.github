@@ -1,0 +1,48 @@
+name: organization compute job
+
+on:
+  workflow_call:
+    inputs:
+      command:
+        description: Shell command run from the caller repository checkout.
+        required: true
+        type: string
+      runs_on:
+        description: JSON runner labels; native requests are fenced to Organization.
+        required: false
+        type: string
+        default: '["self-hosted","Linux","X64","scitex-org-cpu"]'
+      timeout_minutes:
+        required: false
+        type: number
+        default: 45
+
+permissions:
+  contents: read
+
+jobs:
+  runner-admission:
+    uses: ./.github/workflows/runner-admission.yml
+    with:
+      runs_on: ${{ inputs.runs_on }}
+
+  run:
+    needs: runner-admission
+    name: execute
+    runs-on: ${{ fromJSON(needs.runner-admission.outputs.runs_on) }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+    steps:
+      - name: Refuse fork or unconfirmed actor on company hardware
+        if: runner.environment == 'self-hosted' && needs.runner-admission.outputs.native_authorized != 'true'
+        run: exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Run caller job
+        env:
+          CALLER_COMMAND: ${{ inputs.command }}
+        run: bash -euo pipefail -c "$CALLER_COMMAND"
