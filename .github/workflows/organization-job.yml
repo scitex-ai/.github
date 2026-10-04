@@ -49,7 +49,7 @@ jobs:
           echo "  gh pr checkout ${{ github.event.pull_request.number }} && git push origin HEAD:review/pr-${{ github.event.pull_request.number }}"
           exit 1
 
-      - name: Require confirmed organization membership on native runners
+      - name: Require allowlisted actor on native runners
         if: runner.environment == 'self-hosted' && needs.runner-admission.outputs.native_authorized != 'true'
         run: exit 1
 

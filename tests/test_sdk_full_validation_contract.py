@@ -198,15 +198,21 @@ def execute_admission(tmp_path, **changes):
 
 
 @pytest.mark.parametrize("actor", ("ORIGINAL_ACTOR", "TRIGGERING_ACTOR", "PR_AUTHOR"))
-def test_sdk_native_requires_each_original_event_identity(tmp_path, actor):
+def test_sdk_native_requires_each_trusted_event_identity(tmp_path, actor):
     # Arrange
     changes = {
         "EVENT_NAME": "pull_request",
-        "PR_AUTHOR": "internal",
+        "PR_AUTHOR": "ywatanabe1989",
+        "PR_AUTHOR_ID": "42527473",
         "HEAD_REPOSITORY": "scitex-ai/scitex-sdk",
         actor: "external",
-        "statuses": {"external": 404},
     }
+    if actor == "ORIGINAL_ACTOR":
+        changes["ORIGINAL_ACTOR_ID"] = "100"
+    elif actor == "TRIGGERING_ACTOR":
+        changes["TRIGGERING_ACTOR"] = "external"
+    else:
+        changes["PR_AUTHOR_ID"] = "100"
     # Act
     observed = execute_admission(tmp_path, **changes)
     # Assert
@@ -221,7 +227,8 @@ def test_sdk_member_fork_or_missing_origin_stays_hosted(tmp_path, origin):
     # Arrange
     changes = {
         "EVENT_NAME": "pull_request",
-        "PR_AUTHOR": "internal",
+        "PR_AUTHOR": "ywatanabe1989",
+        "PR_AUTHOR_ID": "42527473",
         "HEAD_REPOSITORY": origin,
     }
     # Act
@@ -237,7 +244,8 @@ def test_sdk_confirmed_members_select_exact_company_group(tmp_path):
     # Arrange
     changes = {
         "EVENT_NAME": "pull_request",
-        "PR_AUTHOR": "internal",
+        "PR_AUTHOR": "ywatanabe1989",
+        "PR_AUTHOR_ID": "42527473",
         "HEAD_REPOSITORY": "scitex-ai/scitex-sdk",
     }
     # Act
