@@ -1,0 +1,110 @@
+name: python-package
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: python-package-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  package:
+    runs-on: [self-hosted, Linux, X64, scitex-ci]
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13']
+        branch: ${{ fromJSON(github.event_name == 'schedule' && '["main", "develop"]' || '["current"]') }}
+    steps:
+      - name: Refuse to run fork-authored code on self-hosted infrastructure
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "::error::Fork-authored code is not run on self-hosted infrastructure."
+          exit 1
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.branch == 'current' && github.sha || matrix.branch }}
+      - name: Use a job-owned Python tool cache
+        run: |
+          tool_cache="$RUNNER_TEMP/scitex-sdk-python-tools-${{ matrix.python-version }}-${{ matrix.branch }}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$tool_cache"
+          printf '%s\n' "RUNNER_TOOL_CACHE=$tool_cache" \
+            "AGENT_TOOLSDIRECTORY=$tool_cache" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Set owned test state directories
+        run: |
+          printf '%s\n' "SCITEX_DIR=$RUNNER_TEMP/scitex-sdk-tests" \
+            "PYTHONPYCACHEPREFIX=$RUNNER_TEMP/scitex-sdk-pycache" \
+            "PIP_CACHE_DIR=$RUNNER_TEMP/scitex-sdk-pip" \
+            "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - name: Create an isolated Python environment for this job
+        run: |
+          python -m venv "$RUNNER_TEMP/scitex-sdk-ci-${{ matrix.python-version }}-${{ matrix.branch }}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          printf '%s\n' "$RUNNER_TEMP/scitex-sdk-ci-${{ matrix.python-version }}-${{ matrix.branch }}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/bin" >> "$GITHUB_PATH"
+      - name: Install contributor and runtime dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[gui,chat,mcp,cli]' --group dev
+          python -m pip check
+      - name: Test source and strict access controls
+        run: |
+          python -m pytest tests/ -q -ra
+          SCITEX_ACCESS_STRICT=1 python -m pytest \
+            tests/scitex_sdk/app/test_access_django.py \
+            tests/scitex_sdk/app/api_access/test___init__.py -q -ra
+      - name: Build from sdist and verify package identity
+        run: |
+          python -m build
+          python scripts/verify-artifacts.py --source . \
+            --wheel dist/scitex_sdk-*.whl --sdist dist/scitex_sdk-*.tar.gz
+      - name: Test installed wheel and strict access controls
+        run: |
+          python -m pip uninstall -y scitex-sdk
+          python -m pip install dist/scitex_sdk-*.whl
+          python -m pip check
+          env -u PYTHONPATH python -m pytest tests/ -q -ra
+          env -u PYTHONPATH SCITEX_ACCESS_STRICT=1 python -m pytest \
+            tests/scitex_sdk/app/test_access_django.py \
+            tests/scitex_sdk/app/api_access/test___init__.py -q -ra
+      - name: Verify minimal GUI installation without retired distributions
+        run: |
+          set -euo pipefail
+          wheel=$(realpath dist/scitex_sdk-*.whl)
+          python -m venv "$RUNNER_TEMP/scitex-sdk-gui-${{ matrix.python-version }}-${{ matrix.branch }}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          py="$RUNNER_TEMP/scitex-sdk-gui-${{ matrix.python-version }}-${{ matrix.branch }}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/bin/python"
+          "$py" -m pip install "$wheel[gui]"
+          "$py" -m pip check
+          env -u PYTHONPATH "$py" - <<'PYTHON'
+          import importlib.abc
+          from importlib.metadata import PackageNotFoundError, distribution
+          import sys
+          for name in ('scitex-app', 'scitex-ui'):
+              try:
+                  distribution(name)
+              except PackageNotFoundError:
+                  continue
+              raise SystemExit(f'Retired distribution installed: {name}')
+          class RetiredImports(importlib.abc.MetaPathFinder):
+              def find_spec(self, fullname, path=None, target=None):
+                  if fullname.split('.')[0] in {'scitex_app', 'scitex_ui'}:
+                      raise AssertionError(fullname)
+          sys.meta_path.insert(0, RetiredImports())
+          from scitex_sdk import app, ui, __version__, get_frontend_package_dir
+          from scitex_sdk.app.apps import ScitexAppConfig
+          from scitex_sdk.ui.apps import ScitexUiConfig
+          assert app.__version__ == ui.__version__ == __version__
+          assert ScitexAppConfig.name == 'scitex_sdk.app'
+          assert ScitexUiConfig.name == 'scitex_sdk.ui'
+          assert ui.get_static_dir().is_relative_to(get_frontend_package_dir())
+          PYTHON
