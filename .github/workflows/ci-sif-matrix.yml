@@ -133,10 +133,10 @@ jobs:
                 },
                 hostedRuntime: null,
                 leafSources: {
-                  '.github/ci/exec-in-sif.sh': '80bf1b1e647d3b005c882193d184b0bc65d43ac42c8c3bf726702aa343c254c6',
-                  '.github/ci/run-in-sif.sh': 'a8181d9f4d4669ead44e616ba48950b3be22342d9bb71a123ebf7d34d75b0545',
-                  '.github/ci/tmpdir-lib.sh': 'e742d71a68f6cc6525a5431853249529e55682ee972a6d8df0eaa6f454c139ea',
-                  '.github/ci/clean-tmpdir.sh': 'e139dd3974f926a151913d28813c812e0af01aa8f21da59dd17aba7c5ad02ce0',
+                  '.github/ci/exec-in-sif.sh': '3687d72d25fef989317e7db6dd96d2b344c0f51508e45c92fda59d0ed4c73951',
+                  '.github/ci/run-in-sif.sh': '2f14211053dd20eb572be9a4d121317e6c901b4da886cdd924351138847e9070',
+                  '.github/ci/tmpdir-lib.sh': '3d3399ba4bbf33d236abad9a0a011bcd9ec14a3f6a7f6042f14e5877a57e3f89',
+                  '.github/ci/clean-tmpdir.sh': '36421082132cf7b48564bce71470f7c2b0483cb72286ae2710f7e7dd62f3962a',
                 },
               },
             });

@@ -69,7 +69,7 @@ def test_actual_sac_plan_requires_separate_pg18_and_keeps_original_matrix(
         '16.15',
         '842a1fcf5abdc512af312c1527a0700c52e4b1a6b6e3e3dddc6edde69113ee23',
         '18.6',
-        'e139dd3974f926a151913d28813c812e0af01aa8f21da59dd17aba7c5ad02ce0',
+        '36421082132cf7b48564bce71470f7c2b0483cb72286ae2710f7e7dd62f3962a',
     )
 
 
