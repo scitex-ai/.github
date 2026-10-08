@@ -1,0 +1,111 @@
+name: sif audit
+
+# Reusable SIF guard: verifies the organization CI SIF variables resolve to
+# the exact pinned bytes on the admitted native runner.
+#
+# Checked per run, per node:
+#   vars.SCITEX_CI_SIF    (CI container, e.g. .../ci-cpu-sha256-<hex>.sif)
+#   vars.SCITEX_CI_PG_SIF (CI postgres, e.g. .../postgres18-sha256-<hex>.sif)
+#
+# For each variable: set, absolute, present on THIS node, a non-empty regular
+# file, and byte-identical to the sha256 pinned in its own filename. The
+# filename pin is the whole check: CI byte-pins these paths
+# (ci-sif-matrix.yml SIF_FILE_GATE), so a var pointing at a stale, partial,
+# or replaced file breaks every SIF-routed job. Any violation fails the job
+# with an ::error:: annotation -- red is the signal, there is no warn-only
+# mode.
+#
+# No checkout: only inline scripts run, so there is nothing fork-authored or
+# branch-authored to execute. Scheduled caller:
+# ./.github/workflows/company-ci-sif-audit.yml
+
+on:
+  workflow_call:
+    inputs:
+      runs_on:
+        type: string
+        required: false
+        default: '["self-hosted","Linux","X64","scitex-org-cpu"]'
+
+permissions: {}
+
+jobs:
+  runner-admission:
+    uses: ./.github/workflows/runner-admission.yml
+    with:
+      runs_on: ${{ inputs.runs_on }}
+
+  audit:
+    needs: [runner-admission]
+    runs-on: ${{ fromJSON(needs.runner-admission.outputs.runs_on) }}
+    timeout-minutes: 15
+    permissions: {}
+    steps:
+      - name: Require confirmed organization membership on native runners
+        if: runner.environment == 'self-hosted' && needs.runner-admission.outputs.native_authorized != 'true'
+        run: |
+          echo '::error::Organization membership admission was not confirmed.'
+          exit 1
+      - name: Audit CI SIF variables against on-node files
+        env:
+          AUDIT_CI_SIF: ${{ vars.SCITEX_CI_SIF }}
+          AUDIT_PG_SIF: ${{ vars.SCITEX_CI_PG_SIF }}
+          OBSERVED_RUNNER_NAME: ${{ runner.name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'runner=%s host=%s\n' "$OBSERVED_RUNNER_NAME" "$(hostname)"
+          audit_fail=0
+          audit_one() {
+            local var_name="$1" sif_path="$2"
+            printf -- '--- %s=%s\n' "$var_name" "$sif_path"
+            if [[ -z "$sif_path" ]]; then
+              echo "::error title=${var_name} unset::Organization variable ${var_name} is empty; every SIF-routed CI job resolves nothing."
+              audit_fail=1
+              return 0
+            fi
+            if [[ "$sif_path" != /* ]]; then
+              echo "::error title=${var_name} not absolute::${var_name}=${sif_path} is not an absolute native path."
+              audit_fail=1
+              return 0
+            fi
+            if [[ ! -e "$sif_path" ]]; then
+              echo "::error title=${var_name} missing on $(hostname)::${sif_path} does not exist on this node; update ${var_name} or restore the file."
+              audit_fail=1
+              return 0
+            fi
+            if [[ ! -f "$sif_path" || ! -r "$sif_path" ]]; then
+              echo "::error title=${var_name} not a readable file::${sif_path} exists but is not a readable regular file."
+              audit_fail=1
+              return 0
+            fi
+            local size
+            size=$(timeout 10s stat -c%s -- "$sif_path")
+            if [[ ! "$size" =~ ^[1-9][0-9]*$ ]]; then
+              echo "::error title=${var_name} empty::${sif_path} has size ${size}; refusing to bless an empty SIF."
+              audit_fail=1
+              return 0
+            fi
+            printf 'size=%s mtime=%s\n' "$size" "$(timeout 10s stat -c%y -- "$sif_path")"
+            local expected
+            expected=$(basename -- "$sif_path" | grep -oE 'sha256-[0-9a-f]{64}' | cut -d- -f2 || true)
+            if [[ -z "$expected" ]]; then
+              echo "::warning title=${var_name} unpinned::${sif_path} carries no sha256-<hex> filename pin, so byte identity cannot be verified; existence only."
+              return 0
+            fi
+            local actual
+            actual=$(timeout 600s sha256sum -- "$sif_path" | awk '{print $1}')
+            if [[ "$actual" != "$expected" ]]; then
+              echo "::error title=${var_name} digest mismatch::${sif_path} hashes to ${actual}, filename pins ${expected}; var and file disagree."
+              audit_fail=1
+              return 0
+            fi
+            printf 'MATCH %s sha256=%s\n' "$var_name" "$actual"
+          }
+          audit_one 'SCITEX_CI_SIF' "$AUDIT_CI_SIF"
+          audit_one 'SCITEX_CI_PG_SIF' "$AUDIT_PG_SIF"
+          if [[ "$audit_fail" != 0 ]]; then
+            echo '::error::SIF audit FAILED: org vars do not match on-node files. See annotations above.'
+            exit 1
+          fi
+          printf '%s\n' 'scope=two-org-vars-verified-on-this-node-only;other-nodes-audited-by-their-own-matrix-legs'

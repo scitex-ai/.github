@@ -1,0 +1,62 @@
+name: company CI SIF audit
+
+# Persistent systemic guard: hourly, independent of any agent session, verify
+# org vars SCITEX_CI_SIF / SCITEX_CI_PG_SIF against the actual SIF files on
+# each CI node (02/03/04). A mismatch means every SIF-routed job across the
+# ecosystem is resolving a stale or absent image -- this workflow turns that
+# silent drift into a red scheduled run plus a tracked issue.
+#
+# Shape mirrors company-ci-pool-health.yml: matrix over per-node runner
+# labels (each leg audits its own node; fail-fast false so one down node
+# cannot hide another), then a hosted notify job that files or updates a
+# single deduped `ci-sif-audit` issue. Dispatch manually to probe on demand.
+#
+# Cron is staggered off-minute (:07) so it does not queue behind the pool
+# health sample (:17). Full sha256 over two multi-GB SIFs per node is the
+# dominant cost (~minutes, well inside the 15 min leg timeout).
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '7 * * * *'
+
+permissions: {}
+
+jobs:
+  audit:
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['02', '03', '04']
+    uses: ./.github/workflows/sif-audit.yml
+    with:
+      runs_on: '["self-hosted","Linux","X64","scitex-org-cpu","scitex-compute-${{ matrix.node }}"]'
+
+  notify:
+    needs: [audit]
+    if: failure()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: File or update the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          label='ci-sif-audit'
+          title='[ci-sif-audit] CI SIF mismatch detected'
+          if ! gh label list --search "$label" --limit 100 2>/dev/null | awk '{print $1}' | grep -qx "$label"; then
+            gh label create "$label" --description 'Hourly CI SIF audit failures' --color 'd73a4a' 2>/dev/null || true
+          fi
+          body="Hourly SIF audit failed: an org var (SCITEX_CI_SIF / SCITEX_CI_PG_SIF) does not match the on-node file on 02/03/04 (missing file or sha256 mismatch). Run: $RUN_URL"
+          existing=$(gh issue list --label "$label" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)
+          if [[ -n "$existing" ]]; then
+            gh issue comment "$existing" --body "Re-audit failed: $RUN_URL" >/dev/null
+            printf 'updated open issue #%s\n' "$existing"
+          else
+            gh issue create --title "$title" --label "$label" --body "$body" >/dev/null
+            printf 'opened new tracking issue\n'
+          fi
