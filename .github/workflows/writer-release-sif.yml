@@ -44,7 +44,34 @@ jobs:
           script: |
             // BEGIN WRITER_RELEASE_CONTRACT
             // Registration follows actual image/runtime qualification, never a placeholder.
-            const REGISTRATION = null;
+            const REGISTRATION =             {
+              "image": {
+                "sha256": "8eb84194c25c5d5852c3fdfc24fd1c5684db80e08de815dc75498b433bd65bee",
+                "bytes": 1396334592,
+                "producer_revision": "7bca27b6a8987162e24f1c7591e1ea1a17643aa2",
+                "source_manifest_sha256": "1dd51ea1db5c3c0d21df4657706372630352fce479de0c1763d1ed383c2a81a7",
+                "public_inventory_sha256": "eed22424768bda1d5e5c70d39d594d03bc04c47b4ca7a8c63fad2879bd91d740",
+                "delivery": null,
+                "capabilities": {
+                  "3.11": "3.11.17",
+                  "3.12": "3.12.3",
+                  "3.13": "3.13.16",
+                  "postgres": "postgres.18.6"
+                },
+                "native_paths": [
+                  "/scratch/ywatanabe/writer-build/scitex-writer-2.43.10.sif"
+                ]
+              },
+              "runtime": {
+                "path": "/usr/bin/apptainer",
+                "sha256": "7bdb501fdddbb7264b4e4d6038e0ec27201f63e217519e5f7f0db950c9285ddd",
+                "bytes": 48096048,
+                "qualification_sha256": "6a178f0d27be734a74df28f5d392f3f54e2bb4b6b2c2aced560ba6b091d08cec",
+                "user_namespace": true,
+                "sif_mount": true,
+                "hosted_delivery_sha256": null
+              }
+            };
             const LEAF_SOURCES = Object.freeze({
               ".github/ci/exec-in-sif.sh": "c07c3bb883b35c7260636f60cc718bad02fffb6bdea6ab5b9002f5e606eeec12",
               ".github/ci/run-in-sif.sh": "c99a82eb73ac4a371d1b2702bd43351f8ac0d40ad450fd3ec406a99454522066",
