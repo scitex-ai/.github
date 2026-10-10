@@ -1,0 +1,292 @@
+name: release-publish
+# ORG-LEVEL reusable release pipeline — tag in, PyPI + GitHub Release out.
+#
+# Generalizes the proven scitex-cards pypi-publish-on-tag.yml (tag-driven,
+# uv-provisioned, manual OIDC trusted publishing — NO Docker anywhere) into a
+# parameterized shared body. Callers stay thin: version input, package name,
+# pypi project URL, optional frontend/docs build hooks.
+#
+# Jobs: test (hosted + postgres service) → build (self-hosted, tag-ancestry
+# gate + wheel/sdist) → publish (OIDC, uv twine) → release (CHANGELOG notes).
+#
+# The tag-ancestry gate (three-valued, cannot-determine refuses) and the
+# manual-OIDC mechanism survive verbatim — they are load-bearing lessons,
+# not boilerplate. See the cards caller this was generalized from for the
+# incident history.
+#
+# Required caller inputs: package_name (wheel stem, e.g. scitex_cards),
+# pypi_project_url (e.g. https://pypi.org/p/scitex-cards).
+# Optional: pypi_environment (default pypi), ancestor_branches (default
+# 'main develop'), frontend_build_dir + frontend_build_command (run before
+# release tests when the wheel ships built assets), docs_build_command
+# (in-wheel docs, PS-121), extra_test_deps (e.g. pytest-xdist), runs_on_test
+# (default ubuntu-latest — REQUIRED for postgres service jobs).
+
+on:
+  workflow_call:
+    inputs:
+      package_name:
+        description: 'Wheel stem, e.g. scitex_cards'
+        required: true
+        type: string
+      pypi_project_url:
+        description: 'PyPI project page, e.g. https://pypi.org/p/scitex-cards'
+        required: true
+        type: string
+      pypi_environment:
+        description: 'GitHub environment holding PyPI trusted-publisher config'
+        required: false
+        default: 'pypi'
+        type: string
+      ancestor_branches:
+        description: 'Space-separated branches the tag must reach'
+        required: false
+        default: 'main develop'
+        type: string
+      version:
+        description: 'Tag to publish (workflow_dispatch re-publish path)'
+        required: false
+        default: ''
+        type: string
+      runs_on_test:
+        description: 'JSON runs-on for the test job (keep ubuntu-latest with postgres)'
+        required: false
+        default: '["ubuntu-latest"]'
+        type: string
+      runs_on_build:
+        description: 'JSON runs-on for build/publish/release jobs'
+        required: false
+        default: '["self-hosted","Linux","X64","scitex-ci"]'
+        type: string
+      python_versions:
+        description: 'JSON list of test matrix versions'
+        required: false
+        default: '["3.11", "3.12", "3.13"]'
+        type: string
+      postgres:
+        description: 'Start throwaway postgres:16 service for release tests'
+        required: false
+        default: true
+        type: boolean
+      frontend_build_dir:
+        description: 'Working dir for locked-frontend build before tests (empty = skip)'
+        required: false
+        default: ''
+        type: string
+      frontend_build_command:
+        description: 'Build commands for the locked frontend (empty = skip)'
+        required: false
+        default: ''
+        type: string
+      docs_build_command:
+        description: 'In-wheel docs build (empty = skip)'
+        required: false
+        default: ''
+        type: string
+      docs_wheel_path:
+        description: 'In-wheel docs marker dir, e.g. src/scitex_cards/_sphinx_html'
+        required: false
+        default: ''
+        type: string
+      extra_test_deps:
+        description: 'Extra pip specs for the test venv (space-separated)'
+        required: false
+        default: 'pytest-xdist>=3.0.0'
+        type: string
+      test_extras:
+        description: 'Extras trial list for editable install, e.g. .[all,dev] .[dev] .'
+        required: false
+        default: '.[all,dev] .[dev] .'
+        type: string
+      store_dsn_var:
+        description: 'Env var the suite reads for its store (pointed at the service)'
+        required: false
+        default: 'SCITEX_STORE_DSN'
+        type: string
+      publish_script:
+        description: 'Repo-local OIDC publish script (manual trusted publishing)'
+        required: false
+        default: '.github/ci/publish-with-uv.sh'
+        type: string
+
+jobs:
+  test:
+    runs-on: ${{ fromJSON(inputs.runs_on_test) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJSON(inputs.python_versions) }}
+    services:
+      postgres:
+        image: ${{ inputs.postgres && 'postgres:16' || '' }}
+        env:
+          POSTGRES_USER: scitex
+          POSTGRES_PASSWORD: scitex
+          POSTGRES_DB: scitex
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U scitex"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            v="${GITHUB_REF#refs/tags/}"
+          else
+            v="${{ inputs.version }}"
+          fi
+          [ -n "$v" ] || { echo "::error::no version: push a tag or pass inputs.version"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.ver.outputs.version }}
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v3
+        with:
+          cache-dependency-glob: pyproject.toml
+      - name: Point the store at the service container
+        if: inputs.postgres
+        run: |
+          set -euo pipefail
+          unset SCITEX_STORE_DSN SCITEX_CARDS_DB SCITEX_CARDS_NOTIFY_DSN
+          echo "${{ inputs.store_dsn_var }}=postgresql://scitex:***@127.0.0.1:5432/scitex" >> "$GITHUB_ENV"
+      - name: Build locked frontend before release tests
+        if: inputs.frontend_build_dir != ''
+        working-directory: ${{ inputs.frontend_build_dir }}
+        run: ${{ inputs.frontend_build_command }}
+      - name: Run tests in a uv venv
+        run: |
+          set -euo pipefail
+          uv venv --python ${{ matrix.python-version }} .venv
+          for spec in ${{ inputs.test_extras }}; do
+            uv pip install --python .venv/bin/python -e "$spec" && break
+          done
+          [ -n "${{ inputs.extra_test_deps }}" ] && uv pip install --python .venv/bin/python ${{ inputs.extra_test_deps }}
+          export PYTEST_XDIST_AUTO_NUM_WORKERS="$(.venv/bin/python -c 'import os; print(len(os.sched_getaffinity(0)))')"
+          PKG="${{ inputs.package_name }}"
+          .venv/bin/python -m pytest tests/ -n auto --cov="src/$PKG" --cov-report=xml --cov-report=term
+
+  build:
+    needs: test
+    runs-on: ${{ fromJSON(inputs.runs_on_build) }}
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            v="${GITHUB_REF#refs/tags/}"
+          else
+            v="${{ inputs.version }}"
+          fi
+          [ -n "$v" ] || { echo "::error::no version"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.ver.outputs.version }}
+          fetch-depth: 0
+      - name: The release tag must be an ancestor of every release branch
+        env:
+          RELEASE_ANCESTOR_BRANCHES: ${{ vars.RELEASE_ANCESTOR_BRANCHES || inputs.ancestor_branches }}
+        run: |
+          set -euo pipefail
+          tag="${{ steps.ver.outputs.version }}"
+          if ! git fetch --quiet origin 'refs/heads/*:refs/remotes/origin/*'; then
+            echo "::error::could not fetch branch refs — ancestry UNVERIFIABLE, refusing."
+            exit 1
+          fi
+          rc=0
+          for br in $RELEASE_ANCESTOR_BRANCHES; do
+            if ! git rev-parse --verify --quiet "refs/remotes/origin/$br" >/dev/null; then
+              echo "::error::branch '$br' required but absent on origin — UNVERIFIABLE refuses. Set RELEASE_ANCESTOR_BRANCHES if this repo has no '$br'."
+              rc=1
+              continue
+            fi
+            if git merge-base --is-ancestor "$tag" "refs/remotes/origin/$br"; then
+              echo "  $br: OK"
+            else
+              echo "::error::$tag is NOT an ancestor of origin/$br. Tag the release-bump merge on develop; never move a pushed tag."
+              rc=1
+            fi
+          done
+          exit "$rc"
+      - uses: astral-sh/setup-uv@v3
+        with:
+          cache-dependency-glob: pyproject.toml
+      - name: Build in-wheel docs
+        if: inputs.docs_build_command != ''
+        run: ${{ inputs.docs_build_command }}
+      - name: Assert in-wheel docs marker
+        if: inputs.docs_wheel_path != ''
+        run: |
+          [ -f "${{ inputs.docs_wheel_path }}/index.html" ] || { echo "::error::docs build produced no index.html"; exit 1; }
+      - name: Build wheel + sdist (uv build)
+        run: |
+          set -euo pipefail
+          uv build
+          ls -la dist/
+          [ -n "$(ls -A dist 2>/dev/null)" ] || { echo "::error::uv build produced an empty dist/"; exit 1; }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ${{ fromJSON(inputs.runs_on_build) }}
+    environment:
+      name: ${{ inputs.pypi_environment }}
+      url: ${{ inputs.pypi_project_url }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - uses: astral-sh/setup-uv@v3
+        with:
+          cache-dependency-glob: pyproject.toml
+      - name: Publish to PyPI via manual OIDC trusted publishing
+        run: bash ${{ inputs.publish_script }}
+
+  release:
+    needs: [build, publish]
+    runs-on: ${{ fromJSON(inputs.runs_on_build) }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build.outputs.version }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          VERSION="${VERSION#v}"
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" {p=1; next}
+            p && /^## \[/ {exit}
+            p
+          ' CHANGELOG.md > release-notes.md || true
+          if [ ! -s release-notes.md ]; then
+            echo "Release v${VERSION}. See CHANGELOG.md for details." > release-notes.md
+          fi
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build.outputs.version }}
+          name: ${{ needs.build.outputs.version }}
+          body_path: release-notes.md
+          files: dist/*
+          fail_on_unmatched_files: true
