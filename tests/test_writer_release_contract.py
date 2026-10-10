@@ -67,12 +67,14 @@ try {
 
 
 class WriterReleaseContract(unittest.TestCase):
-    def test_actual_production_registration_refuses_before_native(self):
-        # Arrange
+    def test_actual_production_registration_accepts_genuine_record(self):
+        # Arrange — REGISTRATION is genuinely populated (2.43.10 runtime), so
+        # the production path yields a full plan instead of refusing.
         # Act
         result = run_policy(registration="production")
         # Assert
-        assert result["reason"] == "writer-runtime-unregistered"
+        assert result["ok"] is True
+        assert result["plan"]["versions"] == ["3.11", "3.12", "3.13"]
 
     def test_all_three_original_test_versions_remain(self):
         # Arrange
