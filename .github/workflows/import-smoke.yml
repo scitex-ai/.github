@@ -183,7 +183,7 @@ jobs:
           case "$RUNNER_ENVIRONMENT" in
             self-hosted)
               test "$NATIVE_AUTHORIZED" = true
-              test "$ADMISSION_REASON" = confirmed-organization-members
+              test "$ADMISSION_REASON" = trusted-actor
               test "$ADMISSION_RUNS_ON" = '{"group":"Organization","labels":["self-hosted","Linux","X64","scitex-org-cpu"]}'
               ;;
             github-hosted)
