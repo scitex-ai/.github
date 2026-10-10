@@ -54,7 +54,7 @@ on:
         default: '["ubuntu-latest"]'
         type: string
       runs_on_build:
-        description: 'JSON runs-on for build/publish/release jobs'
+        description: 'JSON runs-on for build/publish/release jobs — MUST be Organization-group self-hosted (consolidation order 2026-10-10: every thin caller passes the org label set explicitly; shared-body defaults must never silently move a repo onto hosted)'
         required: false
         default: '["self-hosted","Linux","X64","scitex-ci"]'
         type: string
