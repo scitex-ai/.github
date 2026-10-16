@@ -111,7 +111,10 @@ on:
 
 jobs:
   test:
-    runs-on: ${{ fromJSON(inputs.runs_on_test) }}
+    runs-on: >-
+      ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
+          && fromJSON('["ubuntu-latest"]')
+          || fromJSON(inputs.runs_on_test) }}
     strategy:
       fail-fast: false
       matrix:
@@ -131,6 +134,20 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
+      # FORK GUARD — MUST BE THE FIRST STEP, AHEAD OF actions/checkout. Ordering
+      # and predicate are asserted in tests/test_fork_guard.py.
+      - name: Refuse to run fork-authored code on self-hosted infrastructure
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          runner.environment == 'self-hosted'
+        run: |
+          set -euo pipefail
+          echo "::error title=Fork PR blocked::Fork-authored code is not run on the self-hosted Spartan pool."
+          echo "head repo: ${{ github.event.pull_request.head.repo.full_name }}  base repo: ${{ github.repository }}"
+          echo "To review this contribution, adopt its branch into ${{ github.repository }} and open a same-repo PR:"
+          echo "  gh pr checkout ${{ github.event.pull_request.number }} && git push origin HEAD:review/pr-${{ github.event.pull_request.number }}"
+          exit 1
       - name: Resolve version
         id: ver
         run: |
@@ -172,10 +189,27 @@ jobs:
 
   build:
     needs: test
-    runs-on: ${{ fromJSON(inputs.runs_on_build) }}
+    runs-on: >-
+      ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
+          && fromJSON('["ubuntu-latest"]')
+          || fromJSON(inputs.runs_on_build) }}
     outputs:
       version: ${{ steps.ver.outputs.version }}
     steps:
+      # FORK GUARD — MUST BE THE FIRST STEP, AHEAD OF actions/checkout. Ordering
+      # and predicate are asserted in tests/test_fork_guard.py.
+      - name: Refuse to run fork-authored code on self-hosted infrastructure
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          runner.environment == 'self-hosted'
+        run: |
+          set -euo pipefail
+          echo "::error title=Fork PR blocked::Fork-authored code is not run on the self-hosted Spartan pool."
+          echo "head repo: ${{ github.event.pull_request.head.repo.full_name }}  base repo: ${{ github.repository }}"
+          echo "To review this contribution, adopt its branch into ${{ github.repository }} and open a same-repo PR:"
+          echo "  gh pr checkout ${{ github.event.pull_request.number }} && git push origin HEAD:review/pr-${{ github.event.pull_request.number }}"
+          exit 1
       - name: Resolve version
         id: ver
         run: |
@@ -238,7 +272,10 @@ jobs:
 
   publish:
     needs: build
-    runs-on: ${{ fromJSON(inputs.runs_on_build) }}
+    runs-on: >-
+      ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
+          && fromJSON('["ubuntu-latest"]')
+          || fromJSON(inputs.runs_on_build) }}
     environment:
       name: ${{ inputs.pypi_environment }}
       url: ${{ inputs.pypi_project_url }}
@@ -246,6 +283,20 @@ jobs:
       id-token: write
       contents: read
     steps:
+      # FORK GUARD — MUST BE THE FIRST STEP, AHEAD OF actions/checkout. Ordering
+      # and predicate are asserted in tests/test_fork_guard.py.
+      - name: Refuse to run fork-authored code on self-hosted infrastructure
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          runner.environment == 'self-hosted'
+        run: |
+          set -euo pipefail
+          echo "::error title=Fork PR blocked::Fork-authored code is not run on the self-hosted Spartan pool."
+          echo "head repo: ${{ github.event.pull_request.head.repo.full_name }}  base repo: ${{ github.repository }}"
+          echo "To review this contribution, adopt its branch into ${{ github.repository }} and open a same-repo PR:"
+          echo "  gh pr checkout ${{ github.event.pull_request.number }} && git push origin HEAD:review/pr-${{ github.event.pull_request.number }}"
+          exit 1
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
@@ -259,10 +310,27 @@ jobs:
 
   release:
     needs: [build, publish]
-    runs-on: ${{ fromJSON(inputs.runs_on_build) }}
+    runs-on: >-
+      ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
+          && fromJSON('["ubuntu-latest"]')
+          || fromJSON(inputs.runs_on_build) }}
     permissions:
       contents: write
     steps:
+      # FORK GUARD — MUST BE THE FIRST STEP, AHEAD OF actions/checkout. Ordering
+      # and predicate are asserted in tests/test_fork_guard.py.
+      - name: Refuse to run fork-authored code on self-hosted infrastructure
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          runner.environment == 'self-hosted'
+        run: |
+          set -euo pipefail
+          echo "::error title=Fork PR blocked::Fork-authored code is not run on the self-hosted Spartan pool."
+          echo "head repo: ${{ github.event.pull_request.head.repo.full_name }}  base repo: ${{ github.repository }}"
+          echo "To review this contribution, adopt its branch into ${{ github.repository }} and open a same-repo PR:"
+          echo "  gh pr checkout ${{ github.event.pull_request.number }} && git push origin HEAD:review/pr-${{ github.event.pull_request.number }}"
+          exit 1
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.build.outputs.version }}
