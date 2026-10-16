@@ -19,7 +19,7 @@
 
 ---
 
-## The problem, concretely
+## The problem
 
 A reviewer asks for the analysis behind Figure 3 of your 2023 paper. The figure
 is in the PDF. The script is in a directory called `final_v2_fixed`. The random
@@ -36,14 +36,14 @@ manuscript a reviewer can actually check.
 SciTeX is one research project context with specialized interfaces around it:
 
 ```text
-                           SciTeX Clew
+                                Clew
                     verifies provenance and drift
                                   │
   Scholar ── literature ──┐       │       ┌── data and files ── Storage
                           │       ▼       │
   Stats ───── analysis ───┼── SciTeX Hub ─┼── figures ───────── FigRecipe
                           │  one project  │
-  Agents + Chat ─ commands┘    context    └── manuscript + PDF ─ Writer
+  Agents ──── commands ───┘    context    └── manuscript + PDF ─ Writer
                                   │
                              Custom Apps
                       extend the same project contract
