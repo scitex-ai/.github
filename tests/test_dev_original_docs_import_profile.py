@@ -18,11 +18,11 @@ SPECS = (
 PINS = {
     "rtd-sphinx-build.yml": (
         "51be02f591beeeb5398b6447a7c26f0959e5487cad5b974bf62d2cf56fd51b5d",
-        "36e4dac8cc5954dcd82854b51d3bd8f3f789f726f407088f504677fc0625ba6f",
+        "a717a1793a62a384ce0606e9f5f51007ff2972d96ac4144e9b51a9d05f368ba2",
     ),
     "import-smoke.yml": (
         "6b336bb6cedf7b174106f22a9cf3fd83ad15b6f0ccc08501df1b849420d17626",
-        "a5018dd9cb921f2a59cb2fb9a663223c1188d3ee094f9a1e4f897a2934eb56d4",
+        "ae66f61d6cb0414a23b9ecee935a950f9da17c9e9aadc88fe9f0b92ec027be53",
     ),
 }
 
@@ -201,7 +201,7 @@ class TestDevOriginalProfile(unittest.TestCase):
                     "PATH": "/usr/bin:/bin",
                     "RUNNER_ENVIRONMENT": environment,
                     "NATIVE_AUTHORIZED": authorized,
-                    "ADMISSION_REASON": "confirmed-organization-members",
+                    "ADMISSION_REASON": "trusted-actor",
                     "ADMISSION_RUNS_ON": destination,
                 }
                 child = subprocess.run(
