@@ -187,6 +187,31 @@ on:
         type: boolean
         required: false
         default: false
+      wheel_build:
+        description: >-
+          Build the wheel/sdist after tests and run a post-install smoke
+          check. DEFAULTS TO FALSE: a caller that passes nothing skips the
+          build entirely, so the 25 existing callers are unaffected.
+          When true, runs `python -m build`, reinstalls from the built
+          wheel, and re-runs a smoke subset, catching packaging defects
+          (missing files, broken entry points) the source-tree tests
+          cannot see. Patterned on the `postgres` opt-in above and the
+          scitex-sdk python-package.yml wheel verification.
+        type: boolean
+        required: false
+        default: false
+      post_build_command:
+        description: >-
+          Optional repository-specific command run after a successful wheel
+          build (only when `wheel_build` is true). Use for artifact checks
+          the generic smoke cannot express (e.g. scitex-sdk's
+          verify-artifacts.py identity check). Failures are fatal.
+          SSOT/DRY: the build itself stays in the reusable; only the
+          package-specific assertion is injected, mirroring
+          `pre_test_command`.
+        type: string
+        required: false
+        default: ''
 
     # Declared so a caller can pass this ONE secret explicitly instead of
     # `secrets: inherit`, which forwards EVERY secret the calling repo holds
@@ -636,6 +661,18 @@ jobs:
           echo "shard=${{ matrix.shard }}/${{ inputs.shard_count }} files=${#TEST_FILES[@]} effective pytest workers=$WORKERS"
           nice -n 10 ionice -c 2 -n 7 .venv/bin/python -m pytest "${TEST_FILES[@]}" -n "$WORKERS" \
             --cov="src/$PKG" --cov-report=xml --cov-report=term
+      - name: Build wheel and smoke-test the installed artifact
+        if: inputs.wheel_build && matrix.python-version == '3.12'
+        run: |
+          set -euo pipefail
+          # Single-leg gate (3.12 only): the wheel is version-independent, so
+          # building on all three legs would triple the cost for zero signal.
+          .venv/bin/python -m build
+          .venv/bin/pip install --force-reinstall dist/*.whl
+          .venv/bin/python -c "import importlib.metadata; print(importlib.metadata.version('$PKG'))"
+          if [ -n "${{ inputs.post_build_command }}" ]; then
+            bash -euo pipefail -c "${{ inputs.post_build_command }}"
+          fi
       - name: Seed the per-job git config for the codecov step
         if: always() && matrix.python-version == '3.12'
         run: |
