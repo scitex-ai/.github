@@ -326,3 +326,33 @@ def test_caller_triggers_on_nothing_but_a_push(caller: dict) -> None:
     events = list(on)
     # Assert
     assert events == ["push"]
+
+
+def test_promote_accepts_an_explicit_tag_input(promote: dict) -> None:
+    """workflow_dispatch callers must be able to name the tag.
+
+    Regression: on workflow_dispatch GITHUB_REF is a branch, so deriving
+    the tag from the ref yields `refs/heads/<branch>` and the promote job
+    dies opaquely at rev-list (exit 128). The reusable therefore declares
+    an optional `tag` input that takes precedence over ref derivation.
+    """
+    # Arrange: `on` parses as the YAML boolean True unless quoted.
+    inputs = promote.get("on", promote.get(True))["workflow_call"]["inputs"]
+    # Act
+    tag = inputs.get("tag", {})
+    # Assert
+    assert tag.get("required") is False
+    assert tag.get("default") == ""
+
+
+def test_promote_tag_resolution_prefers_the_input_and_loud_fails(promote: dict) -> None:
+    """The resolve step prefers `inputs.tag` and rejects branch refs loudly."""
+    # Arrange
+    steps = promote["jobs"]["promote"]["steps"]
+    resolve = next(s for s in steps if s.get("id") == "ver")
+    shell = resolve.get("run", "")
+    # Act + Assert: input threaded via env, ref-derivation kept as fallback,
+    # and a branch-shaped value fails loudly instead of dying at rev-list.
+    assert resolve.get("env", {}).get("TAG_INPUT") == "${{ inputs.tag }}"
+    assert "GITHUB_REF#refs/tags/" in shell
+    assert "::error::could not resolve a release tag" in shell

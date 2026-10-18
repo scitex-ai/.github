@@ -111,6 +111,16 @@ on:
         required: false
         type: string
         default: 'main'
+      tag:
+        description: >-
+          Explicit release tag (e.g. 'v0.1.0'). REQUIRED from callers reached
+          via workflow_dispatch, where GITHUB_REF is a branch (refs/heads/...)
+          and deriving the tag from the ref yields garbage that fails
+          opaquely at rev-list. Tag-push callers omit this; the tag is then
+          derived from GITHUB_REF exactly as before.
+        required: false
+        type: string
+        default: ''
       ci-runs-on-json:
         description: >-
           JSON array of runner labels for the CI job, forwarded to
@@ -222,9 +232,24 @@ jobs:
           exit 1
       - name: Resolve version from the triggering tag
         id: ver
+        env:
+          TAG_INPUT: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          v="${GITHUB_REF#refs/tags/}"
+          if [ -n "${TAG_INPUT:-}" ]; then
+            v="$TAG_INPUT"
+          else
+            v="${GITHUB_REF#refs/tags/}"
+          fi
+          # Loud-fail: a branch ref here means a workflow_dispatch caller
+          # forgot the `tag` input — proceeding would die opaquely at
+          # `git rev-list -n1 "refs/tags/<branch>"` (exit 128).
+          case "$v" in
+            refs/*|"")
+              echo "::error::could not resolve a release tag (got '$v'). Tag-push callers derive it from GITHUB_REF; workflow_dispatch callers must pass the reusable's \`tag\` input."
+              exit 1
+              ;;
+          esac
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
