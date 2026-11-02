@@ -169,8 +169,46 @@ jobs:
                 runtime, leafSources, pgImage: null, native: true};
             }
             const IO_PYTEST_WORKERS = 4;
-            const IO_REGISTRATION = null;
-            const IO_LEAF_SOURCES = Object.freeze({});
+            const IO_REGISTRATION = {
+              "image": {
+                "sha256": "e8461fc77a2218b5f7e2c475bd601dddaec97c6335bee459a1b0d4e0ca374d83",
+                "bytes": 1381281792,
+                "producer_revision": "afda87ca15b9560410fff5f331223152df3410b4",
+                "source_manifest_sha256": "02f9fdd18cc953ea6b1eedebb862f376128cb6ccf7e9144d5e5ac06325f464eb",
+                "public_inventory_sha256": "997e7818bd7da34642a9e23a560ff18ccf5af62f1df011e6785ec0a09590ec88",
+                "delivery": null,
+                "capabilities": {
+                  "3.11": "3.11.17",
+                  "3.12": "3.12.15",
+                  "3.13": "3.13.16",
+                  "postgres": "postgres.16.15"
+                },
+                "native_paths": [
+                  "/home/ywatanabe/.scitex/dev/runtime/containers/ci-cpu-sha256-e8461fc77a2218b5f7e2c475bd601dddaec97c6335bee459a1b0d4e0ca374d83.sif"
+                ]
+              },
+              "runtime": {
+                "path": "/usr/bin/apptainer",
+                "sha256": "7bdb501fdddbb7264b4e4d6038e0ec27201f63e217519e5f7f0db950c9285ddd",
+                "bytes": 48096048,
+                "qualification_sha256": "6a178f0d27be734a74df28f5d392f3f54e2bb4b6b2c2aced560ba6b091d08cec",
+                "user_namespace": true,
+                "sif_mount": true,
+                "hosted_delivery_sha256": null
+              }
+            };
+            const IO_LEAF_SOURCES = Object.freeze({
+              ".github/ci/exec-in-sif.sh": "698e91c18b7c9c6b0631aa8ce9a62c6b681ad8f40e515925ac640efc4e4acfc9",
+              ".github/ci/release-context.sh": "130f42eb7efbb511b0bcea962a84468e818e14ec3cf7498c2c45b9d145c430cc",
+              ".github/ci/run-in-sif.sh": "cc406adce05d14b920df78fc59789c6eb7ddf590d4573c7c88b58d59f45e006f",
+              ".github/ci/build-in-sif.sh": "226ffa167e746a24fc259f50e01181ea19fc1f234e2ad19bcdcd49eca17fd0de",
+              ".github/ci/publish-in-sif.sh": "a724de1c4019535e4248c771cfcd6c9382d0cfafff9da7732e17c3560e6cbcf0",
+              ".github/ci/release-identity.py": "997d87ea46f452684eae9fe2d5bc3f4cfda5371cce3c7f6c11efa3b15ee2ec4f",
+              ".github/ci/_release_artifacts.py": "2d83d570507ac055124b9bf4116a55ca81c86221c5bb7f4efbfb9be951e13ed6",
+              ".github/ci/_release_source.py": "fe6db73431025dcbd3ae45fa2f1de309fd2e90f257780da86458ae5b3c687cee",
+              ".github/ci/probe-first-observer.py": "5759229d222d6492f211d47c56c723181e28c5d16fdefebe3914a5bfe305a98f",
+              ".github/ci/io_test_store.py": "e1be5f3cfa849d4a8802b6a10b890731ca51be869330040cbbfd2c756f447a4d"
+            });
             function writerPlan(repository, eventName, native, operation, sourceCommit, releaseTag, registration = REGISTRATION) {
               return registeredReleasePlan('writer', repository, eventName, native, operation,
                 sourceCommit, releaseTag, registration, LEAF_SOURCES);

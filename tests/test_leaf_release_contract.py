@@ -13,16 +13,39 @@ def dispatch(**changes):
     value.update(changes)
     code = writer.blocks('WRITER_RELEASE_CONTRACT')[0] + '''
 const x = JSON.parse(process.argv[1]);
-try { console.log(JSON.stringify({ok:true,plan:leafReleasePlan(x.repository,
- x.event,x.native,x.operation,x.source,x.tag)})); }
+try { const plan = Object.hasOwn(x, 'registration')
+ ? ioPlan(x.repository,x.event,x.native,x.operation,x.source,x.tag,x.registration)
+ : leafReleasePlan(x.repository,x.event,x.native,x.operation,x.source,x.tag);
+ console.log(JSON.stringify({ok:true,plan})); }
 catch (e) {console.log(JSON.stringify({ok:false,reason:e.message}));}
 '''
     result = subprocess.run(['node','-e',code,json.dumps(value)],capture_output=True,
                             text=True,check=True,timeout=5)
     return json.loads(result.stdout)
 
-def test_io_remains_failed_closed_until_actual_qualification():
-    assert dispatch()['reason'] == 'io-runtime-unregistered'
+def test_io_qualified_profile_uses_actual_image_complete_closure_and_worker_budget():
+    plan = dispatch()['plan']
+    assert (plan['image']['sha256'], plan['versions'], plan['pytestWorkers'],
+            set(plan['leafSources'])) == (
+        'e8461fc77a2218b5f7e2c475bd601dddaec97c6335bee459a1b0d4e0ca374d83',
+        ['3.11', '3.12', '3.13'], 4, {
+            '.github/ci/exec-in-sif.sh', '.github/ci/release-context.sh',
+            '.github/ci/run-in-sif.sh', '.github/ci/build-in-sif.sh',
+            '.github/ci/publish-in-sif.sh', '.github/ci/release-identity.py',
+            '.github/ci/_release_artifacts.py', '.github/ci/_release_source.py',
+            '.github/ci/probe-first-observer.py', '.github/ci/io_test_store.py'})
+
+
+def test_io_build_profile_keeps_only_qualified_build_interpreter():
+    assert dispatch(operation='build')['plan']['versions'] == ['3.12']
+
+
+def test_io_missing_registration_remains_failed_closed():
+    assert dispatch(registration=None)['reason'] == 'io-runtime-unregistered'
+
+
+def test_io_partial_registration_remains_failed_closed():
+    assert dispatch(registration={})['reason'] == 'io-runtime-unregistered'
 
 def test_unknown_repository_cannot_select_any_profile():
     assert dispatch(repository='scitex-ai/unknown')['reason'] == 'release-repository-refused'

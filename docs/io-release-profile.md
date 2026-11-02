@@ -6,12 +6,16 @@ inputs; its qualified image, runtime, source closure and complete suite remain
 unchanged. The shared byte gate checks the complete image and native runtime,
 not merely their presence or mutable filenames.
 
-IO is currently unregistered. Its dispatcher refuses release execution until
-its actual leaf drivers and native image execution have been qualified. A
-valid-looking image record or successful generic PR tests do not qualify that
-profile. Registration requires the immutable image/runtime identities, the
-complete leaf helper closure, and real full all/dev-suite execution using owned
-state and temporary contexts. Unknown repositories, fork events, nonmembers,
+IO is registered against the whole E846 image and verified Apptainer runtime.
+Qualification used source `618e79b88615002cf3264435cf349911be34bb7c`: actual
+Python 3.11.17, 3.12.15 and 3.13.16 each passed the complete all/dev suite
+(2,680 passed, seven existing skips), mandatory first-citation persistence in a
+new private Unix-socket PG cluster, and guarded teardown. The Python 3.12
+wheel/sdist build also passed normal dependency resolution, isolated whole-wheel
+imports, RECORD/metadata and Git-source verification on admitted compute-03.
+The ten helper hashes cover the native drivers, owned-context cleanup, artifact
+identity verification, real citation probe and test-store guard. A valid-looking
+image record or successful generic PR tests alone do not qualify a profile. Unknown repositories, fork events, nonmembers,
 arbitrary operations, floating source commits and malformed tags refuse.
 
 The intended IO leaf caller resolves an existing tag against protected main
@@ -20,13 +24,16 @@ boundary after complete wheel/sdist source and metadata verification. No IO tag
 or publication is authorized by adding this source-only dispatcher.
 
 
-The proposed IO workload budget is at most four pytest workers per runner,
+The IO workload budget is at most four pytest workers per runner,
 clamped further by affinity/visible cgroup quota. This is bounded admission,
 not exclusive ownership of a node. The fixed descriptor supplies the validated
 budget through the clean native environment; no fleet runner setting changes.
 The IO source closure also includes the mandatory first-citation consumer probe
 and the shared stdlib-only test-store ownership/routing guard:
 it uses the public Dev ephemeral-cluster SPI and a newly owned Unix-socket PG
-cluster, with an offline child and no ambient host-store fallback. IO remains
-unregistered until the final source's full suites, real consumer, build and
-cleanup gates pass together on all three actual Python versions.
+cluster, with an offline child and no ambient host-store fallback. The private cluster wraps the entire suite and installed-wheel smoke; ordinary
+local tests instead force an owned unavailable Unix socket and make no SQL
+persistence claim. The earlier compute-04 initdb timeout remains a failed build
+attempt; qualification did not raise its 120-second deadline or substitute RAM
+for the normal scratch filesystem. This registration does not authorize a tag
+or publication; the existing protected-main and OIDC boundaries still apply.
