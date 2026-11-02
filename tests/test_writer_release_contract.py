@@ -76,6 +76,58 @@ class WriterReleaseContract(unittest.TestCase):
         assert result["ok"] is True
         assert result["plan"]["versions"] == ["3.11", "3.12", "3.13"]
 
+    def test_production_postgres_capability_matches_qualified_image_server(self):
+        # Arrange: immutable E846 image was probed with pg_config and real SQL.
+        # Act
+        result = run_policy(registration="production")
+        # Assert
+        assert result["plan"]["image"]["capabilities"]["postgres"] == "postgres.16.15"
+
+    def test_private_postgres_driver_and_transitive_helpers_are_registered(self):
+        # Arrange
+        expected = {
+            ".github/ci/run-in-sif.sh": "bab01584c10e87e6e904d71992c7120a1001e1376af3c88cc7d32750168e4f6a",
+            ".github/ci/build-in-sif.sh": "5c094b4280b4caeb3172449d3a45a440937ed42023add24e4de4f9b9ec97ba89",
+            ".github/ci/publish-in-sif.sh": "d7fd488c417a58c01b736072d2ec4da7c00c5475cbb6e5a2759992b3e13794a6",
+            ".github/ci/with-test-postgres.py": "14bff890c251ea5d2dca13e42e8290f9b37ed29b69159258f36aab24c9b82de2",
+            ".github/ci/writer_ci_postgres.py": "41269b47454d99baff3459ef830da9312c53716000b386fa92471957cb8bd2e9",
+        }
+        # Act
+        registered = run_policy(registration="production")["plan"]["leafSources"]
+        # Assert
+        assert {name: registered[name] for name in expected} == expected
+        assert len(registered) == 7
+
+    def test_registered_writer_source_set_passes_the_actual_file_gate(self):
+        # Arrange
+        registered = run_policy(registration="production")["plan"]["leafSources"]
+        # Act
+        result = fixtures.gate_case(
+            "native", source_paths=registered, gate_source=blocks("SIF_FILE_GATE")[0]
+        )
+        # Assert
+        assert result == {"ok": True, "fetches": 0, "keys": ["apptainer", "pg_sif", "sif"]}
+
+    def test_new_postgres_helpers_refuse_changed_missing_and_symlink_bytes(self):
+        # Arrange
+        registered = run_policy(registration="production")["plan"]["leafSources"]
+        for helper in ("with-test-postgres.py", "writer_ci_postgres.py"):
+            for case, reason in (
+                ("source-conflict", "file-byte-pin-mismatch"),
+                ("source-missing", "ENOENT"),
+                ("source-symlink", "ELOOP"),
+            ):
+                with self.subTest(helper=helper, case=case):
+                    # Act
+                    result = fixtures.gate_case(
+                        case,
+                        source_paths=registered,
+                        tamper_source=".github/ci/" + helper,
+                        gate_source=blocks("SIF_FILE_GATE")[0],
+                    )
+                    # Assert
+                    assert result == {"ok": False, "fetches": 0, "reason": reason}
+
     def test_all_three_original_test_versions_remain(self):
         # Arrange
         # Act
