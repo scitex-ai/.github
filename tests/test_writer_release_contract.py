@@ -9,7 +9,7 @@ from pathlib import Path
 import test_sif_matrix_contract as fixtures
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = ROOT / ".github/workflows/writer-release-sif.yml"
+WORKFLOW = ROOT / ".github/workflows/leaf-release-sif.yml"
 
 
 def blocks(marker):
@@ -22,6 +22,9 @@ def blocks(marker):
             result.append("\n".join(active))
             active = None
         elif active is not None:
+            if not line.strip():
+                active.append("")
+                continue
             assert line.startswith("            ")
             active.append(line[12:])
     return result
@@ -231,9 +234,11 @@ class WriterReleaseContract(unittest.TestCase):
         # Arrange
         source = WORKFLOW.read_text()
         # Act
-        name = "name: writer-dist-${{ inputs.source_commit }}"
+        name = "name: ${{ fromJSON(needs.profile.outputs.plan).profile }}-dist-${{ inputs.source_commit }}"
         # Assert
         assert name in source
+        plan = run_policy(operation="build")["plan"]
+        assert f"{plan['profile']}-dist-{plan['sourceCommit']}" == "writer-dist-" + "a" * 40
         assert "if-no-files-found: error" in source
         assert "inputs.operation == 'build' && 30 || 60" in source
 
