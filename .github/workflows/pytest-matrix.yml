@@ -99,6 +99,14 @@ on:
         type: string
         required: false
         default: ''
+      xdist_workers:
+        description: >-
+          Optional positive integer worker cap. Empty uses the caller repository's
+          CI_XDIST_WORKERS variable when set, otherwise the affinity/cgroup limit.
+          This cap can reduce concurrency but never exceed the runner allocation.
+        type: string
+        required: false
+        default: ''
       dependency_group:
         description: >-
           PEP 735 dependency-group holding the test requirements, installed
@@ -498,6 +506,7 @@ jobs:
       - name: Install (.[all,dev]) + pytest
         env:
           DEPENDENCY_GROUP: ${{ inputs.dependency_group }}
+          CI_XDIST_WORKERS: ${{ inputs.xdist_workers || vars.CI_XDIST_WORKERS }}
         run: |
           set -euo pipefail
           # --seed puts pip/setuptools/wheel IN the venv. A bare `uv venv`
@@ -529,32 +538,12 @@ jobs:
             # as one.
             uv pip install --python .venv/bin/python -e ".[all]" --group "${DEPENDENCY_GROUP}"
           else
-            uv pip install --python .venv/bin/python -e ".[all,dev]" \
-              || uv pip install --python .venv/bin/python -e ".[dev]" \
-              || uv pip install --python .venv/bin/python -e .
+            # A failed full install is fatal, including cache/network failures.
+            # Never certify a reduced runtime graph by dropping [all] or [dev].
+            uv pip install --python .venv/bin/python -e ".[all,dev]"
           fi
-          # THE CHAIN ABOVE CONVERTS A HARD FAILURE INTO A WRONG SUCCESS, and
-          # that is why this check exists rather than only the input.
-          #
-          # Measured on scitex-ai/scitex-app 2026-08-18: it declares `all` as an
-          # EXTRA but `dev` as a PEP 735 GROUP, with pytest-cov inside it. Both
-          # bracketed arms fail, the chain lands on a bare `-e .` that installs
-          # NO test dependencies, AND THE STEP EXITS 0. The truth surfaced two
-          # steps later as
-          #
-          #     python -m pytest: error: unrecognized arguments: --cov=src/...
-          #     exit code 4
-          #
-          # — an argument-parsing error naming nothing about dependencies.
-          # Nobody debugging argparse looks at their pyproject. "I could not
-          # install the dev group" travelled downstream as "installed fine".
-          #
-          # It cost that repo a branch-protection manoeuvre: had it reached the
-          # stage of pointing protection at these contexts on the evidence
-          # available before this failure, develop AND main would have been
-          # aimed at three checks that can never pass on that repo —
-          # deterministically red forever, every PR blocked, no exit without a
-          # repo-admin edit. A throwaway probe branch caught it.
+          # A successful installer must also provide the declared toolchain.
+          # An unknown extra may only warn, so retain this explicit verification.
           if [ ! -x .venv/bin/pytest ]; then
             echo "::error title=pytest not installed::the dependency install did not provide pytest, so there is nothing to run the suite with."
             echo "::error::Checked for .venv/bin/pytest after installing, and it is absent."
@@ -562,8 +551,7 @@ jobs:
               echo "::error::Installed with --group '${DEPENDENCY_GROUP}'. Does that group list pytest?"
             else
               echo "::error::Installed via the '.[all,dev]' extras path. If this repo declares dev as a"
-              echo "::error::PEP 735 dependency GROUP rather than an extra, every bracketed arm fails and"
-              echo "::error::the fallback silently installs no test dependencies. Pass the group instead:"
+              echo "::error::PEP 735 dependency GROUP rather than an extra, pass the group explicitly:"
               echo "::error::    uses: scitex-ai/.github/.github/workflows/pytest-matrix.yml@main"
               echo "::error::    with:"
               echo "::error::      dependency_group: dev"
@@ -628,6 +616,11 @@ jobs:
           import math, os
           from pathlib import Path
           limits = [os.cpu_count() or 1]
+          configured = os.environ.get("CI_XDIST_WORKERS", "")
+          if configured:
+              if not configured.isascii() or not configured.isdecimal() or int(configured) < 1:
+                  raise SystemExit("CI_XDIST_WORKERS must be a positive integer")
+              limits.append(int(configured))
           if hasattr(os, "sched_getaffinity"):
               limits.append(len(os.sched_getaffinity(0)))
           try:
