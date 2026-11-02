@@ -2,6 +2,7 @@
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -24,7 +25,8 @@ class BaselineTransportTests(unittest.TestCase):
             cls.env.pop(name, None)
         cls.repo = cls.root / "transport"
         cls.repo.mkdir()
-        cls.git("init", "--initial-branch=main")
+        # Synthetic transport trees must not inherit operator template hooks.
+        cls.git("init", "--initial-branch=main", "--template=")
         cls.git("config", "user.name", "Owned fixture")
         cls.git("config", "user.email", "fixture@example.invalid")
         (cls.repo / "common.txt").write_text("initial\n")
@@ -368,6 +370,34 @@ class WorkflowPreservationTests(unittest.TestCase):
             self.assertEqual(step["with"]["retries"], 0)
             self.assertIn("new Function('module', 'exports', 'require'", script)
         self.assertIn("verifyFinalBinding", helpers[1]["with"]["script"])
+
+
+class OwnedHistoryTemplateIsolationTests(unittest.TestCase):
+    def test_transport_fixture_ignores_external_template_hooks(self):
+        # Arrange: a genuine Git hook would block the synthetic commits.
+        with tempfile.TemporaryDirectory(prefix="cla-template-boundary-") as directory:
+            root = Path(directory)
+            hooks = root / "template/hooks"
+            hooks.mkdir(parents=True)
+            hook = hooks / "pre-commit"
+            hook.write_text('#!/bin/sh\n: > "$CLA_FIXTURE_TEMPLATE_MARKER"\nexit 99\n')
+            hook.chmod(0o700)
+            marker = root / "external-hook-ran"
+            environment = {
+                **os.environ,
+                "GIT_TEMPLATE_DIR": str(hooks.parent),
+                "CLA_FIXTURE_TEMPLATE_MARKER": str(marker),
+            }
+            # Act: construct and validate the actual complete transport history.
+            result = subprocess.run(
+                [sys.executable, str(Path(__file__).resolve()),
+                 "BaselineTransportTests.test_actual_git_commit_connection_is_complete", "-q"],
+                env=environment, capture_output=True, text=True, timeout=20,
+            )
+            # Assert
+            assert (result.returncode, marker.exists()) == (0, False), (
+                result.stdout + result.stderr
+            )
 
 
 if __name__ == "__main__":
