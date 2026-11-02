@@ -438,7 +438,7 @@ class SIFPolicyTests(unittest.TestCase):
         assert result["reason"] == "runtime-capability-unqualified"
 
 
-def gate_case(case):
+def gate_case(case, *, source_paths=None, tamper_source=None, gate_source=None):
     with tempfile.TemporaryDirectory(prefix="sif-contract-owned-") as temporary:
         root = Path(temporary)
         workspace = root / "checkout"
@@ -478,11 +478,21 @@ def gate_case(case):
             "pgImage": None,
             "native": not case.startswith("hosted"),
         }
-        if case == "source-conflict":
-            script.write_bytes(b"changed public script\n")
+        if source_paths is not None:
+            plan["leafSources"] = {}
+            for relative in source_paths:
+                member = workspace / relative
+                member.parent.mkdir(parents=True, exist_ok=True)
+                member.write_bytes(("approved public source " + relative).encode())
+                plan["leafSources"][relative] = digest(member.read_bytes())
+        selected_source = workspace / tamper_source if tamper_source else script
+        if case == "source-missing":
+            selected_source.unlink()
+        elif case == "source-conflict":
+            selected_source.write_bytes(b"changed public script\n")
         elif case == "source-symlink":
-            script.unlink()
-            script.symlink_to(runtime)
+            selected_source.unlink()
+            selected_source.symlink_to(runtime)
         elif case == "image-conflict":
             sif.write_bytes(b"changed public immutable SIF")
         elif case == "locator-unapproved":
@@ -532,7 +542,7 @@ vm.runInNewContext('(async () => {\\n' + input.source + '\\n})()', sandbox)
         return node(
             program,
             {
-                "source": blocks("SIF_FILE_GATE")[0],
+                "source": gate_source if gate_source is not None else blocks("SIF_FILE_GATE")[0],
                 "case": case,
                 "body": base64.b64encode(
                     body if case != "hosted-body-conflict" else b"changed bytes"
