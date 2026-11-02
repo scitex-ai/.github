@@ -93,7 +93,7 @@ jobs:
                 hostedRuntime: null,
                 leafSources: {
                   '.github/ci/exec-in-sif.sh': 'dffc356c99c0deb8c031580ea667f6e4ea695dd1ce000d19a1a127442b8c9cf0',
-                  '.github/ci/run-in-sif.sh': 'cc690aeca6770e980652f499d50571e0e2fc759abbf2b870c650fcc3dd493786',
+                  '.github/ci/run-in-sif.sh': '7efa7c7737bb536f03b822a08186e093030ef8b48e0cc9bce811e11785cfdf01',
                   '.github/ci/release-context.sh': 'd7433cacdd9098bdbe77994ba7a78d91b90edc7164a00a40450db19978ac57f8',
                   '.github/ci/verify-postgres-capability.py': 'af610a811b19f746c9a717fbebbc67639b16df962544acac9b51a3dd38a43455',
                 },
