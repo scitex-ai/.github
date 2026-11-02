@@ -160,13 +160,15 @@ jobs:
                 : ['.github/ci/exec-in-sif.sh', '.github/ci/release-context.sh',
                    '.github/ci/run-in-sif.sh', '.github/ci/build-in-sif.sh',
                    '.github/ci/publish-in-sif.sh', '.github/ci/release-identity.py',
-                   '.github/ci/_release_artifacts.py', '.github/ci/_release_source.py'];
+                   '.github/ci/_release_artifacts.py', '.github/ci/_release_source.py',
+                   '.github/ci/probe-first-observer.py', '.github/ci/io_test_store.py'];
               requireContract(exactKeys(leafSources, sourceNames)
                 && sourceNames.every(path => digest(leafSources[path])), profile + '-source-closure-unregistered');
 
               return {profile, operation, sourceCommit, releaseTag, versions, image,
                 runtime, leafSources, pgImage: null, native: true};
             }
+            const IO_PYTEST_WORKERS = 4;
             const IO_REGISTRATION = null;
             const IO_LEAF_SOURCES = Object.freeze({});
             function writerPlan(repository, eventName, native, operation, sourceCommit, releaseTag, registration = REGISTRATION) {
@@ -174,8 +176,9 @@ jobs:
                 sourceCommit, releaseTag, registration, LEAF_SOURCES);
             }
             function ioPlan(repository, eventName, native, operation, sourceCommit, releaseTag, registration = IO_REGISTRATION) {
-              return registeredReleasePlan('io', repository, eventName, native, operation,
+              const plan = registeredReleasePlan('io', repository, eventName, native, operation,
                 sourceCommit, releaseTag, registration, IO_LEAF_SOURCES);
+              return {...plan, pytestWorkers: IO_PYTEST_WORKERS};
             }
             function leafReleasePlan(repository, ...args) {
               if (repository === 'scitex-ai/scitex-writer') return writerPlan(repository, ...args);
@@ -353,6 +356,7 @@ jobs:
       - name: Run the registered complete leaf suite
         if: inputs.operation == 'test'
         env:
+          CI_XDIST_WORKERS: ${{ fromJSON(needs.profile.outputs.plan).pytestWorkers || '' }}
           SCITEX_CI_SIF: ${{ steps.inputs.outputs.sif }}
           SCITEX_CI_SIF_SHA256: ${{ fromJSON(needs.profile.outputs.plan).image.sha256 }}
           SCITEX_CI_APPTAINER: ${{ steps.inputs.outputs.apptainer }}
