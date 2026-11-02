@@ -78,7 +78,7 @@ jobs:
         run: |
           set -euo pipefail
           uv venv --seed --python 3.12 .venv
-          uv pip install --python .venv/bin/python pytest pyyaml
+          uv pip install --python .venv/bin/python pytest pyyaml build hatchling
       - name: run workflow contract tests
         run: |
           .venv/bin/python .github/ci/observe-command.py \
