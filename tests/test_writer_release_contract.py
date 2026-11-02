@@ -86,7 +86,9 @@ class WriterReleaseContract(unittest.TestCase):
     def test_private_postgres_driver_and_transitive_helpers_are_registered(self):
         # Arrange
         expected = {
-            ".github/ci/run-in-sif.sh": "0043300c21b15da2d47549f87d8ad9ae357d29abde5dca1f926a9410a95e90ea",
+            ".github/ci/run-in-sif.sh": "bab01584c10e87e6e904d71992c7120a1001e1376af3c88cc7d32750168e4f6a",
+            ".github/ci/build-in-sif.sh": "5c094b4280b4caeb3172449d3a45a440937ed42023add24e4de4f9b9ec97ba89",
+            ".github/ci/publish-in-sif.sh": "d7fd488c417a58c01b736072d2ec4da7c00c5475cbb6e5a2759992b3e13794a6",
             ".github/ci/with-test-postgres.py": "14bff890c251ea5d2dca13e42e8290f9b37ed29b69159258f36aab24c9b82de2",
             ".github/ci/writer_ci_postgres.py": "41269b47454d99baff3459ef830da9312c53716000b386fa92471957cb8bd2e9",
         }
@@ -94,7 +96,7 @@ class WriterReleaseContract(unittest.TestCase):
         registered = run_policy(registration="production")["plan"]["leafSources"]
         # Assert
         assert {name: registered[name] for name in expected} == expected
-        assert len(registered) == 6
+        assert len(registered) == 7
 
     def test_registered_writer_source_set_passes_the_actual_file_gate(self):
         # Arrange
