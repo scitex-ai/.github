@@ -1,8 +1,9 @@
 name: leaf-release-sif
 
 # Fixed repository, preflight-resolved commit and retained full leaf drivers.
-# Writer keeps its qualified registration; IO stays blocked until its own
-# native image/runtime/source qualification is complete.
+# Writer retains its qualified registration; IO is registered after complete
+# native image/runtime/source, private-store and full-suite qualification.
+# Registration alone authorizes neither a release tag nor publication.
 on:
   workflow_call:
     inputs:

@@ -1,7 +1,8 @@
 name: writer-release-sif
 
 # Fixed repository, preflight-resolved commit and retained full leaf drivers.
-# Source contract only: no image/runtime is registered by this change.
+# Compatibility entry point for the registered Writer profile in the shared
+# leaf executor; existing inputs and qualified runtime/source gates are retained.
 on:
   workflow_call:
     inputs:
