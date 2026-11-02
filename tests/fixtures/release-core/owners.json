@@ -1,0 +1,273 @@
+[
+  {
+    "key": "writer",
+    "repository": "scitex-ai/scitex-writer",
+    "commit": "142fd4ddac7c3454cbe1701c57e495d2745114e8",
+    "distribution": "scitex-writer",
+    "package": "scitex_writer",
+    "source_mappings": [
+      [
+        "src/scitex_writer/",
+        "scitex_writer/"
+      ],
+      [
+        "scripts/",
+        "scitex_writer/scripts/"
+      ]
+    ],
+    "required_members": [
+      "scitex_writer/_dataclasses/config/__init__.py",
+      "scitex_writer/scripts/shell/modules/check_dependancy_commands.sh"
+    ],
+    "omitted_paths": [
+      "scripts/shell/.compile_manuscript.sh.log",
+      "scripts/shell/.compile_revision.sh.log",
+      "scripts/shell/.compile_supplementary.sh.log"
+    ],
+    "omitted_prefixes": [],
+    "forbidden_sdist_paths": [
+      "scripts/shell/.compile_manuscript.sh.log",
+      "scripts/shell/.compile_revision.sh.log",
+      "scripts/shell/.compile_supplementary.sh.log"
+    ],
+    "reviewed_build": {
+      "targets": {
+        "sdist": {
+          "exclude": [
+            "/src/scitex_writer/_django/frontend/node_modules",
+            "/00_shared",
+            "/01_manuscript",
+            "/02_supplementary",
+            "/03_revision",
+            "/.scitex",
+            "/config",
+            "/scripts/shell/.compile_manuscript.sh.log",
+            "/scripts/shell/.compile_revision.sh.log",
+            "/scripts/shell/.compile_supplementary.sh.log"
+          ],
+          "include": [
+            "src/scitex_writer",
+            "/scripts",
+            "README.md",
+            "CHANGELOG.md",
+            "LICENSE",
+            "pyproject.toml"
+          ]
+        },
+        "wheel": {
+          "exclude": [
+            "/src/scitex_writer/_django/frontend/node_modules"
+          ],
+          "force-include": {
+            "scripts": "scitex_writer/scripts"
+          },
+          "packages": [
+            "src/scitex_writer"
+          ]
+        }
+      }
+    },
+    "reviewed_backend": {
+      "build-backend": "hatchling.build",
+      "requires": [
+        "hatchling"
+      ]
+    }
+  },
+  {
+    "key": "io",
+    "repository": "scitex-ai/scitex-io",
+    "commit": "ff3b31de88457858c16b799936f85575e83b662a",
+    "distribution": "scitex-io",
+    "package": "scitex_io",
+    "source_mappings": [
+      [
+        "src/scitex_io/",
+        "scitex_io/"
+      ]
+    ],
+    "required_members": [
+      "scitex_io/_observers/__init__.py",
+      "scitex_io/_save_modules/_yaml.py"
+    ],
+    "omitted_paths": [],
+    "omitted_prefixes": [],
+    "forbidden_sdist_paths": [],
+    "reviewed_build": {
+      "targets": {
+        "wheel": {
+          "packages": [
+            "src/scitex_io"
+          ]
+        }
+      }
+    },
+    "reviewed_backend": {
+      "build-backend": "hatchling.build",
+      "requires": [
+        "hatchling"
+      ]
+    }
+  },
+  {
+    "key": "figrecipe",
+    "repository": "scitex-ai/figrecipe",
+    "commit": "0639bb4cdb6b97f5fa8453878ff208c4bd5a6d28",
+    "distribution": "figrecipe",
+    "package": "figrecipe",
+    "source_mappings": [
+      [
+        "src/figrecipe/",
+        "figrecipe/"
+      ]
+    ],
+    "required_members": [
+      "figrecipe/_django/apps.py",
+      "figrecipe/_django/manifest.json",
+      "figrecipe/_django/static/figrecipe/.vite/manifest.json"
+    ],
+    "omitted_paths": [
+      "src/figrecipe/_django/frontend/package.json",
+      "src/figrecipe/_django/frontend/package-lock.json",
+      "src/figrecipe/_django/frontend/tsconfig.json",
+      "src/figrecipe/_django/frontend/tsconfig.node.json",
+      "src/figrecipe/_django/frontend/vite.config.ts",
+      "src/figrecipe/_django/frontend/eslint.config.js"
+    ],
+    "omitted_prefixes": [
+      "src/figrecipe/_django/frontend/src/",
+      "src/figrecipe/_django/frontend/node_modules/"
+    ],
+    "forbidden_sdist_paths": [],
+    "reviewed_sdist_links": [
+      {
+        "path": "docs/sphinx/_static/figrecipe_concept.png",
+        "text": "../generate_images_out/figrecipe_concept.png",
+        "target_path": "docs/sphinx/generate_images_out/figrecipe_concept.png",
+        "link_blob": "bfca9a836ecdf756f8306c74f8458e7a23647b23",
+        "target_blob": "8596c7e36fc2e30d42eb4d60484489d68712681f"
+      },
+      {
+        "path": "docs/sphinx/_static/gallery_bar.png",
+        "text": "../generate_images_out/gallery_bar.png",
+        "target_path": "docs/sphinx/generate_images_out/gallery_bar.png",
+        "link_blob": "e2ff0ac3a86edb5a7f6ed44a2bf962fe344daf1d",
+        "target_blob": "acde2abb596276c0394713cf55361fbe5212117a"
+      },
+      {
+        "path": "docs/sphinx/_static/gallery_boxplot.png",
+        "text": "../generate_images_out/gallery_boxplot.png",
+        "target_path": "docs/sphinx/generate_images_out/gallery_boxplot.png",
+        "link_blob": "89407e27b7a0415ff3b21e92c746349b217747b1",
+        "target_blob": "7529c2127a00464e52304b6050b54ed42edadc5e"
+      },
+      {
+        "path": "docs/sphinx/_static/gallery_contour.png",
+        "text": "../generate_images_out/gallery_contour.png",
+        "target_path": "docs/sphinx/generate_images_out/gallery_contour.png",
+        "link_blob": "0ff1d430dd1099d22e778a84713ecfb09903044f",
+        "target_blob": "8d8ccb0d7b4a1cfa0c6c32b5b116164112af7842"
+      },
+      {
+        "path": "docs/sphinx/_static/gallery_heatmap.png",
+        "text": "../generate_images_out/gallery_heatmap.png",
+        "target_path": "docs/sphinx/generate_images_out/gallery_heatmap.png",
+        "link_blob": "4b06d060d662e8f701bb749d166b6e0cc9df7947",
+        "target_blob": "7314d688f64747e5fe4a9b29c11da38e9d34f037"
+      },
+      {
+        "path": "docs/sphinx/_static/gallery_hist.png",
+        "text": "../generate_images_out/gallery_hist.png",
+        "target_path": "docs/sphinx/generate_images_out/gallery_hist.png",
+        "link_blob": "285f61bf3b2fb0d5baa854ee93939b7b4712e00b",
+        "target_blob": "54e927988d1a9df856a2bf19189bf0dbf63823f8"
+      },
+      {
+        "path": "docs/sphinx/_static/gallery_line.png",
+        "text": "../generate_images_out/gallery_line.png",
+        "target_path": "docs/sphinx/generate_images_out/gallery_line.png",
+        "link_blob": "ca03298b10c3101586fc360ae62d551118507b9a",
+        "target_blob": "7907cbfe972e67ed4e9f78da3f9ea198fdc64b56"
+      },
+      {
+        "path": "docs/sphinx/_static/gallery_scatter.png",
+        "text": "../generate_images_out/gallery_scatter.png",
+        "target_path": "docs/sphinx/generate_images_out/gallery_scatter.png",
+        "link_blob": "01f2754daa7152ba1213f97038535ceba7685356",
+        "target_blob": "985741fb76239bc9a3f8a8a47a1a6ab22cb89fbf"
+      },
+      {
+        "path": "docs/sphinx/_static/gallery_violin.png",
+        "text": "../generate_images_out/gallery_violin.png",
+        "target_path": "docs/sphinx/generate_images_out/gallery_violin.png",
+        "link_blob": "05ce17c9343ac5e892373af0d12281da38b905b5",
+        "target_blob": "62c1b8c9ab8a1d5954116005da4c9a93455481c6"
+      },
+      {
+        "path": "docs/sphinx/_static/quickstart_bundle.png",
+        "text": "../generate_images_out/quickstart_bundle.png",
+        "target_path": "docs/sphinx/generate_images_out/quickstart_bundle.png",
+        "link_blob": "e01d53121ab50fdefb789721488d3301f56817ca",
+        "target_blob": "c09d88bc0108cc7e8a9592855f1e35ed912e240d"
+      },
+      {
+        "path": "docs/sphinx/_static/quickstart_diagram_lr.png",
+        "text": "../generate_images_out/quickstart_diagram_lr.png",
+        "target_path": "docs/sphinx/generate_images_out/quickstart_diagram_lr.png",
+        "link_blob": "e7259c2ebbf98358358e7dcdec4cd596b6fc80f8",
+        "target_blob": "83460969fea6a5b9e5e764e2ac7843b552efe79e"
+      },
+      {
+        "path": "docs/sphinx/_static/quickstart_diagram_tb.png",
+        "text": "../generate_images_out/quickstart_diagram_tb.png",
+        "target_path": "docs/sphinx/generate_images_out/quickstart_diagram_tb.png",
+        "link_blob": "afb057b4f1edad28d24bcacea9b98d9075babf27",
+        "target_blob": "1d708ac292b95f7a677a9960004c57783d71a267"
+      },
+      {
+        "path": "docs/sphinx/_static/quickstart_panel_a.png",
+        "text": "../generate_images_out/quickstart_panel_a.png",
+        "target_path": "docs/sphinx/generate_images_out/quickstart_panel_a.png",
+        "link_blob": "fa0e5cfccd2495d50d28a1cf39bab3e54bc43f97",
+        "target_blob": "a6eb36c7cb0b41f03be155f6a274f7d1164bfaeb"
+      },
+      {
+        "path": "docs/sphinx/_static/quickstart_panel_b.png",
+        "text": "../generate_images_out/quickstart_panel_b.png",
+        "target_path": "docs/sphinx/generate_images_out/quickstart_panel_b.png",
+        "link_blob": "8654aadb8771afa8bd94eccb2ad25a920495aa9a",
+        "target_blob": "5bf1727108de2c3d989a43288bd878fbd2d7ae3f"
+      },
+      {
+        "path": "docs/sphinx/_static/quickstart_trig.png",
+        "text": "../generate_images_out/quickstart_trig.png",
+        "target_path": "docs/sphinx/generate_images_out/quickstart_trig.png",
+        "link_blob": "028f42786ed89b702a7fbbaa6f38eb0b06700d15",
+        "target_blob": "edaa753529b45c8666d346f097bf90e26e644314"
+      }
+    ],
+    "reviewed_build": {
+      "targets": {
+        "wheel": {
+          "exclude": [
+            "src/figrecipe/_django/frontend/node_modules/**",
+            "src/figrecipe/_django/frontend/src",
+            "src/figrecipe/_django/frontend/package*.json",
+            "src/figrecipe/_django/frontend/tsconfig*.json",
+            "src/figrecipe/_django/frontend/vite.config.ts",
+            "src/figrecipe/_django/frontend/eslint.config.js"
+          ],
+          "packages": [
+            "src/figrecipe"
+          ]
+        }
+      }
+    },
+    "reviewed_backend": {
+      "build-backend": "hatchling.build",
+      "requires": [
+        "hatchling"
+      ]
+    }
+  }
+]
