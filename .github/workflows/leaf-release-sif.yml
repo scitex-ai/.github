@@ -159,7 +159,8 @@ jobs:
                    '.github/ci/release-identity.py']
                 : ['.github/ci/exec-in-sif.sh', '.github/ci/release-context.sh',
                    '.github/ci/run-in-sif.sh', '.github/ci/build-in-sif.sh',
-                   '.github/ci/publish-in-sif.sh', '.github/ci/release-identity.py'];
+                   '.github/ci/publish-in-sif.sh', '.github/ci/release-identity.py',
+                   '.github/ci/_release_artifacts.py', '.github/ci/_release_source.py'];
               requireContract(exactKeys(leafSources, sourceNames)
                 && sourceNames.every(path => digest(leafSources[path])), profile + '-source-closure-unregistered');
 
@@ -191,7 +192,7 @@ jobs:
   native:
     needs: [runner-admission, profile]
     if: needs.runner-admission.outputs.native_authorized == 'true'
-    name: writer-${{ inputs.operation }}-py${{ matrix.python-version }}
+    name: ${{ fromJSON(needs.profile.outputs.plan).profile }}-${{ inputs.operation }}-py${{ matrix.python-version }}
     runs-on: >-
       ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
           && fromJSON('["ubuntu-latest"]')
