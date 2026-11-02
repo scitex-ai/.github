@@ -395,6 +395,15 @@ jobs:
           tar -xzf "$archive" -C "$tools" --strip-components=1 "$release/fd"
           "$tools/fd" --version
           printf '%s\n' "$tools" >> "${GITHUB_PATH:?}"
+      - name: Create a private uv cache for this job
+        run: |
+          set -euo pipefail
+          # Runner services may inherit a shared UV_CACHE_DIR with stale archive
+          # links. Never reuse, prune or delete that shared state in a test job.
+          # mktemp isolates concurrent legs and reruns; runner.temp owns cleanup.
+          umask 077
+          cache=$(mktemp -d "${RUNNER_TEMP:?}/scitex-pytest-uv.XXXXXXXX")
+          printf 'UV_CACHE_DIR=%s\n' "$cache" >> "${GITHUB_ENV:?}"
       - name: Repository-specific test preparation
         if: inputs.pre_test_command != ''
         env:
@@ -402,7 +411,8 @@ jobs:
         run: bash -euo pipefail -c "$PRE_TEST_COMMAND"
       - uses: astral-sh/setup-uv@v7
         with:
-          cache-dependency-glob: pyproject.toml
+          # Each job starts empty: no restored archive references or shared writes.
+          enable-cache: false
           # PINNED, and the pin is load-bearing — see the RUNNER_TOOL_CACHE note
           # below for the hazard it defuses.
           #
