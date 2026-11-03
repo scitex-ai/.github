@@ -25,6 +25,9 @@ if (input.mutation==='covered-late-actor') {
  rows[99].commit.author.user={login:'late-user',databaseId:2};
  rows.at(-1).commit.author.user={login:'late-user',databaseId:2};
 }
+if (input.mutation==='attested-bot') {
+ rows[2].commit.author.user={login:'github-actions[bot]',databaseId:41898282};
+}
 let calls=0;
 const page=async cursor=>{
  const start=cursor===null?0:Number(cursor.slice(1));
@@ -87,6 +90,9 @@ class CompletePaginationTests(unittest.TestCase):
 
     def test_a_late_commit_by_a_person_already_checked_remains_covered(self):
         self.assertTrue(self.collect(624, 'covered-late-actor')['accepted'])
+
+    def test_attested_github_bot_is_part_of_the_existing_action_identity_set(self):
+        self.assertTrue(self.collect(624, 'attested-bot')['accepted'])
 
     def test_resource_limit_refuses_before_the_transport_is_called(self):
         observed = self.collect(2001)

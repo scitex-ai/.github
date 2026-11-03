@@ -3,6 +3,7 @@
 const {createHash} = require('crypto');
 const OID = /^[0-9a-f]{40}$/;
 const LOGIN = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/;
+const ACTION_LOGIN = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}(?:\[bot\])?$/;
 const MAX_COMMITS = 2000;
 const MODES = new Map([
   ['100644', 'blob'], ['100755', 'blob'], ['120000', 'blob'], ['160000', 'commit'],
@@ -106,7 +107,7 @@ function actionIdentity(commit) {
   // Exactly the pinned action's author-user / committer-user precedence. Raw
   // names have no attested numeric identity and cannot prove action coverage.
   const user = commit.author?.user || commit.committer?.user;
-  if (!user || !LOGIN.test(user.login || '') ||
+  if (!user || !ACTION_LOGIN.test(user.login || '') ||
       !Number.isSafeInteger(user.databaseId) || user.databaseId <= 0) {
     throw new Error('Unknown contributor cannot prove complete CLA coverage');
   }
