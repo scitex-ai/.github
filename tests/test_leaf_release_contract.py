@@ -14,7 +14,7 @@ def dispatch(**changes):
     code = writer.blocks('WRITER_RELEASE_CONTRACT')[0] + '''
 const x = JSON.parse(process.argv[1]);
 try { const plan = Object.hasOwn(x, 'registration')
- ? ioPlan(x.repository,x.event,x.native,x.operation,x.source,x.tag,x.registration)
+ ? ({'scitex-ai/scitex-io':ioPlan,'scitex-ai/scitex-scholar':scholarPlan,'scitex-ai/scitex-writer':writerPlan}[x.repository])(x.repository,x.event,x.native,x.operation,x.source,x.tag,x.registration)
  : leafReleasePlan(x.repository,x.event,x.native,x.operation,x.source,x.tag);
  console.log(JSON.stringify({ok:true,plan})); }
 catch (e) {console.log(JSON.stringify({ok:false,reason:e.message}));}
@@ -78,7 +78,7 @@ def test_writer_dispatch_retains_qualified_original_profile():
 
 
 def test_scholar_source_protocol_refuses_unqualified_native_registration():
-    assert dispatch(repository='scitex-ai/scitex-scholar', tag='v1.29.1')['reason'] == 'scholar-runtime-unregistered'
+    assert dispatch(repository='scitex-ai/scitex-scholar', tag='v1.29.1', registration=None)['reason'] == 'scholar-runtime-unregistered'
 
 
 def test_scholar_nonmember_remains_refused_before_registration():
@@ -99,3 +99,45 @@ def test_scholar_floating_source_is_refused():
 
 def test_scholar_tag_injection_is_refused():
     assert dispatch(repository='scitex-ai/scitex-scholar', tag='v1.29.1; false')['reason'] == 'scholar-release-tag-refused'
+
+
+def test_scholar_runner_selection_is_exact_qualified_host_literal():
+    code = writer.blocks('WRITER_RELEASE_CONTRACT')[0] + "\nconsole.log(JSON.stringify(SCHOLAR_RUNNER));"
+    actual = subprocess.run(['node', '-e', code], check=True, capture_output=True, text=True, timeout=5)
+    assert json.loads(actual.stdout) == {'group': 'Organization', 'labels': ['self-hosted', 'Linux', 'X64', 'scitex-org-cpu', 'scitex-compute-03']}
+
+
+def test_native_job_consumes_registered_selection_and_retains_existing_pool_fallback():
+    workflow = yaml.safe_load((ROOT/'.github/workflows/leaf-release-sif.yml').read_text())
+    selection = workflow['jobs']['native']['runs-on']
+    assert ('fromJSON(needs.profile.outputs.plan).runner' in selection and '"group":"Organization","labels":["self-hosted","Linux","X64","scitex-org-cpu"]' in selection and '"ubuntu-latest"' in selection)
+
+
+def test_writer_and_io_do_not_inherit_scholar_host_restriction():
+    assert all('runner' not in dispatch(repository=repo)['plan'] for repo in ['scitex-ai/scitex-writer', 'scitex-ai/scitex-io'])
+
+
+def test_registered_worker_budget_is_passed_to_both_strict_driver_operations():
+    workflow = yaml.safe_load((ROOT/'.github/workflows/leaf-release-sif.yml').read_text())
+    steps = workflow['jobs']['native']['steps']
+    drivers = [row for row in steps if row.get('run', '').startswith('bash .github/ci/exec-in-sif.sh')]
+    assert len(drivers) == 2 and all(row['env']['CI_XDIST_WORKERS'] == "${{ fromJSON(needs.profile.outputs.plan).pytestWorkers || '' }}" for row in drivers)
+
+
+def test_scholar_qualified_plan_binds_actual_runtime_and_complete_helper_closure():
+    plan = dispatch(repository='scitex-ai/scitex-scholar', tag='v1.29.1')['plan']
+    assert (plan['versions'], plan['pytestWorkers'], plan['runtime']['qualification_sha256'], set(plan['leafSources'])) == (
+        ['3.11', '3.12', '3.13'], 4,
+        '3b842983d34ba0b354836048cdf49b899583f871567ad78ebc1968f04ffaf786', {
+            '.github/ci/exec-in-sif.sh', '.github/ci/release-context.sh',
+            '.github/ci/run-in-sif.sh', '.github/ci/build-in-sif.sh',
+            '.github/ci/release-identity.py', '.github/ci/with-test-postgres.py',
+            '.github/ci/probe-first-observer.py', '.github/ci/setup-node-owned.sh'})
+
+
+def test_scholar_build_uses_only_qualified_build_interpreter():
+    assert dispatch(repository='scitex-ai/scitex-scholar', operation='build')['plan']['versions'] == ['3.12']
+
+
+def test_scholar_partial_registration_is_not_an_activation():
+    assert dispatch(repository='scitex-ai/scitex-scholar', registration={})['reason'] == 'scholar-runtime-unregistered'

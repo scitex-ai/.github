@@ -224,14 +224,53 @@ jobs:
                 sourceCommit, releaseTag, registration, IO_LEAF_SOURCES);
               return {...plan, pytestWorkers: IO_PYTEST_WORKERS};
             }
-            // Source protocol is reviewable before native qualification. Null
-            // registration cannot schedule Scholar tests/builds or publishing.
-            const SCHOLAR_REGISTRATION = null;
-            const SCHOLAR_LEAF_SOURCES = Object.freeze({});
+            // Qualified on compute-03: all three full suites and a separate fresh
+            // same-source build. Other hosts remain outside this registration.
+            const SCHOLAR_RUNNER = Object.freeze({group: 'Organization', labels: Object.freeze([
+              'self-hosted', 'Linux', 'X64', 'scitex-org-cpu', 'scitex-compute-03'
+            ])});
+            const SCHOLAR_REGISTRATION = Object.freeze({
+              "image": {
+                "sha256": "e8461fc77a2218b5f7e2c475bd601dddaec97c6335bee459a1b0d4e0ca374d83",
+                "bytes": 1381281792,
+                "producer_revision": "afda87ca15b9560410fff5f331223152df3410b4",
+                "source_manifest_sha256": "02f9fdd18cc953ea6b1eedebb862f376128cb6ccf7e9144d5e5ac06325f464eb",
+                "public_inventory_sha256": "997e7818bd7da34642a9e23a560ff18ccf5af62f1df011e6785ec0a09590ec88",
+                "delivery": null,
+                "capabilities": {
+                  "3.11": "3.11.17",
+                  "3.12": "3.12.15",
+                  "3.13": "3.13.16",
+                  "postgres": "postgres.16.15"
+                },
+                "native_paths": [
+                  "/home/ywatanabe/.scitex/dev/runtime/containers/ci-cpu-sha256-e8461fc77a2218b5f7e2c475bd601dddaec97c6335bee459a1b0d4e0ca374d83.sif"
+                ]
+              },
+              "runtime": {
+                "path": "/usr/bin/apptainer",
+                "sha256": "7bdb501fdddbb7264b4e4d6038e0ec27201f63e217519e5f7f0db950c9285ddd",
+                "bytes": 48096048,
+                "qualification_sha256": "3b842983d34ba0b354836048cdf49b899583f871567ad78ebc1968f04ffaf786",
+                "user_namespace": true,
+                "sif_mount": true,
+                "hosted_delivery_sha256": null
+              }
+            });
+            const SCHOLAR_LEAF_SOURCES = Object.freeze({
+              ".github/ci/exec-in-sif.sh": "9be3e2a4645e95cf073f59d93dc03e2f5c03e377cfd049b8548862e7ac881b3a",
+              ".github/ci/release-context.sh": "130f42eb7efbb511b0bcea962a84468e818e14ec3cf7498c2c45b9d145c430cc",
+              ".github/ci/run-in-sif.sh": "ed4d90fa668c609e382a6050ca57b15ada47a4707ffb758084044d840604222f",
+              ".github/ci/build-in-sif.sh": "8909563f08cc6727b33fcec9e82bc51fb4cc810539e4317453073101706ed58d",
+              ".github/ci/release-identity.py": "758813f60f78731df705f20bbd83c808556b6b8d3f874533fd86ab883ef9220e",
+              ".github/ci/with-test-postgres.py": "61e6e0488fe5e4fab53f5dae40313eae0e740c9890e438101007797397b340c5",
+              ".github/ci/probe-first-observer.py": "952ba02e30b0794e01f6385a2cd8565498bdd481ebcdf5bdcea3803218c299ed",
+              ".github/ci/setup-node-owned.sh": "053fdbf23b2e166a384894afa0e3d0a9c04f81722eb0077b7cda239dcb2b6698"
+            });
             function scholarPlan(repository, eventName, native, operation, sourceCommit, releaseTag, registration = SCHOLAR_REGISTRATION) {
               const plan = registeredReleasePlan('scholar', repository, eventName, native, operation,
                 sourceCommit, releaseTag, registration, SCHOLAR_LEAF_SOURCES);
-              return {...plan, pytestWorkers: 4};
+              return {...plan, pytestWorkers: 4, runner: SCHOLAR_RUNNER};
             }
             function leafReleasePlan(repository, ...args) {
               if (repository === 'scitex-ai/scitex-writer') return writerPlan(repository, ...args);
@@ -251,7 +290,8 @@ jobs:
     if: needs.runner-admission.outputs.native_authorized == 'true'
     name: ${{ fromJSON(needs.profile.outputs.plan).profile }}-${{ inputs.operation }}-py${{ matrix.python-version }}
     runs-on: >-
-      ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
+      ${{ fromJSON(needs.profile.outputs.plan).runner
+          || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
           && fromJSON('["ubuntu-latest"]')
           || fromJSON('{"group":"Organization","labels":["self-hosted","Linux","X64","scitex-org-cpu"]}') }}
     timeout-minutes: ${{ inputs.operation == 'build' && 30 || 60 }}
@@ -419,6 +459,7 @@ jobs:
       - name: Build and verify the retained whole wheel and sdist
         if: inputs.operation == 'build'
         env:
+          CI_XDIST_WORKERS: ${{ fromJSON(needs.profile.outputs.plan).pytestWorkers || '' }}
           SCITEX_CI_SIF: ${{ steps.inputs.outputs.sif }}
           SCITEX_CI_SIF_SHA256: ${{ fromJSON(needs.profile.outputs.plan).image.sha256 }}
           SCITEX_CI_APPTAINER: ${{ steps.inputs.outputs.apptainer }}

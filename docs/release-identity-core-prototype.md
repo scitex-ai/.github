@@ -112,3 +112,27 @@ is a required negative control: its ignore rules omit a tracked favicon SVG.
 Owned build fixtures use OS /tmp roots so an ambient .cache/TMPDIR ancestor
 cannot cause Hatch to silently discard those ignore rules. Native qualification
 and publication remain separate mandatory gates.
+
+
+### Qualified Scholar native profile
+
+The native dispatcher now admits Scholar only on the Organization runner group
+with the fixed `scitex-compute-03` host label, retaining Writer and IO selections.
+The reviewed E846 image and Apptainer runtime are bound to actual runner 980
+context evidence by qualification digest
+`3b842983d34ba0b354836048cdf49b899583f871567ad78ebc1968f04ffaf786`.
+The eight exact leaf helper hashes were qualified at Scholar source
+`49da2f7d2274e60399e178f871ab5298c239d913`: Python 3.11, 3.12 and 3.13 each
+passed 1,669 tests with 13 existing skips, owned PostgreSQL, four-worker admission
+and cleanup. A separate fresh checkout of the same commit passed the Python 3.12
+build, normal wheel all/dev install, pip check and complete artifact identity.
+
+The initial manual build correctly refused a test-generated undeclared runtime
+file after a supervisor reused one checkout for tests and build. That refusal
+is retained; qualification uses a fresh build checkout as canonical separate
+jobs do. No artifact exclusions or validator changes were introduced. The
+composed qualification receipt digest is
+`f7028e85c9eeb31d02dac4c856a16593894ebfc30c5212b0b719b5211706ab42`.
+Registration does not create a tag, publish a package, or authorize another
+runner host. Leaf remote identity checks and protected OIDC publishing remain
+mandatory.
