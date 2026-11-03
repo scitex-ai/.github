@@ -3,6 +3,8 @@
 const {createHash} = require('crypto');
 const OID = /^[0-9a-f]{40}$/;
 const LOGIN = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/;
+const ACTION_LOGIN = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}(?:\[bot\])?$/;
+const MAX_COMMITS = 2000;
 const MODES = new Map([
   ['100644', 'blob'], ['100755', 'blob'], ['120000', 'blob'], ['160000', 'commit'],
 ]);
@@ -73,10 +75,10 @@ function samePull(before, after) {
     before.commits === after.commits;
 }
 
-const PULL_QUERY = `query($owner:String!,$name:String!,$number:Int!) {
+const PULL_QUERY = `query($owner:String!,$name:String!,$number:Int!,$cursor:String) {
   repository(owner:$owner,name:$name) { pullRequest(number:$number) {
-    baseRefOid headRefOid commits(first:100) {
-      totalCount pageInfo { hasNextPage } nodes { commit {
+    baseRefOid headRefOid commits(first:100,after:$cursor) {
+      totalCount pageInfo { hasNextPage endCursor } nodes { commit {
         oid tree { oid }
         author { name user { login databaseId } }
         committer { name user { login databaseId } }
@@ -89,7 +91,8 @@ const PULL_QUERY = `query($owner:String!,$name:String!,$number:Int!) {
 function checkedCommits(before, pull, repo) {
   const connection = pull.commits;
   if (connection.pageInfo.hasNextPage || connection.totalCount !== before.commits ||
-      connection.totalCount > 100 || connection.nodes.length !== connection.totalCount ||
+      !Number.isInteger(connection.totalCount) || connection.totalCount < 0 ||
+      connection.totalCount > MAX_COMMITS || connection.nodes.length !== connection.totalCount ||
       pull.baseRefOid !== before.base.sha || pull.headRefOid !== before.head.sha ||
       before.base.repo.full_name !== repo.owner + '/' + repo.repo) {
     throw new Error('Incomplete or changed PR proof');
@@ -98,6 +101,74 @@ function checkedCommits(before, pull, repo) {
   if (new Set(commits.map(c => c.oid)).size !== commits.length ||
       commits.some(c => !OID.test(c.oid))) throw new Error('Invalid PR commit identities');
   return commits;
+}
+
+function actionIdentity(commit) {
+  // Exactly the pinned action's author-user / committer-user precedence. Raw
+  // names have no attested numeric identity and cannot prove action coverage.
+  const user = commit.author?.user || commit.committer?.user;
+  if (!user || !ACTION_LOGIN.test(user.login || '') ||
+      !Number.isSafeInteger(user.databaseId) || user.databaseId <= 0) {
+    throw new Error('Unknown contributor cannot prove complete CLA coverage');
+  }
+  return user.databaseId + ':' + user.login;
+}
+
+function requireActionCoverage(commits) {
+  if (commits.length <= 100) return;
+  const identities = commits.map(actionIdentity);
+  const logins = new Map();
+  const ids = new Map();
+  for (const identity of identities) {
+    const [id, login] = identity.split(':');
+    if ((logins.has(login) && logins.get(login) !== id) ||
+        (ids.has(id) && ids.get(id) !== login)) {
+      throw new Error('Contributor identity mapping changed during attribution');
+    }
+    logins.set(login, id);
+    ids.set(id, login);
+  }
+  const covered = new Set(identities.slice(0, 100));
+  if (identities.some(identity => !covered.has(identity))) {
+    throw new Error('Pinned CLA action cannot cover every contributor');
+  }
+}
+
+async function completeCommits(before, repo, getPage) {
+  if (!Number.isInteger(before.commits) || before.commits < 0 ||
+      before.commits > MAX_COMMITS) throw new Error('PR exceeds complete attribution budget');
+  let cursor = null;
+  const cursors = new Set();
+  const nodes = [];
+  for (let page = 0; page < 20; page++) {
+    const pull = await getPage(cursor);
+    const connection = pull?.commits;
+    if (!connection || !Array.isArray(connection.nodes) || !connection.pageInfo ||
+        typeof connection.pageInfo.hasNextPage !== 'boolean' ||
+        connection.totalCount !== before.commits ||
+        pull.baseRefOid !== before.base.sha || pull.headRefOid !== before.head.sha ||
+        connection.nodes.length > 100 ||
+        connection.nodes.some(row => !row || !row.commit)) {
+      throw new Error('Incomplete or changed PR page');
+    }
+    nodes.push(...connection.nodes);
+    if (nodes.length > before.commits) throw new Error('PR commit pages exceed declared total');
+    if (!connection.pageInfo.hasNextPage) {
+      const commits = checkedCommits(before, {...pull, commits: {
+        totalCount: connection.totalCount, nodes, pageInfo: {hasNextPage: false},
+      }}, repo);
+      requireActionCoverage(commits);
+      return commits;
+    }
+    const next = connection.pageInfo.endCursor;
+    if (connection.nodes.length !== 100 || typeof next !== 'string' ||
+        !next || next.length > 2048 || cursors.has(next) || nodes.length >= before.commits) {
+      throw new Error('PR cursor did not advance completely');
+    }
+    cursors.add(next);
+    cursor = next;
+  }
+  throw new Error('PR attribution page budget exhausted');
 }
 
 function snapshotFor(before, commits, baselineProtected) {
@@ -114,11 +185,20 @@ async function verifyFinalBinding({github, context, snapshot}) {
   const before = (await github.rest.pulls.get({
     ...repo, pull_number: context.issue.number, request: {timeout: 4000},
   })).data;
-  const data = await github.graphql(PULL_QUERY, {
-    owner: repo.owner, name: repo.repo, number: context.issue.number,
-    request: {timeout: 4000},
+  const deadline = Date.now() + 30000;
+  const commits = await completeCommits(before, repo, async cursor => {
+    if (Date.now() >= deadline) throw new Error('Final attribution deadline exhausted');
+    const data = await github.graphql(PULL_QUERY, {
+      owner: repo.owner, name: repo.repo, number: context.issue.number, cursor,
+      request: {timeout: 4000},
+    });
+    if (Date.now() >= deadline) throw new Error('Final attribution deadline exhausted');
+    return data.repository.pullRequest;
   });
-  const commits = checkedCommits(before, data.repository.pullRequest, repo);
+  const after = (await github.rest.pulls.get({
+    ...repo, pull_number: context.issue.number, request: {timeout: 4000},
+  })).data;
+  if (!samePull(before, after)) throw new Error('PR changed during final attribution');
   const current = snapshotFor(before, commits, snapshot.baselineProtected);
   if (before.state !== 'open' || JSON.stringify(current) !== JSON.stringify(snapshot)) {
     throw new Error('CLA attribution snapshot changed during action');
@@ -154,14 +234,14 @@ async function qualify({github, context, core, ownerAllowlist}) {
       context.payload.pull_request.head.sha !== before.head.sha) {
     throw new Error('Triggered PR head no longer current');
   }
-  if (++calls > 48) throw new Error('Proof budget exhausted');
-  const data = await github.graphql(PULL_QUERY, {
-    owner: repo.owner, name: repo.repo, number, request: {timeout: 4000},
+  const commits = await completeCommits(before, repo, async cursor => {
+    if (++calls > 48 || Date.now() >= deadline) throw new Error('Proof budget exhausted');
+    const data = await github.graphql(PULL_QUERY, {
+      owner: repo.owner, name: repo.repo, number, cursor, request: {timeout: 4000},
+    });
+    if (Date.now() >= deadline) throw new Error('Proof deadline exhausted');
+    return data.repository.pullRequest;
   });
-  const pull = data.repository.pullRequest;
-  // The pinned action reads only its first 100 commits. Never label a truncated
-  // actor set as complete, even if that first page contains a transport merge.
-  const commits = checkedCommits(before, pull, repo);
   const proofs = new Map();
   const treeCache = new Map();
   async function getTree(oid) {
@@ -217,4 +297,5 @@ async function qualify({github, context, core, ownerAllowlist}) {
 }
 
 module.exports = {leafTree, isBaselineTransport, attributedLogin, transportOnlyLogins,
-  samePull, checkedCommits, snapshotFor, verifyFinalBinding, qualify};
+  samePull, checkedCommits, snapshotFor, verifyFinalBinding, qualify,
+  actionIdentity, requireActionCoverage, completeCommits};
