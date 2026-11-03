@@ -1,6 +1,6 @@
-"""Prototype central stdlib release identity ports, with explicit owner policy.
+"""Central stdlib release identity ports, with explicit reviewed owner policy.
 
-Not a registered publisher or image profile. The source/file ports perform
+Neither the library nor its registered-owner CLI authorizes a publisher/image profile. The source/file ports perform
 archive checks before source comparison. Callers retain immutable tag/member admission around
 these pure operations; this package cannot mint credentials or upload files.
 """
