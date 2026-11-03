@@ -225,7 +225,7 @@ jobs:
             const response = await github.rest.repos.getContent({
               owner: 'scitex-ai', repo: '.github',
               path: '.github/cla/baseline-transports.js',
-              ref: '1e64686acfceffb51df56ce713ea2607d46ff308',
+              ref: '7a31defc4233226ea0a593ae3b7b3ad368d18b1c',
               request: {timeout: 4000},
             });
             const source = response.data;
@@ -233,9 +233,9 @@ jobs:
               throw new Error('Trusted CLA helper source unavailable');
             }
             const bytes = Buffer.from(source.content, 'base64');
-            if (bytes.length !== 13143 ||
+            if (bytes.length !== 13218 ||
                 require('crypto').createHash('sha256').update(bytes).digest('hex') !==
-                  '4b3b8abe5762e6e0fa64dd379382627005dbeb9a903ab5d5f7727f73643cf7f0') {
+                  '142d3bd3f7e44a21cc1a084fc9d6b922d8b8ba0c7b530a50ef17b608b470e540') {
               throw new Error('Trusted CLA helper source mismatch');
             }
             const helper = {exports: {}};
@@ -284,7 +284,7 @@ jobs:
             const response = await github.rest.repos.getContent({
               owner: 'scitex-ai', repo: '.github',
               path: '.github/cla/baseline-transports.js',
-              ref: '1e64686acfceffb51df56ce713ea2607d46ff308',
+              ref: '7a31defc4233226ea0a593ae3b7b3ad368d18b1c',
               request: {timeout: 4000},
             });
             const source = response.data;
@@ -292,9 +292,9 @@ jobs:
               throw new Error('Trusted CLA helper source unavailable');
             }
             const bytes = Buffer.from(source.content, 'base64');
-            if (bytes.length !== 13143 ||
+            if (bytes.length !== 13218 ||
                 require('crypto').createHash('sha256').update(bytes).digest('hex') !==
-                  '4b3b8abe5762e6e0fa64dd379382627005dbeb9a903ab5d5f7727f73643cf7f0') {
+                  '142d3bd3f7e44a21cc1a084fc9d6b922d8b8ba0c7b530a50ef17b608b470e540') {
               throw new Error('Trusted CLA helper source mismatch');
             }
             const helper = {exports: {}};
