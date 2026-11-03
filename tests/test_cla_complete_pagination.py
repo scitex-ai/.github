@@ -28,6 +28,8 @@ if (input.mutation==='covered-late-actor') {
 if (input.mutation==='attested-bot') {
  rows[2].commit.author.user={login:'github-actions[bot]',databaseId:41898282};
 }
+if (input.mutation==='first-page-login-id-conflict')rows[0].commit.author.user.databaseId=2;
+if (input.mutation==='first-page-id-login-conflict')rows[0].commit.author.user.login='renamed-user';
 let calls=0;
 const page=async cursor=>{
  const start=cursor===null?0:Number(cursor.slice(1));
@@ -93,6 +95,11 @@ class CompletePaginationTests(unittest.TestCase):
 
     def test_attested_github_bot_is_part_of_the_existing_action_identity_set(self):
         self.assertTrue(self.collect(624, 'attested-bot')['accepted'])
+
+    def test_action_name_dedup_cannot_hide_a_second_numeric_identity(self):
+        for mutation in ['first-page-login-id-conflict', 'first-page-id-login-conflict']:
+            with self.subTest(mutation=mutation):
+                self.assertFalse(self.collect(101, mutation)['accepted'])
 
     def test_resource_limit_refuses_before_the_transport_is_called(self):
         observed = self.collect(2001)

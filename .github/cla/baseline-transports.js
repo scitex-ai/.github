@@ -116,8 +116,20 @@ function actionIdentity(commit) {
 
 function requireActionCoverage(commits) {
   if (commits.length <= 100) return;
-  const covered = new Set(commits.slice(0, 100).map(actionIdentity));
-  if (commits.some(commit => !covered.has(actionIdentity(commit)))) {
+  const identities = commits.map(actionIdentity);
+  const logins = new Map();
+  const ids = new Map();
+  for (const identity of identities) {
+    const [id, login] = identity.split(':');
+    if ((logins.has(login) && logins.get(login) !== id) ||
+        (ids.has(id) && ids.get(id) !== login)) {
+      throw new Error('Contributor identity mapping changed during attribution');
+    }
+    logins.set(login, id);
+    ids.set(id, login);
+  }
+  const covered = new Set(identities.slice(0, 100));
+  if (identities.some(identity => !covered.has(identity))) {
     throw new Error('Pinned CLA action cannot cover every contributor');
   }
 }
