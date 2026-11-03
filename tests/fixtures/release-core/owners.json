@@ -269,5 +269,42 @@
         "hatchling"
       ]
     }
+  },
+  {
+    "key": "scholar",
+    "repository": "scitex-ai/scitex-scholar",
+    "commit": "6f8f26cc63a60ef3e09a37c916004672466e072f",
+    "distribution": "scitex-scholar",
+    "package": "scitex_scholar",
+    "source_mappings": [
+      [
+        "src/scitex_scholar/",
+        "scitex_scholar/"
+      ]
+    ],
+    "required_members": [
+      "scitex_scholar/__init__.py",
+      "scitex_scholar/_django/manifest.json",
+      "scitex_scholar/_django/urls.py",
+      "scitex_scholar/_django/templates/scholar/scholar.html"
+    ],
+    "omitted_paths": [],
+    "omitted_prefixes": [],
+    "forbidden_sdist_paths": [],
+    "reviewed_build": {
+      "targets": {
+        "wheel": {
+          "packages": [
+            "src/scitex_scholar"
+          ]
+        }
+      }
+    },
+    "reviewed_backend": {
+      "build-backend": "hatchling.build",
+      "requires": [
+        "hatchling"
+      ]
+    }
   }
 ]

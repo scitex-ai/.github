@@ -7,7 +7,8 @@ import tarfile
 from pathlib import Path
 
 import pytest
-from _release_core_fixtures import OWNERS, build_owner, git
+from _release_core_fixtures import OWNERS, build_owner, build_workspace, git
+from contextlib import ExitStack
 
 from release_core import (
     sdist_identity,
@@ -17,17 +18,15 @@ from release_core import (
 
 
 @pytest.fixture(scope="module")
-def built_owners(tmp_path_factory):
+def built_owners():
     built = {}
-
-    def get(record):
-        if record["key"] not in built:
-            built[record["key"]] = build_owner(
-                record, tmp_path_factory.mktemp("release-core-" + record["key"])
-            )
-        return built[record["key"]]
-
-    return get
+    with ExitStack() as stack:
+        def get(record):
+            if record["key"] not in built:
+                root = stack.enter_context(build_workspace(record["key"]))
+                built[record["key"]] = build_owner(record, root)
+            return built[record["key"]]
+        yield get
 
 
 @pytest.fixture(scope="module", params=OWNERS, ids=[row["key"] for row in OWNERS])

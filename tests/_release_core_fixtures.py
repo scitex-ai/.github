@@ -1,6 +1,8 @@
 """Build real immutable public leaf sources; no synthetic package payloads."""
 
 import json
+from contextlib import contextmanager
+import tempfile
 import subprocess
 import sys
 from pathlib import Path
@@ -47,6 +49,18 @@ def policy(record):
         ReviewedSdistLink(**x) for x in data.get("reviewed_sdist_links", [])
     )
     return PackagePolicy(**data)
+
+
+@contextmanager
+def build_workspace(label):
+    """Owned normal-build roots outside an ambient ignored cache ancestor.
+
+    Hatch discards VCS exclusion rules when the absolute project root matches
+    one of them. A user TMPDIR beneath .cache must not mask missing payloads.
+    Public-source fixtures contain no credentials and are removed on teardown.
+    """
+    with tempfile.TemporaryDirectory(prefix="scitex-release-core-" + label + "-", dir="/tmp") as root:
+        yield Path(root)
 
 
 def build_owner(record, root):
