@@ -137,8 +137,9 @@ jobs:
             }
 
             function registeredReleasePlan(profile, repository, eventName, native, operation, sourceCommit, releaseTag, registration, leafSources) {
-              requireContract(['writer', 'io'].includes(profile), 'release-profile-refused');
-              requireContract(repository === 'scitex-ai/scitex-' + profile, profile + '-repository-refused');
+              const repositories = {writer: 'scitex-ai/scitex-writer', io: 'scitex-ai/scitex-io', scholar: 'scitex-ai/scitex-scholar'};
+              requireContract(Object.hasOwn(repositories, profile), 'release-profile-refused');
+              requireContract(repository === repositories[profile], profile + '-repository-refused');
               requireContract(['push', 'workflow_dispatch'].includes(eventName), profile + '-release-event-refused');
               requireContract(native === true, profile + '-release-membership-required');
               requireContract(['test', 'build'].includes(operation), profile + '-release-operation-refused');
@@ -158,11 +159,15 @@ jobs:
                    '.github/ci/with-test-postgres.py', '.github/ci/writer_ci_postgres.py',
                    '.github/ci/build-in-sif.sh', '.github/ci/publish-in-sif.sh',
                    '.github/ci/release-identity.py']
-                : ['.github/ci/exec-in-sif.sh', '.github/ci/release-context.sh',
+                : profile === 'io' ? ['.github/ci/exec-in-sif.sh', '.github/ci/release-context.sh',
                    '.github/ci/run-in-sif.sh', '.github/ci/build-in-sif.sh',
                    '.github/ci/publish-in-sif.sh', '.github/ci/release-identity.py',
                    '.github/ci/_release_artifacts.py', '.github/ci/_release_source.py',
-                   '.github/ci/probe-first-observer.py', '.github/ci/io_test_store.py'];
+                   '.github/ci/probe-first-observer.py', '.github/ci/io_test_store.py']
+                : ['.github/ci/exec-in-sif.sh', '.github/ci/release-context.sh',
+                   '.github/ci/run-in-sif.sh', '.github/ci/build-in-sif.sh',
+                   '.github/ci/release-identity.py', '.github/ci/with-test-postgres.py',
+                   '.github/ci/probe-first-observer.py', '.github/ci/setup-node-owned.sh'];
               requireContract(exactKeys(leafSources, sourceNames)
                 && sourceNames.every(path => digest(leafSources[path])), profile + '-source-closure-unregistered');
 
@@ -219,9 +224,19 @@ jobs:
                 sourceCommit, releaseTag, registration, IO_LEAF_SOURCES);
               return {...plan, pytestWorkers: IO_PYTEST_WORKERS};
             }
+            // Source protocol is reviewable before native qualification. Null
+            // registration cannot schedule Scholar tests/builds or publishing.
+            const SCHOLAR_REGISTRATION = null;
+            const SCHOLAR_LEAF_SOURCES = Object.freeze({});
+            function scholarPlan(repository, eventName, native, operation, sourceCommit, releaseTag, registration = SCHOLAR_REGISTRATION) {
+              const plan = registeredReleasePlan('scholar', repository, eventName, native, operation,
+                sourceCommit, releaseTag, registration, SCHOLAR_LEAF_SOURCES);
+              return {...plan, pytestWorkers: 4};
+            }
             function leafReleasePlan(repository, ...args) {
               if (repository === 'scitex-ai/scitex-writer') return writerPlan(repository, ...args);
               if (repository === 'scitex-ai/scitex-io') return ioPlan(repository, ...args);
+              if (repository === 'scitex-ai/scitex-scholar') return scholarPlan(repository, ...args);
               throw new Error('release-repository-refused');
             }
                         // END WRITER_RELEASE_CONTRACT

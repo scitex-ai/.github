@@ -75,3 +75,27 @@ def test_writer_compatibility_caller_forwards_exact_original_inputs():
 def test_writer_dispatch_retains_qualified_original_profile():
     result=dispatch(repository='scitex-ai/scitex-writer',tag='v2.43.17')
     assert result['plan'] == writer.run_policy(tag='v2.43.17',registration='production')['plan']
+
+
+def test_scholar_source_protocol_refuses_unqualified_native_registration():
+    assert dispatch(repository='scitex-ai/scitex-scholar', tag='v1.29.1')['reason'] == 'scholar-runtime-unregistered'
+
+
+def test_scholar_nonmember_remains_refused_before_registration():
+    assert dispatch(repository='scitex-ai/scitex-scholar', native=False)['reason'] == 'scholar-release-membership-required'
+
+
+def test_scholar_fork_cannot_reach_registration():
+    assert dispatch(repository='scitex-ai/scitex-scholar', event='pull_request')['reason'] == 'scholar-release-event-refused'
+
+
+def test_scholar_unsupported_operation_is_refused():
+    assert dispatch(repository='scitex-ai/scitex-scholar', operation='publish')['reason'] == 'scholar-release-operation-refused'
+
+
+def test_scholar_floating_source_is_refused():
+    assert dispatch(repository='scitex-ai/scitex-scholar', source='develop')['reason'] == 'scholar-source-commit-refused'
+
+
+def test_scholar_tag_injection_is_refused():
+    assert dispatch(repository='scitex-ai/scitex-scholar', tag='v1.29.1; false')['reason'] == 'scholar-release-tag-refused'

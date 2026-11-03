@@ -1,9 +1,10 @@
-# Release identity core: unregistered prototype
+# Release identity core and registered owner checks
 
 `release_core` is a stdlib-only archive/source verification port for Python 3.11+.
 It does not authorize a release, register an image/profile, resolve an immutable
-remote tag, mint credentials, or upload artifacts. No existing leaf publisher
-or dispatcher consumes it yet. The leaf-owned publication job must retain its
+remote tag, mint credentials, or upload artifacts. Writer and IO retain their existing identity adapters; the explicit Scholar owner
+port is prepared for a thin pinned leaf adapter. Its native image/source profile
+remains refused until actual full qualification is registered. The leaf-owned publication job must retain its
 PyPI Trusted Publisher workflow identity.
 
 The core extracts the qualified Writer/IO wheel, RECORD, sdist and generated
@@ -13,8 +14,10 @@ required payloads, complete reviewed Hatch backend/build configuration and
 omissions. The repository is not inferred from a `scitex-` prefix. A policy
 belongs to a pinned reviewed registry; it must never come from request inputs.
 The owner records under `tests/fixtures/release-core` are test fixtures, not
-production registrations. `DEFAULT_REGISTRY` is empty and refuses every
-owner. `PolicyRegistry` accepts only an explicit immutable tuple of unique owner
+production registrations. `DEFAULT_REGISTRY` remains empty and refuses every
+owner. The separate `release_core.registered.RELEASE_REGISTRY` contains the
+reviewed Scholar package mapping only; this read-only identity policy does not
+register its native image, admit a tag or grant publication. `PolicyRegistry` accepts only an explicit immutable tuple of unique owner
 policies and resolves exact repository strings; there is no prefix guess or
 implicit FigRecipe mode. Policy mappings/path selections are immutable tuples.
 
@@ -84,3 +87,25 @@ Before activation, the owner must review this prototype, qualify the complete
 immutable core/policy source closure, preserve the existing tag/admission and
 OIDC lifecycle controls, and separately qualify each leaf's actual image,
 frontend and runtime. There is no publication shortcut in this change.
+
+
+## Pinned Scholar command port
+
+Fetch the reviewed immutable central commit into an owned source directory and
+verify the complete `release_core/*.py` source closure before importing it. The
+leaf retains its remote tag/main/membership/runtime/OIDC guards and calls:
+
+```bash
+PYTHONPATH=/owned/pinned-central python -m release_core verify-files \
+  --repository scitex-ai/scitex-scholar --commit <resolved40> \
+  --source-root /owned/leaf-source --wheel /owned/dist/package.whl \
+  --sdist /owned/dist/package.tar.gz
+```
+
+The command resolves an exact central-owned policy, checks actual regular files,
+RECORD, source membership/bytes and complete reviewed Hatch configuration, and
+prints the source-bound artifact proof. Repeat it immediately before upload and
+compare the proof. No policy, import mapping or omission list comes from the
+request/leaf artifacts. The algorithm fixture includes immutable public Scholar
+1.29.0; that proves archive behavior and does not claim the forthcoming1.29.1
+favicon correction or native release is already qualified/published.
