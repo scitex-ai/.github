@@ -273,7 +273,7 @@
   {
     "key": "scholar",
     "repository": "scitex-ai/scitex-scholar",
-    "commit": "d6d5f8ecb9ce4a57000013a8c5943bf7e2b4018e",
+    "commit": "6f8f26cc63a60ef3e09a37c916004672466e072f",
     "distribution": "scitex-scholar",
     "package": "scitex_scholar",
     "source_mappings": [

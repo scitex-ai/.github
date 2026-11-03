@@ -106,6 +106,9 @@ The command resolves an exact central-owned policy, checks actual regular files,
 RECORD, source membership/bytes and complete reviewed Hatch configuration, and
 prints the source-bound artifact proof. Repeat it immediately before upload and
 compare the proof. No policy, import mapping or omission list comes from the
-request/leaf artifacts. The algorithm fixture includes immutable public Scholar
-1.29.0; that proves archive behavior and does not claim the forthcoming1.29.1
-favicon correction or native release is already qualified/published.
+request/leaf artifacts. The positive algorithm fixture uses immutable public Git candidate Scholar1.29.1
+(6f8f26cc), not a claimed PyPI publication. The genuine1.29.0 Git/Hatch build
+is a required negative control: its ignore rules omit a tracked favicon SVG.
+Owned build fixtures use OS /tmp roots so an ambient .cache/TMPDIR ancestor
+cannot cause Hatch to silently discard those ignore rules. Native qualification
+and publication remain separate mandatory gates.

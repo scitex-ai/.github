@@ -7,16 +7,17 @@ import sys
 
 import pytest
 
-from _release_core_fixtures import OWNERS, build_owner, policy
+from _release_core_fixtures import OWNERS, build_owner, build_workspace, policy
 from release_core.registered import RELEASE_REGISTRY, SCHOLAR_POLICY
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(scope="module")
-def scholar(tmp_path_factory):
+def scholar():
     record = next(row for row in OWNERS if row["key"] == "scholar")
-    return build_owner(record, tmp_path_factory.mktemp("registered-scholar"))
+    with build_workspace("registered-scholar") as root:
+        yield build_owner(record, root)
 
 
 def test_registered_policy_matches_reviewed_actual_hatch_source():
@@ -51,3 +52,28 @@ def test_registered_cli_rejects_artifact_byte_tampering(scholar, tmp_path):
     args[args.index("--wheel") + 1] = str(changed)
     actual = subprocess.run(args, cwd=ROOT, capture_output=True, text=True, timeout=30)
     assert actual.returncode != 0 and "wheel public source bytes differ" in actual.stderr
+
+
+def test_legacy_1290_normal_build_is_rejected_for_missing_tracked_svg():
+    import zipfile
+    from release_core import source_payload_identity
+    from _release_core_fixtures import git
+
+    record = dict(next(row for row in OWNERS if row["key"] == "scholar"))
+    record["commit"] = "d6d5f8ecb9ce4a57000013a8c5943bf7e2b4018e"
+    with build_workspace("legacy-scholar-1290") as root:
+        owner = build_owner(record, root)
+        expected = {row.removeprefix("src/") for row in git(owner["source"], "ls-tree", "-r", "--name-only", "HEAD", "--", "src/scitex_scholar").splitlines()}
+        with zipfile.ZipFile(next(owner["output"].glob("*.whl"))) as wheel:
+            actual = {name for name in wheel.namelist() if name.startswith("scitex_scholar/") and not name.endswith("/")}
+        assert expected - actual == {"scitex_scholar/_django/static/scholar/img/scitex-favicon-official.svg"} and not actual - expected
+        with pytest.raises(ValueError, match="whole wheel public source membership differs"):
+            source_payload_identity(owner["wheel"], owner["sdist"], owner["commit"], owner["policy"], source_root=owner["source"])
+
+
+def test_build_workspace_does_not_inherit_ignored_cache_ancestor(monkeypatch, tmp_path):
+    cache = tmp_path / ".cache"
+    cache.mkdir()
+    monkeypatch.setenv("TMPDIR", str(cache))
+    with build_workspace("cache-independent") as root:
+        assert root.parent == Path("/tmp") and ".cache" not in root.parts

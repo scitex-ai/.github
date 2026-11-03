@@ -5,7 +5,7 @@ import sys
 
 import pytest
 from _release_core_archives import pack_wheel, wheel_files
-from _release_core_fixtures import OWNERS, build_owner
+from _release_core_fixtures import OWNERS, build_owner, build_workspace
 
 from release_core import source_payload_identity
 
@@ -15,21 +15,18 @@ from release_core import source_payload_identity
     params=[row for row in OWNERS if row["key"] in {"writer", "io"}],
     ids=lambda row: row["key"],
 )
-def reference_owner(request, tmp_path_factory):
-    owner = build_owner(
-        request.param,
-        tmp_path_factory.mktemp("release-core-reference-" + request.param["key"]),
-    )
-    path = owner["source"] / ".github/ci/release-identity.py"
-    spec = importlib.util.spec_from_file_location(
-        "qualified_reference_" + request.param["key"], path
-    )
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    owner["reference"] = module
-    return owner
-
+def reference_owner(request):
+    with build_workspace("reference-" + request.param["key"]) as root:
+        owner = build_owner(request.param, root)
+        path = owner["source"] / ".github/ci/release-identity.py"
+        spec = importlib.util.spec_from_file_location(
+            "qualified_reference_" + request.param["key"], path
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        owner["reference"] = module
+        yield owner
 
 def test_actual_legacy_verifier_and_shared_port_accept_the_same_whole_source(
     reference_owner,
