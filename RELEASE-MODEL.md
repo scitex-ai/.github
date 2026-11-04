@@ -43,16 +43,16 @@ audited implementation instead of 45 drifting copies, running the org
 it is trading a working local gate for a shared one — a real benefit, but not
 a hole being closed. Weigh it on that basis.
 
-The findings that remain genuinely open, and are **not** fixed by this file:
+The 2026-08-12 audit also recorded these historical findings. They are
+not a current protection or repository-health inventory:
 
-- **3 repos publish to PyPI with no test job upstream of the publish job** —
-  `claude-code-telegrammer`, `scitex-orochi`, `scitex-pd`. This is the actual
+- **3 repos then published to PyPI with no upstream test job** —
+  `claude-code-telegrammer`, `scitex-orochi`, `scitex-pd`. This was the
   instance of the hazard originally claimed for 45.
-- **`scitex-python` has no branch protection on `main`.**
-- For the other 44, the required contexts that `--admin` bypasses are the same
-  `pytest-matrix` checks the release workflow already ran, so the bypass
-  changes little in practice — but it does mean the merge commit itself is
-  never independently verified.
+- **`scitex-python` then had no branch protection on `main`.**
+- The historical inline admin merges bypassed branch protection even when
+  their own upstream tests passed. This shared helper now uses a normal
+  expected-head merge; adopting it does not remove protection from the leaf.
 
 ## The flow
 
@@ -84,11 +84,14 @@ git tag vX.Y.Z && git push origin vX.Y.Z
  └──────────────────────────────────────────────────────────────┘
 ```
 
-`gh pr merge --admin` inside `promote` bypasses required **review** — nobody
-reviews an automated same-commit promotion — **not** required checks. The
-checks already ran, in this DAG, ahead of the merge. That distinction is the
-entire reason this design satisfies the ruling, and it is pinned by
-`tests/test_release_gate.py`.
+The shared helper keeps tag CI upstream of promotion and uses
+`gh pr merge --merge --match-head-commit "$TAG_SHA"` without `--admin`.
+Normal required reviews and checks still apply; a blocked merge stops the
+release rather than bypassing protection. If the tag is already contained
+in `main`, promotion skips even when `develop` has advanced. Otherwise,
+`develop` must equal the qualified tag before creating/reusing the PR; the
+expected-head merge also refuses a later race. The merged result must still
+contain the original tag commit before publication can proceed.
 
 ## Why the publish half is NOT centralised
 
