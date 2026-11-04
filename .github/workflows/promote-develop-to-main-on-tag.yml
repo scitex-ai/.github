@@ -41,10 +41,11 @@ name: promote-develop-to-main-on-tag
 # branch protections and refuses a develop head that differs from that tag.
 # The caller still verifies tag containment before publishing.
 #
-# The residual findings that ARE real, and are not this file's job:
-#   - 3 repos publish to PyPI with no test job upstream of the publish job
+# Historical residual findings from the 2026-08-12 audit (not a current
+# protection or repository-health inventory):
+#   - 3 repos then published to PyPI with no upstream test job
 #     (claude-code-telegrammer, scitex-orochi, scitex-pd).
-#   - scitex-python has NO branch protection on `main` at all.
+#   - scitex-python then had no branch protection on `main`.
 #
 # WHY A REUSABLE (not just documented triggers) — the DECISION, stated:
 #   The caller sequences this ahead of its own build/publish jobs with a

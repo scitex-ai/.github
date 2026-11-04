@@ -43,12 +43,13 @@ audited implementation instead of 45 drifting copies, running the org
 it is trading a working local gate for a shared one — a real benefit, but not
 a hole being closed. Weigh it on that basis.
 
-The findings that remain genuinely open, and are **not** fixed by this file:
+The 2026-08-12 audit also recorded these historical findings. They are
+not a current protection or repository-health inventory:
 
-- **3 repos publish to PyPI with no test job upstream of the publish job** —
-  `claude-code-telegrammer`, `scitex-orochi`, `scitex-pd`. This is the actual
+- **3 repos then published to PyPI with no upstream test job** —
+  `claude-code-telegrammer`, `scitex-orochi`, `scitex-pd`. This was the
   instance of the hazard originally claimed for 45.
-- **`scitex-python` has no branch protection on `main`.**
+- **`scitex-python` then had no branch protection on `main`.**
 - The historical inline admin merges bypassed branch protection even when
   their own upstream tests passed. This shared helper now uses a normal
   expected-head merge; adopting it does not remove protection from the leaf.
