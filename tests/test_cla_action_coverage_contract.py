@@ -20,23 +20,33 @@ class ActionCoverageContractTests(unittest.TestCase):
         observed = self.run_case(actionRef=LEGACY, mutation='late-actor')
         self.assertFalse(observed['accepted'])
         self.assertEqual(observed['error'], 'Pinned CLA action cannot cover every contributor')
+        legacy = self.run_case(actionRef=LEGACY, mutation='all-author-user-missing', cap=665)
+        self.assertTrue(legacy['accepted'])
 
     def test_reviewed_full_collector_covers_late_identity_only_after_complete_proof(self):
         complete = self.run_case(actionRef=FULL, mutation='late-actor')
         self.assertEqual((complete['accepted'], complete['count']), (True, 665))
         self.assertEqual(complete['calls']['compare'], 7)
         self.assertEqual(complete['calls']['objects'], 7)
+        direct = self.run_case(actionRef=FULL, mutation='late-actor', cap=665)
+        self.assertEqual((direct['accepted'], direct['count']), (True, 665))
         refused = self.run_case(actionRef=FULL, mutation='late-actor', fallback=False)
         self.assertFalse(refused['accepted'])
 
     def test_full_contract_still_refuses_unsupported_or_conflicting_identity(self):
-        for mutation in ['late-reused-login', 'late-reused-id', 'late-unknown',
-                         'all-author-user-missing']:
+        for mutation in ['late-reused-login', 'late-reused-id', 'late-unknown']:
             with self.subTest(mutation=mutation):
                 self.assertFalse(self.run_case(actionRef=FULL, mutation=mutation)['accepted'])
+        for cap in [250, 665]:
+            for mutation in ['all-author-user-missing', 'all-committer-user-missing',
+                             'all-author-name-missing']:
+                with self.subTest(cap=cap, mutation=mutation):
+                    self.assertFalse(self.run_case(actionRef=FULL, mutation=mutation,
+                                                   cap=cap)['accepted'])
         script = """
 const m=require(process.argv[1]);
-const bad={author:{user:null},committer:{user:null}};
+const bad={oid:'a'.repeat(40),tree:{oid:'b'.repeat(40)},parents:{totalCount:0,nodes:[]},
+ author:{name:'Unlinked author',user:null},committer:{name:'Raw committer',user:null}};
 try{m.requireActionCoverage([bad],m.FULL_ACTION_REF);process.stdout.write('accepted');}
 catch(e){process.stdout.write(e.message);}
 """

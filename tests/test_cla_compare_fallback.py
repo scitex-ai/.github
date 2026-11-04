@@ -27,6 +27,8 @@ if(input.mutation==='covered-late-actor'){
 }
 if(input.mutation==='snapshot-attribution') rows.forEach(c=>{c.author.name='Changed name';});
 if(input.mutation==='all-author-user-missing')rows.forEach(c=>{delete c.author.user;});
+if(input.mutation==='all-committer-user-missing')rows.forEach(c=>{delete c.committer.user;});
+if(input.mutation==='all-author-name-missing')rows.forEach(c=>{delete c.author.name;});
 if(input.mutation==='all-author-user-null')rows.forEach(c=>{c.author.user=null;});
 if(input.currentSnapshot)snapshot=m.snapshotFor(before,ordered(),true,input.snapshotActionRef??input.actionRef);
 if(input.mutation==='snapshot-contract')snapshot.action=m.actionCoverageContract(m.LEGACY_ACTION_REF);

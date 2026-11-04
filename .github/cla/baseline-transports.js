@@ -182,6 +182,7 @@ function requireActionCoverage(commits, actionRef = LEGACY_ACTION_REF) {
   if (!Array.isArray(commits) || !commits.length || commits.length > MAX_COMMITS) {
     throw new Error('Invalid complete CLA action coverage count');
   }
+  if (contract.coverage === 'full-immutable-pr-attribution-v1') commits.forEach(commitProof);
   const identities = commits.map(actionIdentity);
   const logins = new Map();
   const ids = new Map();
