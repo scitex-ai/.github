@@ -366,7 +366,7 @@ class WorkflowPreservationTests(unittest.TestCase):
         self.assertEqual(len(helpers), 2)
         for step in helpers:
             script = step["with"]["script"]
-            self.assertIn("ref: '217e02e327617550fac8fdc29c1bc386ff2612b4'", script)
+            self.assertIn("ref: '8af3254b1b66e668c8e1e1ddbbb160aad8fdb5d0'", script)
             self.assertIn("actionRef: 'scitex-ai/github-action@6a20f5856a730d19a19b3130fe94c7af8a3a9ba8'", script)
             self.assertIn(str(len(body)), script)
             self.assertIn(hashlib.sha256(body).hexdigest(), script)
