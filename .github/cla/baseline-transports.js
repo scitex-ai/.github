@@ -88,6 +88,110 @@ const PULL_QUERY = `query($owner:String!,$name:String!,$number:Int!,$cursor:Stri
   } }
 }`;
 
+// REST supplies only the complete object-ID inventory. Contributor identities,
+// trees and parents still come from exactly the original GraphQL Commit fields.
+const COMMIT_OBJECTS_QUERY = `query($ids:[ID!]!) { nodes(ids:$ids) {
+  ... on Commit {
+    oid tree { oid }
+    author { name user { login databaseId } }
+    committer { name user { login databaseId } }
+    parents(first:3) { totalCount nodes { oid tree { oid } } }
+  }
+} }`;
+
+function checkCommitGraph(commits, head) {
+  const byOid = new Map(commits.map(commit => [commit.oid, commit]));
+  if (byOid.size !== commits.length || !byOid.has(head)) {
+    throw new Error('Incomplete comparison commit graph');
+  }
+  for (const commit of commits) {
+    if (!OID.test(commit.oid) || !OID.test(commit.tree?.oid) ||
+        !Number.isInteger(commit.parents?.totalCount) ||
+        commit.parents.totalCount < 0 || commit.parents.totalCount > 3 ||
+        !Array.isArray(commit.parents.nodes) ||
+        commit.parents.nodes.length !== commit.parents.totalCount) {
+      throw new Error('Incomplete comparison parent/tree proof');
+    }
+    const parents = new Set();
+    for (const parent of commit.parents.nodes) {
+      if (!OID.test(parent.oid) || !OID.test(parent.tree?.oid) ||
+          parent.oid === commit.oid || parents.has(parent.oid) ||
+          (byOid.has(parent.oid) && byOid.get(parent.oid).tree.oid !== parent.tree.oid)) {
+        throw new Error('Inconsistent comparison parent/tree proof');
+      }
+      parents.add(parent.oid);
+    }
+  }
+  const visiting = new Set();
+  const visited = new Set();
+  function visit(oid) {
+    if (!byOid.has(oid) || visited.has(oid)) return;
+    if (visiting.has(oid)) throw new Error('Cyclic comparison commit graph');
+    visiting.add(oid);
+    for (const parent of byOid.get(oid).parents.nodes) visit(parent.oid);
+    visiting.delete(oid);
+    visited.add(oid);
+  }
+  visit(head);
+  if (visited.size !== commits.length) throw new Error('Disconnected comparison commits');
+}
+
+async function comparisonCommits(before, prefix, getPage, getObjects) {
+  if (!Number.isInteger(before.commits) || before.commits < 1 ||
+      before.commits > MAX_COMMITS || !OID.test(before.base.sha) || !OID.test(before.head.sha)) {
+    throw new Error('Invalid comparison attribution budget or binding');
+  }
+  const inventory = [];
+  const oids = new Set();
+  const ids = new Set();
+  for (let page = 1; inventory.length < before.commits && page <= 20; page++) {
+    const result = await getPage(page);
+    const expected = Math.min(100, before.commits - inventory.length);
+    if (result?.total_commits !== before.commits ||
+        result.base_commit?.sha !== before.base.sha ||
+        !Array.isArray(result.commits) || result.commits.length !== expected) {
+      throw new Error('Incomplete comparison inventory');
+    }
+    for (const commit of result.commits) {
+      if (!OID.test(commit.sha) || typeof commit.node_id !== 'string' ||
+          !commit.node_id || commit.node_id.length > 2048 ||
+          /[\s\x00-\x1f\x7f]/.test(commit.node_id) ||
+          oids.has(commit.sha) || ids.has(commit.node_id)) {
+        throw new Error('Invalid comparison commit identities');
+      }
+      oids.add(commit.sha);
+      ids.add(commit.node_id);
+      inventory.push({oid: commit.sha, id: commit.node_id});
+    }
+  }
+  if (inventory.length !== before.commits ||
+      prefix.some(row => !oids.has(row.commit.oid))) {
+    throw new Error('Comparison does not match PR commit prefix');
+  }
+  const commits = [];
+  for (let offset = 0; offset < inventory.length; offset += 100) {
+    const batch = inventory.slice(offset, offset + 100);
+    const result = await getObjects(batch.map(commit => commit.id));
+    if (!Array.isArray(result.nodes) || result.nodes.length !== batch.length ||
+        result.nodes.some((commit, index) => commit?.oid !== batch[index].oid)) {
+      throw new Error('Incomplete comparison GraphQL objects');
+    }
+    commits.push(...result.nodes);
+  }
+  const attested = new Map(commits.map(commit => [commit.oid, commit]));
+  if (prefix.some(row => JSON.stringify(row.commit) !== JSON.stringify(attested.get(row.commit.oid)))) {
+    throw new Error('Comparison changed attested PR commit proof');
+  }
+  // The compare endpoint and PR connection need not order merges identically.
+  // Preserve the original PR prefix (especially the action's first 100 people),
+  // rather than replacing it with the REST comparison's order.
+  const prefixOids = new Set(prefix.map(row => row.commit.oid));
+  const ordered = [...prefix.map(row => attested.get(row.commit.oid)),
+    ...commits.filter(commit => !prefixOids.has(commit.oid))];
+  checkCommitGraph(ordered, before.head.sha);
+  return ordered;
+}
+
 function checkedCommits(before, pull, repo) {
   const connection = pull.commits;
   if (connection.pageInfo.hasNextPage || connection.totalCount !== before.commits ||
@@ -134,7 +238,7 @@ function requireActionCoverage(commits) {
   }
 }
 
-async function completeCommits(before, repo, getPage) {
+async function completeCommits(before, repo, getPage, getComparison) {
   if (!Number.isInteger(before.commits) || before.commits < 0 ||
       before.commits > MAX_COMMITS) throw new Error('PR exceeds complete attribution budget');
   let cursor = null;
@@ -154,6 +258,21 @@ async function completeCommits(before, repo, getPage) {
     nodes.push(...connection.nodes);
     if (nodes.length > before.commits) throw new Error('PR commit pages exceed declared total');
     if (!connection.pageInfo.hasNextPage) {
+      // GitHub's PR commit connection ends at 250 even when totalCount is
+      // larger. Other short/malformed pages retain the original refusal.
+      if (nodes.length === 250 && before.commits > 250 && getComparison) {
+        if (new Set(nodes.map(row => row.commit.oid)).size !== nodes.length ||
+            nodes.some(row => !OID.test(row.commit.oid))) {
+          throw new Error('Invalid PR commit prefix');
+        }
+        const recovered = await getComparison(nodes);
+        const commits = checkedCommits(before, {...pull, commits: {
+          totalCount: before.commits,
+          nodes: recovered.map(commit => ({commit})), pageInfo: {hasNextPage: false},
+        }}, repo);
+        requireActionCoverage(commits);
+        return commits;
+      }
       const commits = checkedCommits(before, {...pull, commits: {
         totalCount: connection.totalCount, nodes, pageInfo: {hasNextPage: false},
       }}, repo);
@@ -171,6 +290,18 @@ async function completeCommits(before, repo, getPage) {
   throw new Error('PR attribution page budget exhausted');
 }
 
+async function readCommitInventory({github, before, repo, number, query, read}) {
+  return completeCommits(before, repo, async cursor => {
+    const data = await query(PULL_QUERY, {
+      owner: repo.owner, name: repo.repo, number, cursor,
+    });
+    return data.repository.pullRequest;
+  }, prefix => comparisonCommits(before, prefix, page => read(
+    github.rest.repos.compareCommitsWithBasehead, {
+      basehead: before.base.sha + '...' + before.head.sha, per_page: 100, page,
+    }), ids => query(COMMIT_OBJECTS_QUERY, {ids})));
+}
+
 function snapshotFor(before, commits, baselineProtected) {
   const identities = commits.map(c => ({oid: c.oid, author: c.author, committer: c.committer}));
   return {
@@ -186,15 +317,21 @@ async function verifyFinalBinding({github, context, snapshot}) {
     ...repo, pull_number: context.issue.number, request: {timeout: 4000},
   })).data;
   const deadline = Date.now() + 30000;
-  const commits = await completeCommits(before, repo, async cursor => {
+  let calls = 0;
+  async function query(document, args) {
+    if (++calls > 48 || Date.now() >= deadline) throw new Error('Final attribution deadline exhausted');
+    const data = await github.graphql(document, {...args, request: {timeout: 4000}});
     if (Date.now() >= deadline) throw new Error('Final attribution deadline exhausted');
-    const data = await github.graphql(PULL_QUERY, {
-      owner: repo.owner, name: repo.repo, number: context.issue.number, cursor,
-      request: {timeout: 4000},
-    });
+    return data;
+  }
+  async function read(method, args) {
+    if (++calls > 48 || Date.now() >= deadline) throw new Error('Final attribution deadline exhausted');
+    const response = await method({...repo, ...args, request: {timeout: 4000}});
     if (Date.now() >= deadline) throw new Error('Final attribution deadline exhausted');
-    return data.repository.pullRequest;
-  });
+    return response.data;
+  }
+  const commits = await readCommitInventory({github, before, repo,
+    number: context.issue.number, query, read});
   const after = (await github.rest.pulls.get({
     ...repo, pull_number: context.issue.number, request: {timeout: 4000},
   })).data;
@@ -234,14 +371,13 @@ async function qualify({github, context, core, ownerAllowlist}) {
       context.payload.pull_request.head.sha !== before.head.sha) {
     throw new Error('Triggered PR head no longer current');
   }
-  const commits = await completeCommits(before, repo, async cursor => {
+  async function query(document, args) {
     if (++calls > 48 || Date.now() >= deadline) throw new Error('Proof budget exhausted');
-    const data = await github.graphql(PULL_QUERY, {
-      owner: repo.owner, name: repo.repo, number, cursor, request: {timeout: 4000},
-    });
+    const data = await github.graphql(document, {...args, request: {timeout: 4000}});
     if (Date.now() >= deadline) throw new Error('Proof deadline exhausted');
-    return data.repository.pullRequest;
-  });
+    return data;
+  }
+  const commits = await readCommitInventory({github, before, repo, number, query, read});
   const proofs = new Map();
   const treeCache = new Map();
   async function getTree(oid) {
@@ -298,4 +434,5 @@ async function qualify({github, context, core, ownerAllowlist}) {
 
 module.exports = {leafTree, isBaselineTransport, attributedLogin, transportOnlyLogins,
   samePull, checkedCommits, snapshotFor, verifyFinalBinding, qualify,
-  actionIdentity, requireActionCoverage, completeCommits};
+  actionIdentity, requireActionCoverage, completeCommits,
+  comparisonCommits, checkCommitGraph, readCommitInventory};
