@@ -16,9 +16,10 @@ const rows=Array.from({length:count},(_,i)=>({oid:oid(i+1),tree:{oid:oid(10002)}
  parents:{totalCount:0,nodes:[]}}));
 const ordered=()=>[...rows.slice(0,100).reverse(),...rows.slice(100)];
 const expected=ordered();
-const snapshot=m.snapshotFor(before,expected,true);
+let snapshot=m.snapshotFor(before,expected,true,input.snapshotActionRef??input.actionRef);
 if(input.mutation==='late-actor') rows.at(-1).author.user={login:'late-user',databaseId:2};
 if(input.mutation==='late-reused-login') rows.at(-1).author.user.databaseId=2;
+if(input.mutation==='late-reused-id') rows.at(-1).author.user.login='late-user';
 if(input.mutation==='late-unknown') rows.at(-1).author.user=rows.at(-1).committer.user=null;
 if(input.mutation==='covered-late-actor'){
  rows[99].author.user={login:'late-user',databaseId:2};
@@ -27,6 +28,10 @@ if(input.mutation==='covered-late-actor'){
 if(input.mutation==='snapshot-attribution') rows.forEach(c=>{c.author.name='Changed name';});
 if(input.mutation==='all-author-user-missing')rows.forEach(c=>{delete c.author.user;});
 if(input.mutation==='all-author-user-null')rows.forEach(c=>{c.author.user=null;});
+if(input.currentSnapshot)snapshot=m.snapshotFor(before,ordered(),true,input.snapshotActionRef??input.actionRef);
+if(input.mutation==='snapshot-contract')snapshot.action=m.actionCoverageContract(m.LEGACY_ACTION_REF);
+if(input.mutation==='snapshot-bundle')snapshot.action={...snapshot.action,bundleSha256:'0'.repeat(64)};
+if(input.mutation==='snapshot-action-ref')snapshot.action={...snapshot.action,ref:'unknown'};
 const calls={graph:0,compare:0,objects:0,pull:0,branch:0};
 let clock=0;
 if(input.mutation==='deadline')Date.now=()=>clock;
@@ -102,11 +107,11 @@ const github={rest:{pulls:{get:async()=>{
  try{
   let commits;
   if(input.mode==='qualify')await m.qualify({github,context:{repo:{owner:'owned',repo:'repo'},issue:{number:1}},
-   core:{setOutput:(k,v)=>{outputs[k]=v;},info:()=>{},warning:()=>{}},ownerAllowlist:'owner-fixture'});
+   core:{setOutput:(k,v)=>{outputs[k]=v;},info:()=>{},warning:()=>{}},ownerAllowlist:'owner-fixture',actionRef:input.actionRef});
   else if(input.mode==='final')await m.verifyFinalBinding({github,
-   context:{repo:{owner:'owned',repo:'repo'},issue:{number:1}},snapshot});
+   context:{repo:{owner:'owned',repo:'repo'},issue:{number:1}},snapshot,actionRef:input.actionRef});
   else commits=await m.completeCommits(before,{owner:'owned',repo:'repo'},page,
-   input.fallback===false?{}:{getComparePage:comparison,getCommitObjects:objects});
+   input.fallback===false?{}:{getComparePage:comparison,getCommitObjects:objects},input.actionRef);
   process.stdout.write(JSON.stringify({accepted:true,count:commits?.length,calls,outputs,
    prefix_matches:commits&&JSON.stringify(commits.slice(0,100).map(c=>c.oid))===
     JSON.stringify(ordered().slice(0,100).map(c=>c.oid))}));
