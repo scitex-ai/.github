@@ -36,11 +36,10 @@ name: promote-develop-to-main-on-tag
 # that basis. Anyone converting a repo should know they are replacing a
 # working gate with a shared one, not closing an open hole.
 #
-# THE GATE IS THE `needs: ci` EDGE BELOW. `promote` cannot start until `ci`
-# has succeeded on the TAGGED commit, so the `gh pr merge --admin` inside it
-# is unreachable while CI is red. `--admin` bypasses required REVIEW (nobody
-# reviews an automated same-commit promotion), NOT required checks — the
-# checks already ran, in this DAG, ahead of the merge.
+# THE GATE IS THE `needs: ci` EDGE BELOW. Promotion cannot start until CI
+# succeeds on the TAGGED commit. The normal expected-head merge also honors
+# branch protections and refuses a develop head that differs from that tag.
+# The caller still verifies tag containment before publishing.
 #
 # The residual findings that ARE real, and are not this file's job:
 #   - 3 repos publish to PyPI with no test job upstream of the publish job
@@ -267,11 +266,17 @@ jobs:
           set -euo pipefail
           git fetch --no-tags --prune origin "$DEV" "$MAIN"
 
-          # Already contained? (develop already merged, or re-run) -> nothing to do.
-          if git merge-base --is-ancestor "origin/$DEV" "origin/$MAIN"; then
-            echo "origin/$DEV is already contained in origin/$MAIN — no promotion PR needed."
-            echo "### release A / promote — \`SKIP\` ($REPO @ $TAG): $DEV already in $MAIN" >> "$GITHUB_STEP_SUMMARY"
+          # CI qualified the tag, not a potentially newer develop branch.
+          TAG_SHA="$(git rev-list -n1 "refs/tags/$TAG")"
+          if git merge-base --is-ancestor "$TAG_SHA" "origin/$MAIN"; then
+            echo "Tag $TAG ($TAG_SHA) is already contained in origin/$MAIN — no promotion PR needed."
+            echo "### release A / promote — \`SKIP\` ($REPO @ $TAG): tag already in $MAIN" >> "$GITHUB_STEP_SUMMARY"
             exit 0
+          fi
+          DEV_SHA="$(git rev-parse "origin/$DEV")"
+          if [ "$DEV_SHA" != "$TAG_SHA" ]; then
+            echo "::error::refusing promotion: $DEV is $DEV_SHA, but CI qualified tag $TAG ($TAG_SHA). Review the newer branch separately."
+            exit 1
           fi
 
           # Reuse an open PR if one already exists, else create it.
@@ -286,13 +291,12 @@ jobs:
           echo "promotion PR: #$num"
 
           # MERGE commit (NOT --squash, NOT --rebase): preserves the tag sha in
-          # $MAIN history so B's containment guard passes. --admin bypasses any
-          # required-review gate for this automated same-commit promotion.
-          gh pr merge "$num" --repo "$REPO" --merge --admin
+          # $MAIN history so the caller's containment guard passes. Honor normal
+          # review/check requirements; refuse if develop moved after preflight.
+          gh pr merge "$num" --repo "$REPO" --merge --match-head-commit "$TAG_SHA"
 
           # Verify the promotion actually contained the tag commit — loud-fail early.
           git fetch --no-tags --prune origin "$MAIN"
-          TAG_SHA="$(git rev-list -n1 "refs/tags/$TAG")"
           if git merge-base --is-ancestor "$TAG_SHA" "origin/$MAIN"; then
             echo "### release A / promote — \`MERGED\` ($REPO @ $TAG): #$num, tag contained in $MAIN" >> "$GITHUB_STEP_SUMMARY"
           else

@@ -794,7 +794,8 @@ class SIFWorkflowSourceTests(unittest.TestCase):
             # Reviewed CLA successor: immutable-compare helper pin; unchanged signature policy.
             "cla.yml": "1b255348df16aebb5078f9d71fc549edeaa4e3082db6713235e56fd299192706",
             "import-smoke.yml": "7d5e5cf74f6535c8a5e724ffee20679f76aff2354f0b9c213c38df48735550d0",
-            "promote-develop-to-main-on-tag.yml": "0409eeb479824c1c9364fc99c1df0a9136f8a74ebe5001b20a8a7bbc272cec51",
+            # Reviewed successor: qualified-tag-bound normal merge, no protection bypass.
+            "promote-develop-to-main-on-tag.yml": "841fa6dd9641591d07a3231421ca47159bfff07a02aa9caa9db80a2da9bc62f7",
             # Reviewed successor: strict install, bounded workers and fresh private job cache.
             "pytest-matrix.yml": "9ba1d1964a7a10d4121e73536eb8639edcf715d366958190ecd5e134eb50e48d",
             "quality-audit.yml": "f44a2e6b5c479c2975d1cedf66738fdbf402a74cf1d8e26340bb9895524e7b4a",

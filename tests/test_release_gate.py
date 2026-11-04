@@ -32,7 +32,7 @@ these tests pin the edge AS STRUCTURE.
 
 Mutation-checked: deleting ``needs: ci`` from ``promote``, pointing ``ci`` at
 something other than the org pytest-matrix reusable, moving the
-``gh pr merge --admin`` call into an ungated job, or dropping
+``gh pr merge`` call into an ungated job, or dropping
 ``needs: promote`` from the caller's ``publish`` job each turn at least one
 test red.
 
@@ -100,12 +100,12 @@ def caller() -> dict:
 
 
 @pytest.fixture(scope="module")
-def admin_merging_jobs(promote: dict) -> list[str]:
-    """Jobs that admin-merge, found by BEHAVIOUR rather than by job name."""
+def merging_jobs(promote: dict) -> list[str]:
+    """Jobs that merge, found by command behaviour rather than job name."""
     return [
         jid
         for jid, job in promote["jobs"].items()
-        if "gh pr merge" in _shell(job) and "--admin" in _shell(job)
+        if _merge_invocations(job)
     ]
 
 
@@ -138,28 +138,33 @@ def test_ci_job_runs_the_org_pytest_matrix(promote: dict) -> None:
     assert called == _PYTEST_MATRIX
 
 
-def test_a_job_admin_merges_the_promotion_pr(admin_merging_jobs: list[str]) -> None:
-    """Guards the next test: if nothing admin-merges, that test passes vacuously."""
-    # Arrange
-    expected_minimum = 1
-    # Act
-    found = len(admin_merging_jobs)
-    # Assert
-    assert found >= expected_minimum, "expected a job that admin-merges the PR"
-
-
-def test_admin_merge_lives_only_in_ci_gated_jobs(
-    promote: dict, admin_merging_jobs: list[str]
+def test_a_job_normally_merges_the_promotion_pr(
+    promote: dict, merging_jobs: list[str]
 ) -> None:
-    """``--admin`` bypasses required REVIEW, so it must sit behind the CI edge."""
+    """Require a real merge command, without bypassing branch protections."""
+    # Arrange
+    commands = [
+        line
+        for jid in merging_jobs
+        for line in _merge_invocations(promote["jobs"][jid])
+    ]
+    # Act
+    protected = [
+        line for line in commands
+        if "--admin" not in line and '--match-head-commit "$TAG_SHA"' in line
+    ]
+    # Assert
+    assert commands and len(protected) == len(commands)
+
+
+def test_merge_lives_only_in_ci_gated_jobs(promote: dict, merging_jobs: list[str]) -> None:
+    """Normal branch protection supplements, rather than replaces, tag CI."""
     # Arrange
     jobs = promote["jobs"]
     # Act
-    ungated = [jid for jid in admin_merging_jobs if "ci" not in _needs(jobs[jid])]
+    ungated = [jid for jid in merging_jobs if "ci" not in _needs(jobs[jid])]
     # Assert
-    assert ungated == [], (
-        f"{ungated} run `gh pr merge --admin` without `needs: ci`"
-    )
+    assert ungated == []
 
 
 def test_promotion_merges_with_a_merge_commit(promote: dict) -> None:
