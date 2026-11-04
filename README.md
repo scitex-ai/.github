@@ -24,6 +24,22 @@ writing one — it also shows up under *Actions → New workflow* in every repo.
 - `cla.yml` — CLA Assistant + owner direct-push bypass.
 - `auto-merge-to-develop.yml` — auto-merge green PRs targeting `develop`.
 
+## CLA attribution completeness
+
+The trusted helper binds attribution to immutable PR base/head SHAs. If the
+GraphQL commit connection ends before its declared total, it can collect the
+complete set through explicitly paginated REST comparison and canonical GraphQL
+commit objects. The original GraphQL first 100 retain their exact order and
+metadata; REST ordering cannot replace the pinned action’s coverage set.
+
+Fetching every commit does not establish CLA admission. The unchanged pinned
+action must cover every contributor identity; late, unlinked, conflicting or
+otherwise unproven identities still refuse. No signature or exemption is created
+by the fallback. Both attribution phases retain the 2,000-commit, 48-request,
+30-second budget and four-second request bounds, with final PR and protected-base
+binding checks. Consumers execute only the length/hash-verified organization
+helper at its immutable commit, never a PR source checkout.
+
 ## Caller job ids — DO NOT INVENT THEM
 
 **The caller's job id is the branch-protection context prefix.** GitHub names the
