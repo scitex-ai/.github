@@ -32,10 +32,17 @@ complete set through explicitly paginated REST comparison and canonical GraphQL
 commit objects. The original GraphQL first 100 retain their exact order and
 metadata; REST ordering cannot replace the pinned action’s coverage set.
 
-Fetching every commit does not establish CLA admission. The unchanged pinned
-action must cover every contributor identity; late, unlinked, conflicting or
-otherwise unproven identities still refuse. No signature or exemption is created
-by the fallback. Both attribution phases retain the 2,000-commit, 48-request,
+Fetching every commit does not establish CLA admission. The immutable legacy
+action `114064ad` still reads only its first 100 commits, and its contract still
+refuses a contributor outside that action-covered identity set. The independently
+qualified full collector `6a20f585` has an exact source/tree/bundle contract; it
+can cover later contributors only after complete attribution and strict numeric
+ID/login checks. Unknown refs and conflicting or unsupported identities refuse.
+The action contract is part of the before/after snapshot, and both trusted helper
+calls must match the action actually pinned by the workflow. This is a reviewed
+source/build contract, not a per-run coverage attestation from the action.
+Signatures, owner policy and allowlists are not changed by either collector.
+Both attribution phases retain the 2,000-commit, 48-request,
 30-second budget and four-second request bounds, with final PR and protected-base
 binding checks. Consumers execute only the length/hash-verified organization
 helper at its immutable commit, never a PR source checkout.
