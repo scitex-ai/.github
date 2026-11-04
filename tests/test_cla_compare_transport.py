@@ -20,13 +20,15 @@ if(mutation==='disconnected')rows.at(-1).commit.parents={totalCount:0,nodes:[]};
 if(mutation==='late-unknown'){
  rows.at(-1).commit.author={name:'Unknown'};rows.at(-1).commit.committer={name:'Unknown'};
 }
-if(mutation==='late-actor')rows.at(-1).commit.author.user={login:'late-user',databaseId:2};
-if(mutation==='covered-late-actor'){
+if(['late-actor','rest-frontloads-late-actor'].includes(mutation))rows.at(-1).commit.author.user={login:'late-user',databaseId:2};
+if(['covered-late-actor','rest-hides-covered-actor'].includes(mutation)){
  rows[99].commit.author.user={login:'late-user',databaseId:2};
  rows.at(-1).commit.author.user={login:'late-user',databaseId:2};
 }
 const inventory=rows.map(row=>({sha:row.commit.oid,node_id:'fixture:'+row.commit.oid,
  author:{login:'REST-MUST-NOT-REPLACE-ATTESTED-IDENTITY',id:999}}));
+if(mutation==='rest-frontloads-late-actor')[inventory[0],inventory[inventory.length-1]]=[inventory.at(-1),inventory[0]];
+if(mutation==='rest-hides-covered-actor')[inventory[99],inventory[250]]=[inventory[250],inventory[99]];
 const byId=new Map(rows.map(row=>['fixture:'+row.commit.oid,row.commit]));
 let pullCalls=0,compareCalls=0,objectCalls=0;
 const page=async cursor=>{
@@ -192,6 +194,12 @@ class ComparisonTransportTests(unittest.TestCase):
 
     def test_rest_order_does_not_replace_the_original_action_prefix(self):
         self.assertTrue(self.collect(mutation='rest-order')['accepted'])
+
+    def test_comparison_order_cannot_launder_an_uncovered_person_into_first100(self):
+        self.assertFalse(self.collect(mutation='rest-frontloads-late-actor')['accepted'])
+
+    def test_comparison_order_cannot_hide_a_person_the_action_already_covers(self):
+        self.assertTrue(self.collect(mutation='rest-hides-covered-actor')['accepted'])
 
     def test_runtime_qualification_and_final_binding_recover_the_same_full_inventory(self):
         result = self.collect(runtime=True)
