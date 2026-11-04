@@ -791,8 +791,8 @@ class SIFWorkflowSourceTests(unittest.TestCase):
         # Arrange: retained pins, reviewed import and restricted-group successors.
         expected = {
             "auto-merge-to-develop.yml": "a28d9b92576590903290809643f21c93f680a6b2a1a8913d6c6e2fed89993de0",
-            # Reviewed CLA successor: full action/helper contracts; unchanged signature policy.
-            "cla.yml": "90dd10fdf391063fd56f1a97f1567f27ef4b86c1704c3f453d74f31b9af33e44",
+            # Reviewed CLA successor: uniform full action/helper contracts; unchanged signature policy.
+            "cla.yml": "abfd0583a3a5d78187dfd716fa289c85ad36b5c7f256887a342345c30ffb62f5",
             "import-smoke.yml": "7d5e5cf74f6535c8a5e724ffee20679f76aff2354f0b9c213c38df48735550d0",
             "promote-develop-to-main-on-tag.yml": "0409eeb479824c1c9364fc99c1df0a9136f8a74ebe5001b20a8a7bbc272cec51",
             # Reviewed successor: strict install, bounded workers and fresh private job cache.
