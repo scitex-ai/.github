@@ -350,6 +350,8 @@ class WorkflowPreservationTests(unittest.TestCase):
         self.assertEqual(action["with"]["allowlist"],
                          "${{ steps.baseline-transports.outputs.allowlist }}")
         action["with"]["allowlist"] = "${{ inputs.owner_allowlist }}"
+        self.assertEqual(action["uses"], "scitex-ai/github-action@6a20f5856a730d19a19b3130fe94c7af8a3a9ba8")
+        action["uses"] = "scitex-ai/github-action@114064adf09afb0c8c04703c060862a29ae82c7d"
         self.assertEqual(candidate, original)
 
     def test_both_trusted_bootstraps_bind_complete_current_helper(self):
@@ -364,7 +366,8 @@ class WorkflowPreservationTests(unittest.TestCase):
         self.assertEqual(len(helpers), 2)
         for step in helpers:
             script = step["with"]["script"]
-            self.assertIn("ref: 'e1ff896b66571029e0d0777917ba4776a6b36a77'", script)
+            self.assertIn("ref: '217e02e327617550fac8fdc29c1bc386ff2612b4'", script)
+            self.assertIn("actionRef: 'scitex-ai/github-action@6a20f5856a730d19a19b3130fe94c7af8a3a9ba8'", script)
             self.assertIn(str(len(body)), script)
             self.assertIn(hashlib.sha256(body).hexdigest(), script)
             self.assertEqual(step["with"]["retries"], 0)
