@@ -75,18 +75,63 @@ function samePull(before, after) {
     before.commits === after.commits;
 }
 
+const COMMIT_FIELDS = `oid tree { oid }
+  author { name user { login databaseId } }
+  committer { name user { login databaseId } }
+  parents(first:3) { totalCount nodes { oid tree { oid } } }`;
 const PULL_QUERY = `query($owner:String!,$name:String!,$number:Int!,$cursor:String) {
   repository(owner:$owner,name:$name) { pullRequest(number:$number) {
     baseRefOid headRefOid commits(first:100,after:$cursor) {
       totalCount pageInfo { hasNextPage endCursor } nodes { commit {
-        oid tree { oid }
-        author { name user { login databaseId } }
-        committer { name user { login databaseId } }
-        parents(first:3) { totalCount nodes { oid tree { oid } } }
+        ${COMMIT_FIELDS}
       } }
     }
   } }
 }`;
+
+function commitObjectQuery(ids) {
+  if (!Array.isArray(ids) || !ids.length || ids.length > 100 ||
+      ids.some(id => !OID.test(id)) || new Set(ids).size !== ids.length) {
+    throw new Error('Invalid canonical commit batch');
+  }
+  return `query($owner:String!,$name:String!) { repository(owner:$owner,name:$name) {
+    ${ids.map((id, i) => `c${i}:object(oid:"${id}") {... on Commit {${COMMIT_FIELDS}}}`).join('\n')}
+  } }`;
+}
+
+function boundedReaders(github, repo) {
+  let calls = 0;
+  const deadline = Date.now() + 30000;
+  async function request(operation) {
+    if (++calls > 48 || Date.now() >= deadline) throw new Error('Proof budget exhausted');
+    const value = await operation();
+    if (Date.now() >= deadline) throw new Error('Proof deadline exhausted');
+    return value;
+  }
+  return {
+    read: (method, args) => request(async () =>
+      (await method({...repo, ...args, request: {timeout: 4000}})).data),
+    query: (text, args) => request(() => github.graphql(text, {
+      ...args, request: {timeout: 4000},
+    })),
+  };
+}
+
+function attributionTransports(github, before, repo, number, read, query) {
+  return {
+    getPage: async cursor => {
+      const data = await query(PULL_QUERY, {owner: repo.owner, name: repo.repo, number, cursor});
+      return data.repository?.pullRequest;
+    },
+    getComparePage: page => read(github.rest.repos.compareCommitsWithBasehead, {
+      basehead: before.base.sha + '...' + before.head.sha, per_page: 100, page,
+    }),
+    getCommitObjects: async ids => {
+      const data = await query(commitObjectQuery(ids), {owner: repo.owner, name: repo.repo});
+      return ids.map((_, index) => data.repository?.['c' + index]);
+    },
+  };
+}
 
 function checkedCommits(before, pull, repo) {
   const connection = pull.commits;
@@ -134,9 +179,86 @@ function requireActionCoverage(commits) {
   }
 }
 
-async function completeCommits(before, repo, getPage) {
+function commitProof(commit) {
+  if (!commit || !OID.test(commit.oid) || !OID.test(commit.tree?.oid) ||
+      !commit.parents || !Number.isSafeInteger(commit.parents.totalCount) ||
+      commit.parents.totalCount < 0 || !Array.isArray(commit.parents.nodes) ||
+      commit.parents.nodes.length !== Math.min(3, commit.parents.totalCount) ||
+      commit.parents.nodes.some(p => !OID.test(p?.oid) || !OID.test(p.tree?.oid)) ||
+      commit.author === undefined || commit.committer === undefined) {
+    throw new Error('Incomplete canonical commit object');
+  }
+  const actor = value => {
+    if (value === null) return null;
+    const owns = key => Object.prototype.hasOwnProperty.call(value, key);
+    if (typeof value !== 'object' || Array.isArray(value) || !owns('name') ||
+        !(value.name === null || typeof value.name === 'string') || !owns('user')) {
+      throw new Error('Incomplete canonical actor fields');
+    }
+    const user = value.user;
+    if (user !== null && (!user || typeof user !== 'object' || Array.isArray(user) ||
+        !Object.prototype.hasOwnProperty.call(user, 'login') || typeof user.login !== 'string' ||
+        !Object.prototype.hasOwnProperty.call(user, 'databaseId') ||
+        !(user.databaseId === null || (Number.isSafeInteger(user.databaseId) && user.databaseId > 0)))) {
+      throw new Error('Incomplete canonical actor identity');
+    }
+    return {name: value.name,
+      user: user === null ? null : {login: user.login, databaseId: user.databaseId}};
+  };
+  return JSON.stringify({oid: commit.oid, tree: {oid: commit.tree.oid},
+    author: actor(commit.author), committer: actor(commit.committer),
+    parents: {totalCount: commit.parents.totalCount,
+      nodes: commit.parents.nodes.map(p => ({oid: p.oid, tree: {oid: p.tree.oid}}))}});
+}
+
+async function compareComplete(before, nodes, getComparePage, getCommitObjects) {
+  // REST pagination, unlike its unpaged 250-commit response, covers the full set:
+  // https://github.blog/changelog/2021-03-22-compare-rest-api-now-supports-pagination/
+  const original = nodes.map(row => row.commit);
+  if (original.length < 100 || new Set(original.map(c => c.oid)).size !== original.length ||
+      original.some(c => !OID.test(c.oid))) throw new Error('Incomplete original action page');
+  const ids = [], seen = new Set();
+  for (let page = 1; ids.length < before.commits && page <= 20; page++) {
+    const result = await getComparePage(page);
+    if (result?.base_commit?.sha !== before.base.sha ||
+        result.total_commits !== before.commits || !Array.isArray(result.commits) ||
+        result.commits.length !== Math.min(100, before.commits - ids.length)) {
+      throw new Error('Incomplete immutable comparison page');
+    }
+    for (const commit of result.commits) {
+      if (!OID.test(commit?.sha) || seen.has(commit.sha)) throw new Error('Invalid comparison identities');
+      ids.push(commit.sha); seen.add(commit.sha);
+    }
+  }
+  if (ids.length !== before.commits || !seen.has(before.head.sha)) {
+    throw new Error('Comparison does not cover declared PR commits and head');
+  }
+  const canonical = new Map();
+  for (let offset = 0; offset < ids.length; offset += 100) {
+    const batch = ids.slice(offset, offset + 100), objects = await getCommitObjects(batch);
+    if (!Array.isArray(objects) || objects.length !== batch.length) throw new Error('Incomplete commit object batch');
+    objects.forEach((commit, index) => {
+      if (commit?.oid !== batch[index]) throw new Error('Canonical commit identity changed');
+      commitProof(commit); canonical.set(commit.oid, commit);
+    });
+  }
+  for (const commit of original) {
+    if (!canonical.has(commit.oid) || commitProof(commit) !== commitProof(canonical.get(commit.oid))) {
+      throw new Error('Original GraphQL attribution changed in canonical proof');
+    }
+  }
+  // The pinned action reads these exact first 100, NOT REST chronological order.
+  const covered = original.slice(0, 100), prefix = new Set(covered.map(c => c.oid));
+  return [...covered, ...ids.filter(id => !prefix.has(id)).map(id => canonical.get(id))];
+}
+
+async function completeCommits(before, repo, getPage, fallback = {}) {
   if (!Number.isInteger(before.commits) || before.commits < 0 ||
       before.commits > MAX_COMMITS) throw new Error('PR exceeds complete attribution budget');
+  if (!OID.test(before.base?.sha) || !OID.test(before.head?.sha) ||
+      before.base?.repo?.full_name !== repo.owner + '/' + repo.repo) {
+    throw new Error('Invalid immutable PR binding');
+  }
   let cursor = null;
   const cursors = new Set();
   const nodes = [];
@@ -151,11 +273,17 @@ async function completeCommits(before, repo, getPage) {
         connection.nodes.some(row => !row || !row.commit)) {
       throw new Error('Incomplete or changed PR page');
     }
-    nodes.push(...connection.nodes);
+    nodes.push(...structuredClone(connection.nodes));
     if (nodes.length > before.commits) throw new Error('PR commit pages exceed declared total');
     if (!connection.pageInfo.hasNextPage) {
+      let complete = nodes;
+      if (nodes.length < before.commits && typeof fallback.getComparePage === 'function' &&
+          typeof fallback.getCommitObjects === 'function') {
+        complete = (await compareComplete(before, nodes,
+          fallback.getComparePage, fallback.getCommitObjects)).map(commit => ({commit}));
+      }
       const commits = checkedCommits(before, {...pull, commits: {
-        totalCount: connection.totalCount, nodes, pageInfo: {hasNextPage: false},
+        totalCount: connection.totalCount, nodes: complete, pageInfo: {hasNextPage: false},
       }}, repo);
       requireActionCoverage(commits);
       return commits;
@@ -182,31 +310,18 @@ function snapshotFor(before, commits, baselineProtected) {
 
 async function verifyFinalBinding({github, context, snapshot}) {
   const repo = context.repo;
-  const before = (await github.rest.pulls.get({
-    ...repo, pull_number: context.issue.number, request: {timeout: 4000},
-  })).data;
-  const deadline = Date.now() + 30000;
-  const commits = await completeCommits(before, repo, async cursor => {
-    if (Date.now() >= deadline) throw new Error('Final attribution deadline exhausted');
-    const data = await github.graphql(PULL_QUERY, {
-      owner: repo.owner, name: repo.repo, number: context.issue.number, cursor,
-      request: {timeout: 4000},
-    });
-    if (Date.now() >= deadline) throw new Error('Final attribution deadline exhausted');
-    return data.repository.pullRequest;
-  });
-  const after = (await github.rest.pulls.get({
-    ...repo, pull_number: context.issue.number, request: {timeout: 4000},
-  })).data;
+  const {read, query} = boundedReaders(github, repo);
+  const before = await read(github.rest.pulls.get, {pull_number: context.issue.number});
+  const transport = attributionTransports(github, before, repo, context.issue.number, read, query);
+  const commits = await completeCommits(before, repo, transport.getPage, transport);
+  const after = await read(github.rest.pulls.get, {pull_number: context.issue.number});
   if (!samePull(before, after)) throw new Error('PR changed during final attribution');
   const current = snapshotFor(before, commits, snapshot.baselineProtected);
   if (before.state !== 'open' || JSON.stringify(current) !== JSON.stringify(snapshot)) {
     throw new Error('CLA attribution snapshot changed during action');
   }
   if (snapshot.baselineProtected) {
-    const branch = (await github.rest.repos.getBranch({
-      ...repo, branch: before.base.ref, request: {timeout: 4000},
-    })).data;
+    const branch = await read(github.rest.repos.getBranch, {branch: before.base.ref});
     if (branch.protected !== true || branch.commit.sha !== before.base.sha) {
       throw new Error('CLA protected baseline changed during action');
     }
@@ -217,14 +332,7 @@ async function qualify({github, context, core, ownerAllowlist}) {
   const original = ownerAllowlist;
   const repo = context.repo;
   const number = context.issue.number;
-  let calls = 0;
-  const deadline = Date.now() + 30000;
-  async function read(method, args) {
-    if (++calls > 48 || Date.now() >= deadline) throw new Error('Proof budget exhausted');
-    const response = await method({...repo, ...args, request: {timeout: 4000}});
-    if (Date.now() >= deadline) throw new Error('Proof deadline exhausted');
-    return response.data;
-  }
+  const {read, query} = boundedReaders(github, repo);
   const before = await read(github.rest.pulls.get, {pull_number: number});
   if (before.state !== 'open') {
     core.setOutput('allowlist', original);
@@ -234,14 +342,8 @@ async function qualify({github, context, core, ownerAllowlist}) {
       context.payload.pull_request.head.sha !== before.head.sha) {
     throw new Error('Triggered PR head no longer current');
   }
-  const commits = await completeCommits(before, repo, async cursor => {
-    if (++calls > 48 || Date.now() >= deadline) throw new Error('Proof budget exhausted');
-    const data = await github.graphql(PULL_QUERY, {
-      owner: repo.owner, name: repo.repo, number, cursor, request: {timeout: 4000},
-    });
-    if (Date.now() >= deadline) throw new Error('Proof deadline exhausted');
-    return data.repository.pullRequest;
-  });
+  const transport = attributionTransports(github, before, repo, number, read, query);
+  const commits = await completeCommits(before, repo, transport.getPage, transport);
   const proofs = new Map();
   const treeCache = new Map();
   async function getTree(oid) {
@@ -298,4 +400,4 @@ async function qualify({github, context, core, ownerAllowlist}) {
 
 module.exports = {leafTree, isBaselineTransport, attributedLogin, transportOnlyLogins,
   samePull, checkedCommits, snapshotFor, verifyFinalBinding, qualify,
-  actionIdentity, requireActionCoverage, completeCommits};
+  actionIdentity, requireActionCoverage, completeCommits, PULL_QUERY, commitObjectQuery};
