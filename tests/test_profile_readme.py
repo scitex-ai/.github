@@ -1,62 +1,18 @@
-"""The org profile README is a deliverable with a checklist, so it gets tests.
+"""File-only contracts for the current, bilingual organisation profile.
 
-WHY THIS FILE EXISTS. `profile/README.md` renders at github.com/scitex-ai, the
-one page a researcher sees before deciding whether SciTeX is worth an afternoon.
-It is also the only file in this repo that no workflow, import or build consumes
-— every other file here is load-bearing for CI and breaks loudly when edited
-wrongly. This one breaks quietly, and the failure it has already had once is
-worse than a typo: it *described the organisation in terms the organisation
-could not support*. So the assertions below are the checklist, as structure.
-
-WHAT IS PINNED, AND WHY EACH ONE:
-
-  * EN/JA entry points exist and link to each other. The operator works in
-    Japanese and most of the ecosystem's prose is English; a reader who lands
-    on one and cannot find the other is stuck on the profile page.
-  * A relative asset that is referenced but absent is a broken image on the
-    profile page, which is the worst kind of defect there: invisible in review,
-    visible to every visitor. Checked through the SAME resolver the standalone
-    link checker uses, so the two cannot drift into disagreeing about what
-    "resolves" means.
-  * The proof image is labelled as a DEVELOPMENT build, in both languages, near
-    the image. The composite in `profile/assets/` is cropped from real
-    development-build screenshots and real committed artifacts; publishing it
-    without that label would be the exact overclaim this repo forbids.
-  * The maturity table is dated. Its numbers (followers, zero-star repos, the
-    concentration of stars) go stale within weeks, and an undated measurement
-    presented as current is how a profile starts lying again.
-  * No adoption claims. A young project's profile is under constant pressure to
-    imply traction it does not have, and invented numbers are the failure mode
-    with the highest cost here. Measured facts about the organisation's own
-    size are fine — "6 followers" is evidence of youth, not a claim of
-    adoption — so the patterns below target *positive* use-claims only.
-  * Assets stay small. The profile page is the first thing a phone loads; a
-    multi-megabyte PNG committed "just for the README" is a real cost paid by
-    every visitor, and it is invisible in review.
-
-File-only — parses markdown, stats files, resolves paths. No network, no gh,
-cannot flake. The network half of the link checking is
-`scripts/check_profile_links.py`, run by `profile-link-check.yml`, and is
-deliberately NOT duplicated here.
-
-Mutation-checked, every one of these verified to turn at least one test red:
-deleting BOTH copies of the JA switch, pointing an asset at a missing file,
-relabelling the proof as production screenshots, adding "trusted by 12,000
-researchers", removing the measurement date while leaving the table's other
-dates in place, deleting one asset's manifest row, committing a 5 MB PNG.
-
-TWO OF THOSE MUTATIONS PASSED FIRST TIME, and the fixes are the checks above.
-Deleting the language switch in the header left the same link in the footer, so
-the file still linked both languages — hence "no second copy" is now stated
-explicitly. And the date check accepted the ORG'S CREATION DATE (`2025-05-11`),
-a real date in a real table, which is not a measurement date — hence the
-pattern matches the claim ("Measured <date>") rather than any date nearby.
+Keep truthful maturity/data labels, source provenance, useful exits, local-link
+integrity and the original image budgets. Historical composites remain available
+for stable hotlinks; they must not masquerade as the current five captures.
+Negative controls exercise the same predicates without changing repository files.
+Network/GitHub rendering checks remain the owning link checker's separate scope.
 """
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import re
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
@@ -66,227 +22,44 @@ _PROFILE = _REPO / "profile"
 _ASSETS = _PROFILE / "assets"
 _MANIFEST = _ASSETS / "ASSET-MANIFEST.md"
 _LINK_CHECKER = _REPO / "scripts" / "check_profile_links.py"
-
 _READMES = {"en": _PROFILE / "README.md", "ja": _PROFILE / "README.ja.md"}
-
-#: The JA page is a TRANSLATION, so the checks below cannot demand English
-#: keywords — a test that looks for "development build" in Japanese prose would
-#: force the translation to be half English, which is the opposite of an entry
-#: point. Each check therefore carries the tokens that ARE the claim in that
-#: language; a language without an entry is a claim that cannot be made there.
+_SCREENSHOTS = {
+    "figrecipe-20261103-scene-768.webp": "FigRecipe",
+    "writer-20261102-768.webp": "Writer",
+    "hub-20261102-768.webp": "Hub",
+    "scholar-20261102-768.webp": "Scholar",
+    "cards-board-mnist-20261103-768.webp": "Cards",
+}
+_FEATURED = tuple(_SCREENSHOTS)[:2]
+_BRANDING = {"scitex-logo.png", "scitex-icon.png"}
 _DEV_BUILD_LABEL = {"en": ("development",), "ja": ("開発", "development")}
-_HOSTED_SELF_HOSTED = {"en": ("hosted", "self-host"), "ja": ("ホステッド", "セルフホスト")}
+_SYNTHETIC_LABEL = {"en": ("synthetic",), "ja": ("合成", "synthetic")}
+_HOSTED_SELF_HOSTED = {
+    "en": ("hosted", "self-host"),
+    "ja": ("ホステッド", "セルフホスト"),
+}
 _ALPHA_LABEL = {"en": ("alpha",), "ja": ("アルファ", "alpha")}
-_MEASURED_HEADING = {"en": "where this actually is", "ja": "いま実際どこにあるのか"}
-#: The measurement CLAIM, not just any date: the maturity table legitimately
-#: carries other dates (the org's creation date), so a bare \d{4}-\d{2}-\d{2}
-#: search passes on the wrong one.
-_MEASURED_CLAIM = {"en": r"measured\s+(\d{4}-\d{2}-\d{2})", "ja": r"(\d{4}-\d{2}-\d{2})\s*時点"}
-
-#: Per-asset ceiling. phone-first: the whole page is ~450 KB today, and this
-#: budget exists to stop one asset from dwarfing it.
 _ASSET_BUDGET_BYTES = 250_000
 _TOTAL_ASSET_BUDGET_BYTES = 400_000
+_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 
-#: Positive adoption/use claims. Deliberately NOT matching bare counts: "6
-#: followers", "59 with zero stars" and "121 of them (71%) on two repos" are
-#: measurements of this organisation's own smallness, which the maturity
-#: section is REQUIRED to state.
 _ADOPTION_CLAIMS = (
     r"\b(?:used|trusted|adopted|chosen)\s+by\b",
     r"\b\d[\d,\.]*\s*(?:\+)?\s*(?:users|researchers|organisations|organizations|labs|institutions|downloads|installs)\b",
     r"\b\d[\d,\.]*\s*stars\b",
     r"\b(?:widely used|industry[- ]leading|thousands of|millions of|de facto)\b",
     r"\bproduction[- ]ready\b",
+    r"\d[\d,]*\s*(?:万人|人)\s*(?:が利用|のユーザー|の研究者)",
+    r"本番(?:環境)?(?:対応済み|運用可能|運用に対応)",
 )
-
-
-def _readme(lang: str) -> str:
-    return _READMES[lang].read_text(encoding="utf-8")
-
-
-def _link_checker():
-    """Load the standalone checker so both use ONE definition of resolution."""
-    spec = importlib.util.spec_from_file_location("_check_profile_links", _LINK_CHECKER)
-    assert spec is not None and spec.loader is not None, _LINK_CHECKER
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-@pytest.fixture(scope="module")
-def checker():
-    return _link_checker()
-
-
-# ---------------------------------------------------------------------------
-# EN/JA entry points. A reader who lands on one must be able to reach the other.
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("lang", sorted(_READMES))
-def test_the_readme_exists(lang: str) -> None:
-    # Arrange
-    path = _READMES[lang]
-    # Act
-    exists = path.exists()
-    # Assert
-    assert exists, f"{path.relative_to(_REPO)} is missing"
-
-
-@pytest.mark.parametrize("lang", sorted(_READMES))
-def test_the_readme_offers_both_languages(lang: str) -> None:
-    """A language switch, not just a footnote — it must link the OTHER file."""
-    # Arrange
-    other = [p.name for code, p in _READMES.items() if code != lang][0]
-    text = _readme(lang)
-    # Act — either markdown ``[x](target)`` or the profile's HTML switch
-    linked = f"({other})" in text or f'"{other}"' in text
-    # Assert
-    assert linked, f"{_READMES[lang].name} does not link {other}"
-
-
-# ---------------------------------------------------------------------------
-# Every relative reference resolves, AS THE PROFILE PAGE RESOLVES IT: relative
-# to the README's own directory. Measured through the shipped checker.
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("lang", sorted(_READMES))
-def test_every_relative_target_exists(lang: str, checker) -> None:
-    # Arrange
-    readme = _READMES[lang]
-    relative = [t for t in checker.targets(readme) if not t.startswith("http")]
-    # Act
-    missing = [t for t in relative if not checker.check_relative(readme, t)[0]]
-    # Assert
-    assert missing == [], f"{readme.name} points at nothing: {missing}"
-
-
-def test_the_proof_image_is_referenced_by_both_readmes() -> None:
-    """Guards the two tests below: an unreferenced image costs weight for nothing."""
-    # Arrange
-    proof = "assets/proof-e2e.jpg"
-    # Act
-    referenced = {lang: proof in _readme(lang) for lang in _READMES}
-    # Assert
-    assert all(referenced.values()), referenced
-
-
-def test_the_proof_image_has_alt_text() -> None:
-    """A profile image with empty alt text is a blank line for a screen reader."""
-    # Arrange
-    pattern = re.compile(r'<img[^>]*src="assets/proof-e2e\.jpg"[^>]*alt="([^"]*)"')
-    # Act
-    alts = {lang: pattern.search(_readme(lang)) for lang in _READMES}
-    # Assert
-    for lang, match in alts.items():
-        assert match, f"{lang}: no <img> tag with alt for proof-e2e.jpg"
-        assert len(match.group(1)) >= 40, f"{lang}: alt text too short to be useful"
-
-
-# ---------------------------------------------------------------------------
-# Honest labelling. The composite IS a development build; saying so is not
-# optional, and it must be said next to the image, in both languages.
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("lang", sorted(_READMES))
-def test_the_proof_is_labelled_a_development_build(lang: str) -> None:
-    # Arrange
-    text = _readme(lang)
-    image_at = text.index("assets/proof-e2e.jpg")
-    # Act: the label lives in the ~2000 characters that follow the image
-    vicinity = text[image_at : image_at + 2000].lower()
-    # Assert
-    assert any(token in vicinity for token in _DEV_BUILD_LABEL[lang]), (
-        f"{_READMES[lang].name}: the proof image is not labelled as a development "
-        "build near the image — see the manifest for what that label covers"
-    )
-
-
-@pytest.mark.parametrize("lang", sorted(_READMES))
-def test_the_maturity_numbers_are_dated(lang: str) -> None:
-    """Undated measurements presented as current are how a profile starts lying."""
-    # Arrange
-    text = _readme(lang)
-    header_at = text.lower().index(_MEASURED_HEADING[lang])
-    # Act
-    section = text[header_at : header_at + 1200]
-    # Assert
-    assert re.search(_MEASURED_CLAIM[lang], section, flags=re.IGNORECASE), (
-        f"{_READMES[lang].name}: the maturity section states numbers with no "
-        "measurement date; they go stale in weeks"
-    )
-
-
-@pytest.mark.parametrize("lang", sorted(_READMES))
-def test_the_maturity_section_admits_small_numbers(lang: str) -> None:
-    """The section exists to state the unflattering measurements, so pin one.
-
-    Zero-star repos and the concentration of stars are the two facts a growth
-    document is most tempted to omit; both are also the reason the page tells a
-    reader to adopt ONE package rather than the organisation.
-    """
-    # Arrange
-    text = _readme(lang)
-    # Act
-    zero_star = re.search(r"(zero stars|スター\s*0)", text)
-    concentration = re.search(r"(71%|71\s*%)", text)
-    # Assert
-    assert zero_star, f"{_READMES[lang].name}: no zero-star count"
-    assert concentration, f"{_READMES[lang].name}: no star-concentration figure"
-
-
-@pytest.mark.parametrize("lang", sorted(_READMES))
-@pytest.mark.parametrize("claim", _ADOPTION_CLAIMS)
-def test_no_adoption_claims(lang: str, claim: str) -> None:
-    # Arrange
-    text = _readme(lang)
-    # Act
-    found = re.findall(claim, text, flags=re.IGNORECASE)
-    # Assert
-    assert found == [], (
-        f"{_READMES[lang].name} claims adoption ({found!r}). Measured facts about "
-        "this organisation's own size are allowed and required; claims about who "
-        "uses it are not, because nobody has measured them."
-    )
-
-
-# ---------------------------------------------------------------------------
-# The 60-second path is a promise about a command, and commands rot.
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("lang", sorted(_READMES))
-def test_the_start_path_states_the_install_command(lang: str) -> None:
-    # Arrange
-    text = _readme(lang)
-    # Act
-    present = "uv pip install scitex" in text
-    # Assert
-    assert present, f"{_READMES[lang].name} has no runnable install command"
-
-
-def test_the_start_path_shows_a_measured_duration() -> None:
-    """The heading says sixty seconds; the file has to say where that came from."""
-    # Arrange
-    text = _readme("en")
-    # Act
-    seconds = re.search(r"≈\s*(\d+)\s*s\b", text)
-    # Assert
-    assert seconds, "the install command carries no measured duration"
-    assert int(seconds.group(1)) <= 60, (
-        "the 60-second section promises a number it does not meet; either fix the "
-        "measurement or stop calling it sixty seconds"
-    )
-
-
-# ---------------------------------------------------------------------------
-# The required sections. Each one is a question a first-time researcher has.
-# ---------------------------------------------------------------------------
-
-
+_STALE_CLAIMS = (
+    r"\b\d[\d,]*\s+(?:public\s+)?(?:repositories|repos|packages|followers|members|releases|threads)\b",
+    r"(?:公開\s*)?\d[\d,]*\s*(?:リポジトリ|パッケージ|フォロワー|公開メンバー|スター|リリース)",
+    r"\b(?:sixty|\d+)\s*[- ]?\s*seconds?\b",
+    r"\d+\s*秒",
+    r"≈\s*\d+\s*s\b",
+    r"(?<![\w/])v?\d+\.\d+\.\d+(?:[-+][\w.]+)?",
+)
 _REQUIRED_LINKS = {
     "flagship umbrella package": "https://github.com/scitex-ai/scitex-python",
     "the discussion venue": "https://github.com/scitex-ai/scitex-python/discussions",
@@ -298,88 +71,361 @@ _REQUIRED_LINKS = {
 }
 
 
+class _ProfileHTML(HTMLParser):
+    """Track actual img attributes and collapsible/featured grouping."""
+
+    def __init__(self, text):
+        super().__init__()
+        self.images = []
+        self.details = {}
+        self._details = []
+        self._paragraph = None
+        self._next_group = 0
+        self.visible = []
+        self._offsets = [0]
+        for line in text.splitlines(keepends=True):
+            self._offsets.append(self._offsets[-1] + len(line))
+        self.feed(text)
+
+    def _position(self):
+        line, column = self.getpos()
+        return self._offsets[line - 1] + column
+
+    def handle_starttag(self, tag, attrs):
+        at = self._position()
+        if tag == "details":
+            self._next_group += 1
+            self._details.append(self._next_group)
+            self.details[self._next_group] = [at, None]
+        if tag == "p":
+            self._paragraph = at
+        if tag == "img":
+            self.images.append(
+                {
+                    **dict(attrs),
+                    "at": at,
+                    "paragraph": self._paragraph,
+                    "details": self._details[-1] if self._details else None,
+                }
+            )
+
+    def handle_endtag(self, tag):
+        if tag == "details" and self._details:
+            self.details[self._details.pop()][1] = self._position()
+        if tag == "p":
+            self._paragraph = None
+
+    def handle_data(self, data):
+        self.visible.append(data)
+
+
+def _visible(text):
+    return " ".join(_ProfileHTML(text).visible).lower()
+
+
+def _image_problems(text, lang):
+    parsed = _ProfileHTML(text)
+    images = [
+        i
+        for i in parsed.images
+        if i.get("src", "").startswith("assets/")
+        and Path(i["src"]).name not in _BRANDING
+    ]
+    names = [Path(i["src"]).name for i in images]
+    problems = []
+    if sorted(names) != sorted(_SCREENSHOTS):
+        problems.append(
+            "current screenshot set differs (missing, duplicate or historical image)"
+        )
+    featured = [i for i in images if Path(i["src"]).name in _FEATURED]
+    if (
+        len(featured) != 2
+        or any(i["details"] is not None for i in featured)
+        or featured[0]["paragraph"] is None
+        or len({i["paragraph"] for i in featured}) != 1
+        or [Path(i["src"]).name for i in featured] != list(_FEATURED)
+    ):
+        problems.append(
+            "featured FigRecipe/Writer must share a visible sibling paragraph"
+        )
+    for image in images:
+        name = Path(image["src"]).name
+        if name not in _SCREENSHOTS:
+            continue
+        alt = image.get("alt", "").strip()
+        if len(alt) < 40 or _SCREENSHOTS[name].lower() not in alt.lower():
+            problems.append(f"{name}: missing useful app-specific alt text")
+        detail = image["details"]
+        if name not in _FEATURED and detail is None:
+            problems.append(f"{name}: secondary screenshot is not inside details")
+        if detail is not None:
+            start, end = parsed.details[detail]
+            vicinity = _visible(text[start:end]) if end is not None else ""
+        else:
+            start = (
+                image["paragraph"] if image["paragraph"] is not None else image["at"]
+            )
+            end = min(
+                (span[0] for span in parsed.details.values() if span[0] > start),
+                default=len(text),
+            )
+            vicinity = _visible(text[start:end])
+        for kind, tokens in (
+            ("development", _DEV_BUILD_LABEL[lang]),
+            ("synthetic data", _SYNTHETIC_LABEL[lang]),
+        ):
+            if not any(token in vicinity for token in tokens):
+                problems.append(
+                    f"{name}: visible {kind} label missing near image group"
+                )
+    return problems
+
+
+def _claim_problems(text):
+    visible = _visible(text)
+    return [
+        pattern
+        for pattern in (*_ADOPTION_CLAIMS, *_STALE_CLAIMS)
+        if re.search(pattern, visible, re.IGNORECASE)
+    ]
+
+
+def _asset_paths(directory):
+    return sorted(
+        p
+        for p in directory.iterdir()
+        if p.is_file() and p.suffix.lower() in _IMAGE_SUFFIXES
+    )
+
+
+def _budget_problems(directory):
+    assets = _asset_paths(directory)
+    problems = [
+        f"asset:{p.name}" for p in assets if p.stat().st_size > _ASSET_BUDGET_BYTES
+    ]
+    if sum(p.stat().st_size for p in assets) > _TOTAL_ASSET_BUDGET_BYTES:
+        problems.append("total")
+    return problems
+
+
+def _manifest_problems(manifest, directory):
+    problems = []
+    if "source manifest:" not in manifest.lower() or "scitex-hub:" not in manifest:
+        problems.append("source manifest location missing")
+    for name in _SCREENSHOTS:
+        rows = [
+            line
+            for line in manifest.splitlines()
+            if line.startswith("|") and f"`{name}`" in line
+        ]
+        path = directory / name
+        if len(rows) != 1 or not path.is_file() or path.is_symlink():
+            problems.append(f"{name}: unique record/regular file missing")
+            continue
+        row = rows[0]
+        cells = [cell.strip().strip("`") for cell in row.split("|")]
+        if hashlib.sha256(path.read_bytes()).hexdigest() not in cells:
+            problems.append(f"{name}: bytes do not match manifest SHA256")
+        if str(path.stat().st_size) not in cells:
+            problems.append(f"{name}: byte count missing")
+        if not re.search(r"\b\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\b", row):
+            problems.append(f"{name}: capture UTC missing")
+        if not re.search(r"(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])", row):
+            problems.append(f"{name}: observed source checkout missing")
+    return problems
+
+
+@pytest.fixture(scope="module")
+def checker():
+    spec = importlib.util.spec_from_file_location("_check_profile_links", _LINK_CHECKER)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("lang", sorted(_READMES))
+def test_bilingual_entrypoints_and_relative_targets(lang, checker):
+    # Arrange
+    readme = _READMES[lang]
+    other = next(p.name for code, p in _READMES.items() if code != lang)
+    # Act
+    targets = checker.targets(readme)
+    missing = [
+        t
+        for t in targets
+        if not t.startswith("http") and not checker.check_relative(readme, t)[0]
+    ]
+    # Assert
+    assert (readme.is_file(), other in targets, missing) == (True, True, [])
+
+
+@pytest.mark.parametrize("lang", sorted(_READMES))
+def test_current_screenshots_layout_alts_and_visible_labels(lang):
+    # Arrange
+    text = _READMES[lang].read_text(encoding="utf-8")
+    # Act
+    problems = _image_problems(text, lang)
+    # Assert
+    assert problems == []
+
+
+@pytest.mark.parametrize("lang", sorted(_READMES))
+def test_profile_keeps_install_maturity_choices_and_no_unsupported_claims(lang):
+    # Arrange
+    text = _READMES[lang].read_text(encoding="utf-8")
+    # Act
+    lowered = text.lower()
+    # Assert
+    assert (
+        "uv pip install scitex" in text,
+        all(t in lowered for t in _HOSTED_SELF_HOSTED[lang]),
+        any(t in lowered for t in _ALPHA_LABEL[lang]),
+        _claim_problems(text),
+    ) == (True, True, True, [])
+
+
 @pytest.mark.parametrize("lang", sorted(_READMES))
 @pytest.mark.parametrize(("what", "url"), sorted(_REQUIRED_LINKS.items()))
-def test_the_required_way_out_is_linked(lang: str, what: str, url: str) -> None:
+def test_required_external_exit_is_retained(lang, what, url):
     # Arrange
-    text = _readme(lang)
+    text = _READMES[lang].read_text(encoding="utf-8")
     # Act
     present = url in text
     # Assert
-    assert present, f"{_READMES[lang].name} does not link {what} ({url})"
+    assert present, f"{lang}: missing {what} ({url})"
 
 
-@pytest.mark.parametrize("lang", sorted(_READMES))
-def test_the_hosted_and_self_hosted_choice_is_stated(lang: str) -> None:
-    """Both halves, and the alpha warning on the hosted half, must be present."""
-    # Arrange
-    text = _readme(lang).lower()
-    tokens = _HOSTED_SELF_HOSTED[lang]
-    # Act
-    both = all(token in text for token in tokens)
-    warned = any(token in text for token in _ALPHA_LABEL[lang])
-    # Assert
-    assert both, (
-        f"{_READMES[lang].name} does not present both halves of the "
-        f"hosted/self-hosted choice (looked for {tokens})"
-    )
-    assert warned, (
-        f"{_READMES[lang].name} offers the hosted hub without saying it is alpha "
-        f"(looked for {_ALPHA_LABEL[lang]})"
-    )
-
-
-# ---------------------------------------------------------------------------
-# Weight and provenance.
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "asset", sorted(p.name for pattern in ("*.png", "*.jpg") for p in _ASSETS.glob(pattern))
-)
-def test_each_asset_is_within_budget(asset: str) -> None:
+@pytest.mark.parametrize("asset", [p.name for p in _asset_paths(_ASSETS)])
+def test_each_asset_including_webp_keeps_original_budget(asset):
     # Arrange
     path = _ASSETS / asset
     # Act
     size = path.stat().st_size
     # Assert
-    assert size <= _ASSET_BUDGET_BYTES, (
-        f"{asset} is {size / 1000:.0f} KB; the profile page is the first thing a "
-        "phone loads. Optimise it (see scripts/build_profile_proof.py for the "
-        "posterise/palette approach) or move it out of the README's path."
-    )
+    assert size <= _ASSET_BUDGET_BYTES
 
 
-def test_the_assets_together_fit_the_page_budget() -> None:
+def test_all_retained_and_current_assets_keep_original_total_budget():
     # Arrange
-    pngs = sorted(p for pattern in ("*.png", "*.jpg") for p in _ASSETS.glob(pattern))
+    assets = _ASSETS
     # Act
-    total = sum(p.stat().st_size for p in pngs)
+    problems = _budget_problems(assets)
     # Assert
-    assert total <= _TOTAL_ASSET_BUDGET_BYTES, (
-        f"{total / 1000:.0f} KB of images on one profile page (budget "
-        f"{_TOTAL_ASSET_BUDGET_BYTES / 1000:.0f} KB)"
-    )
+    assert problems == []
 
 
-def test_the_manifest_is_present_and_names_every_asset() -> None:
-    """An asset with no recorded source is an asset nobody can review."""
+def test_manifest_names_all_assets_and_binds_current_capture_bytes():
     # Arrange
     manifest = _MANIFEST.read_text(encoding="utf-8")
-    assets = sorted(p.name for p in _ASSETS.iterdir() if p.is_file() and p.name != _MANIFEST.name)
+    assets = [
+        p.name for p in _ASSETS.iterdir() if p.is_file() and p.name != _MANIFEST.name
+    ]
     # Act
-    unrecorded = [a for a in assets if a not in manifest]
+    missing = [name for name in assets if name not in manifest]
     # Assert
-    assert unrecorded == [], f"not recorded in ASSET-MANIFEST.md: {unrecorded}"
+    assert (missing, _manifest_problems(manifest, _ASSETS)) == ([], [])
 
 
-def test_the_manifest_records_where_the_composite_came_from() -> None:
-    """The composite is crops of real screenshots; the manifest must say which
-    build, which commit and what was redacted, or it is just an assertion."""
+@pytest.mark.parametrize("lang", sorted(_READMES))
+@pytest.mark.parametrize(
+    "mutation", ["missing", "historical", "empty-alt", "hide-featured", "remove-labels"]
+)
+def test_image_contract_rejects_regressions_without_mutating_source(lang, mutation):
     # Arrange
-    manifest = _MANIFEST.read_text(encoding="utf-8")
-    required = ("commit", "sha256", "crop", "cropped", "development")
+    text = _READMES[lang].read_text(encoding="utf-8")
+    name = _FEATURED[0]
+    transformations = {
+        "missing": lambda s: re.sub(
+            r'<img\b[^>]*src="assets/' + re.escape(name) + r'"[^>]*>', "", s
+        ),
+        "historical": lambda s: s.replace(name, "proof-e2e.jpg"),
+        "empty-alt": lambda s: re.sub(r'alt="[^"]*"', 'alt=""', s),
+        "hide-featured": lambda s: "<details>" + s + "</details>",
+        "remove-labels": lambda s: re.sub(
+            r"development|synthetic|開発|合成", "", s, flags=re.IGNORECASE
+        ),
+    }
     # Act
-    missing = [token for token in required if token not in manifest.lower()]
+    problems = _image_problems(transformations[mutation](text), lang)
     # Assert
-    assert missing == [], f"ASSET-MANIFEST.md does not record: {missing}"
+    assert problems
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "Trusted by 12,000 researchers.",
+        "Production-ready research platform.",
+        "75 public repositories; 6 followers.",
+        "公開75リポジトリ、フォロワー6。",
+        "Version 2.30.8.",
+        "Install in sixty seconds.",
+        "最初の実行は60秒。",
+    ],
+)
+def test_claim_contract_rejects_adoption_static_stats_versions_and_speed_promises(
+    claim,
+):
+    # Arrange
+    text = "A truthful alpha profile.\n" + claim
+    # Act
+    problems = _claim_problems(text)
+    # Assert
+    assert problems
+
+
+@pytest.mark.parametrize("field", ["row", "hash", "capture", "checkout", "source"])
+def test_current_manifest_rejects_missing_or_tampered_provenance(field):
+    # Arrange
+    text = _MANIFEST.read_text(encoding="utf-8")
+    name = _FEATURED[0]
+    row = next(
+        line
+        for line in text.splitlines()
+        if line.startswith("|") and f"`{name}`" in line
+    )
+    transforms = {
+        "row": lambda s: s.replace(row, ""),
+        "hash": lambda s: s.replace(
+            hashlib.sha256((_ASSETS / name).read_bytes()).hexdigest(), "0" * 64
+        ),
+        "capture": lambda s: s.replace(
+            row, re.sub(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", "unknown", row)
+        ),
+        "checkout": lambda s: s.replace(
+            row, re.sub(r"(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])", "unknown", row)
+        ),
+        "source": lambda s: s.replace(
+            "Source manifest:", "Unknown provenance:"
+        ).replace("scitex-hub:", "unknown:"),
+    }
+    # Act
+    problems = _manifest_problems(transforms[field](text), _ASSETS)
+    # Assert
+    assert problems
+
+
+@pytest.mark.parametrize(
+    "sizes,expected", [([250_001], "asset:"), ([200_001, 200_000], "total")]
+)
+def test_webp_cannot_evade_per_asset_or_total_budget(tmp_path, sizes, expected):
+    # Arrange
+    for index, size in enumerate(sizes):
+        (tmp_path / f"owned-{index}.WEBP").write_bytes(b"x" * size)
+    # Act
+    problems = _budget_problems(tmp_path)
+    # Assert
+    assert any(problem.startswith(expected) for problem in problems)
+
+
+@pytest.mark.parametrize(
+    "target", ["../../../outside.webp", "assets/missing-current.webp"]
+)
+def test_relative_resolver_still_refuses_outside_and_missing_targets(checker, target):
+    # Arrange
+    readme = _READMES["en"]
+    # Act
+    ok, _detail = checker.check_relative(readme, target)
+    # Assert
+    assert ok is False

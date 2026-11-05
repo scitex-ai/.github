@@ -1,12 +1,37 @@
 # Asset manifest — `profile/assets/`
 
-Every image in this directory is either the organisation's own logo or a crop of
-something that already exists and can be checked. There are **no mockups, no
-redrawn UI, no synthesised figures, and no production screenshot passed off as a
-development one** anywhere in this directory. If that changes, this file is the
-first thing a reviewer should read, so it records the source, the commit, the
-date and the redactions of each asset rather than describing the result in
-prose.
+## Current profile screenshots
+
+The November 2026 profile uses these five existing SciTeX Cloud **development**
+captures from November 2–3. Files were copied byte-for-byte from the approved
+landing gallery on `https://compute-03-net.scitex.ai`; no UI pixels were generated,
+redrawn, cropped or otherwise edited for this profile update.
+
+Source manifest: `scitex-hub:apps/infra/public_app/static/public_app/images/landing-v2/product-captures-eleven-apps-20261103.json`.
+The original capture pipeline hid account/project controls before resizing and
+compression. The table records the original capture time and observed app checkout,
+not a claim that these are the current production versions.
+
+| File | Captured at (UTC) | Observed app checkout | Bytes | SHA256 |
+|---|---|---|---:|---|
+| `hub-20261102-768.webp` | 2026-11-02T15:38:33Z | `4a2babbdb115dcdb7c4cc82979807e7eae8afd18` | 11996 | `a633ca0957a9635858aec1e22081d427951b786bd92bf844204d6b7db452752b` |
+| `figrecipe-20261103-scene-768.webp` | 2026-11-02T23:01:41Z | `8c808b6969f0f6f4c8bfe001722d17bd27026185` | 18752 | `facaf1d6e74b12b5d9342b7cde91b937cddc623ec3661002cd30bde537ccf0b3` |
+| `scholar-20261102-768.webp` | 2026-11-02T16:02:13Z | `ca410ea9f3444720d533f1233574dcea2c5535ee` | 25948 | `db4b0107baf0428bba3081ccc7b50db853d1263a268dd7f9d631b24090910f5d` |
+| `writer-20261102-768.webp` | 2026-11-02T16:14:47Z | `6b9795b5de02a1eb6f228c7e708b370575bc46fe` | 17582 | `dd81f362564424c7840a19480f307af05b21cb7306a5eec74cfc2a8ea626b315` |
+| `cards-board-mnist-20261103-768.webp` | 2026-11-03T01:51:47Z | `bfebb541a36cf0d8438b92ca86904a7ca0c426b6` | 10844 | `84f50265116bdda7092e5697b5fc5f5a7b75bf6882c503171384504bfe90c2e8` |
+
+All five images are 768 × 480 WebP files. FigRecipe shows synthetic learning
+curves with a selected line and its native Details pane, not experimental results.
+Writer shows the example Abstract and its actual compiled section PDF. Scholar
+shows four curated real references; its selected record has no stored abstract.
+Cards shows four explicitly labelled synthetic MNIST workflow examples, not
+verified task progress. Hub shows the launcher; it does not establish app health.
+
+## Historical assets retained for existing links
+
+The images described below are retained at their original URLs. They are no
+longer used as current profile screenshots; their original provenance and
+processing details remain recorded for inspection.
 
 Legend: **dev** = captured from a development build of SciTeX Hub on
 `127.0.0.1:8000`, signed in as a throwaway demo account. Not production.
