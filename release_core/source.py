@@ -141,6 +141,11 @@ def source_payload_identity(
         }
     expected = {}
     source_paths = set()
+    for source, _ in policy.file_mappings:
+        if entries.get(source, ("", ""))[0] not in {"100644", "100755"}:
+            raise ValueError(
+                "registered file source is missing or not a regular Git blob"
+            )
     for path, (mode, oid) in entries.items():
         if policy.omitted(path):
             continue
@@ -153,6 +158,9 @@ def source_payload_identity(
         source_paths.add(path)
     if not expected:
         raise ValueError("public source package membership is empty")
+    for _, target in policy.file_mappings:
+        if any(member.startswith(target + "/") for member in expected):
+            raise ValueError("registered file destination overlaps a package directory")
     with zipfile.ZipFile(io.BytesIO(wheel_raw)) as wheel:
         actual = {
             name

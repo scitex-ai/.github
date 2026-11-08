@@ -91,6 +91,7 @@ class PackagePolicy:
     omitted_prefixes: tuple[str, ...] = ()
     forbidden_sdist_paths: tuple[str, ...] = ()
     reviewed_sdist_links: tuple[ReviewedSdistLink, ...] = ()
+    file_mappings: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self):
         if not all(
@@ -138,6 +139,27 @@ class PackagePolicy:
             _path(target, directory=True)
             if not target.startswith(self.package + "/"):
                 raise ValueError("mapping escapes registered import package")
+        if not isinstance(self.file_mappings, tuple) or any(
+            not isinstance(pair, tuple)
+            or len(pair) != 2
+            or not all(isinstance(value, str) for value in pair)
+            for pair in self.file_mappings
+        ):
+            raise TypeError("registered file mappings must be immutable tuples")
+        for source, target in self.file_mappings:
+            _path(source)
+            _path(target)
+            if not target.startswith(self.package + "/"):
+                raise ValueError("file mapping escapes registered import package")
+            if any(source.startswith(prefix) for prefix, _ in self.source_mappings):
+                raise ValueError("file mapping overlaps registered directory source")
+        if len({source for source, _ in self.file_mappings}) != len(self.file_mappings):
+            raise ValueError("duplicate registered file source")
+        if len({target for _, target in self.file_mappings}) != len(self.file_mappings):
+            raise ValueError("duplicate registered file destination")
+        targets = [target for _, target in self.file_mappings]
+        if any(a != b and a.startswith(b + "/") for a in targets for b in targets):
+            raise ValueError("overlapping registered file destinations")
         sources = [source for source, _ in self.source_mappings]
         if any(a != b and a.startswith(b) for a in sources for b in sources) or len(
             set(sources)
@@ -194,12 +216,18 @@ class PackagePolicy:
         )
 
     def destination(self, path):
+        for source, target in self.file_mappings:
+            if path == source:
+                return target
         for source, target in self.source_mappings:
             if path.startswith(source):
                 return target + path.removeprefix(source)
         return None
 
     def source_for(self, member):
+        for source, target in self.file_mappings:
+            if member == target:
+                return source
         candidates = [
             (len(target), source + member.removeprefix(target))
             for source, target in self.source_mappings

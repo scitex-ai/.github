@@ -48,6 +48,7 @@ def policy(record):
     data["reviewed_sdist_links"] = tuple(
         ReviewedSdistLink(**x) for x in data.get("reviewed_sdist_links", [])
     )
+    data["file_mappings"] = tuple(tuple(pair) for pair in data.get("file_mappings", ()))
     return PackagePolicy(**data)
 
 
