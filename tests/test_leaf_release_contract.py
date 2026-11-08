@@ -141,3 +141,11 @@ def test_scholar_build_uses_only_qualified_build_interpreter():
 
 def test_scholar_partial_registration_is_not_an_activation():
     assert dispatch(repository='scitex-ai/scitex-scholar', registration={})['reason'] == 'scholar-runtime-unregistered'
+
+
+def test_native_version_admission_keeps_the_complete_matrix_after_a_failure():
+    workflow = yaml.safe_load((ROOT/'.github/workflows/leaf-release-sif.yml').read_text())
+    strategy = workflow['jobs']['native']['strategy']
+    plan = dispatch()['plan']
+    assert (strategy.get('max-parallel'), strategy['fail-fast'], plan['versions']) == (
+        1, False, ['3.11', '3.12', '3.13'])

@@ -296,6 +296,10 @@ jobs:
           || fromJSON('{"group":"Organization","labels":["self-hosted","Linux","X64","scitex-org-cpu"]}') }}
     timeout-minutes: ${{ inputs.operation == 'build' && 30 || 60 }}
     strategy:
+      # Each normal native profile creates a large fresh dependency environment.
+      # Admit one version at a time; keep all versions and their original limits.
+      # This bounds this invocation only, not other jobs on the shared host.
+      max-parallel: 1
       fail-fast: false
       matrix:
         python-version: ${{ fromJSON(needs.profile.outputs.versions) }}
