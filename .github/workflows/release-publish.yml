@@ -127,7 +127,7 @@ jobs:
           POSTGRES_PASSWORD: scitex
           POSTGRES_DB: scitex
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd "pg_isready -U scitex"
           --health-interval 5s
@@ -167,10 +167,17 @@ jobs:
           cache-dependency-glob: pyproject.toml
       - name: Point the store at the service container
         if: inputs.postgres
+        env:
+          POSTGRES_SERVICE_PORT: ${{ job.services.postgres.ports['5432'] }}
         run: |
           set -euo pipefail
           unset SCITEX_STORE_DSN SCITEX_CARDS_DB SCITEX_CARDS_NOTIFY_DSN
-          echo "${{ inputs.store_dsn_var }}=postgresql://scitex:***@127.0.0.1:5432/scitex" >> "$GITHUB_ENV"
+          if ! [[ "${POSTGRES_SERVICE_PORT:-}" =~ ^[1-9][0-9]{0,4}$ ]] \
+              || (( POSTGRES_SERVICE_PORT > 65535 )); then
+            echo "::error::PostgreSQL service has no valid allocated host port." >&2
+            exit 1
+          fi
+          echo "${{ inputs.store_dsn_var }}=postgresql://scitex:scitex@127.0.0.1:${POSTGRES_SERVICE_PORT}/scitex" >> "$GITHUB_ENV"
       - name: Build locked frontend before release tests
         if: inputs.frontend_build_dir != ''
         working-directory: ${{ inputs.frontend_build_dir }}

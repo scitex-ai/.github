@@ -32,6 +32,11 @@ port and exports `SCITEX_STORE_DSN` using its assigned mapping. Missing or inval
 port mappings fail before installation or tests. Callers that leave the input
 false start no database and receive no DSN export from this workflow.
 
+`release-publish.yml` uses the same per-job port allocation for its disposable
+database. It exports the DSN to `store_dsn_var` (`SCITEX_STORE_DSN` by default)
+with the service's declared fixture credentials. Setting `postgres: false`
+skips that service and handoff.
+
 The jobs run directly on their runner, so the DSN uses `127.0.0.1`, not the
 container service name. Free-port allocation allows concurrent jobs on a shared
 runner host without reserving its PostgreSQL port. See
