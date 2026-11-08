@@ -1,6 +1,6 @@
 # IO native release profile
 
-`leaf-release-sif.yml` dispatches fixed Writer and IO repository profiles. The
+`leaf-release-sif.yml` dispatches fixed registered leaf repository profiles. The
 Writer compatibility workflow forwards its original operation, commit, and tag
 inputs; its qualified image, runtime, source closure and complete suite remain
 unchanged. The shared byte gate checks the complete image and native runtime,
@@ -37,3 +37,19 @@ persistence claim. The earlier compute-04 initdb timeout remains a failed build
 attempt; qualification did not raise its 120-second deadline or substitute RAM
 for the normal scratch filesystem. This registration does not authorize a tag
 or publication; the existing protected-main and OIDC boundaries still apply.
+
+
+## Version-job admission
+
+The native matrix admits **one version job at a time per workflow invocation**.
+Each registered test version still runs, and `fail-fast: false` keeps a failed
+version from cancelling the remaining versions. The complete dependency profile,
+pytest worker budget, image/runtime verification, private PostgreSQL checks,
+operation deadlines and guarded cleanup remain unchanged. This reduces overlap
+between the large fresh environments created by the matrix.
+
+This is a workflow scheduling budget, not an exclusive host reservation. Other
+workflow invocations and user jobs can still compete for the same disk. A leaf
+must adopt an accepted immutable workflow revision containing this policy before
+it applies; changing this producer does not change an existing tag's pinned
+executor. Native qualification is required before claiming a recovered release.
