@@ -2,10 +2,12 @@
 
 `release_core` is a stdlib-only archive/source verification port for Python 3.11+.
 It does not authorize a release, register an image/profile, resolve an immutable
-remote tag, mint credentials, or upload artifacts. Writer and IO retain their existing identity adapters; the explicit Scholar owner
-port is prepared for a thin pinned leaf adapter. Its native image/source profile
-remains refused until actual full qualification is registered. The leaf-owned publication job must retain its
-PyPI Trusted Publisher workflow identity.
+remote tag, mint credentials, or upload artifacts. Writer and IO retain their
+existing identity adapters; Scholar uses a thin adapter with a fixed central
+commit and complete file digests. Its image/runtime and leaf-helper admission
+are registered separately in `leaf-release-sif.yml`. Updating a core owner policy
+does not activate a consumer. The leaf-owned publication job retains its PyPI
+Trusted Publisher workflow identity.
 
 The core extracts the qualified Writer/IO wheel, RECORD, sdist and generated
 metadata checks behind an explicit owner policy. `PackagePolicy` identifies the
@@ -137,15 +139,17 @@ The command resolves an exact central-owned policy, checks actual regular files,
 RECORD, source membership/bytes and complete reviewed Hatch configuration, and
 prints the source-bound artifact proof. Repeat it immediately before upload and
 compare the proof. No policy, import mapping or omission list comes from the
-request/leaf artifacts. The positive algorithm fixture uses immutable public Git candidate Scholar1.29.1
-(6f8f26cc), not a claimed PyPI publication. The genuine1.29.0 Git/Hatch build
+request/leaf artifacts. The registered command's current source fixture is pinned
+in `tests/fixtures/release-core/scholar-cli-dictionary.json`; the generic algorithm
+fixtures retain earlier immutable public sources. These builds do not claim a
+PyPI publication. The genuine1.29.0 Git/Hatch build
 is a required negative control: its ignore rules omit a tracked favicon SVG.
 Owned build fixtures use OS /tmp roots so an ambient .cache/TMPDIR ancestor
 cannot cause Hatch to silently discard those ignore rules. Native qualification
 and publication remain separate mandatory gates.
 
 
-### Qualified Scholar native profile
+### Qualified Scholar native profile and helper successors
 
 The native dispatcher now admits Scholar only on the Organization runner group
 with the fixed `scitex-compute-03` host label, retaining Writer and IO selections.
@@ -167,3 +171,11 @@ composed qualification receipt digest is
 Registration does not create a tag, publish a package, or authorize another
 runner host. Leaf remote identity checks and protected OIDC publishing remain
 mandatory.
+
+The dictionary-verifier successor changes only the registered identity-helper
+digest in the complete eight-file helper table. The image, runtime, runner host,
+worker cap and remaining seven helper digests retain their existing values.
+`test_scholar_helper_registration.py` compares every registered helper digest
+with actual files from its immutable public source commit. This byte check does
+not replace the full native test/build jobs that the leaf release workflow runs
+before publication.
