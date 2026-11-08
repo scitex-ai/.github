@@ -94,9 +94,9 @@ on:
         default: 'pytest-xdist>=3.0.0'
         type: string
       test_extras:
-        description: 'Extras trial list for editable install, e.g. .[all,dev] .[dev] .'
+        description: 'One declared local test profile, e.g. .[all,dev] or .[dev]; failures never fall back'
         required: false
-        default: '.[all,dev] .[dev] .'
+        default: '.[all,dev]'
         type: string
       store_dsn_var:
         description: 'Env var the suite reads for its store (pointed at the service)'
@@ -183,13 +183,39 @@ jobs:
         working-directory: ${{ inputs.frontend_build_dir }}
         run: ${{ inputs.frontend_build_command }}
       - name: Run tests in a uv venv
+        env:
+          RELEASE_TEST_PROFILE: ${{ inputs.test_extras }}
+          RELEASE_EXTRA_TEST_DEPS: ${{ inputs.extra_test_deps }}
         run: |
           set -euo pipefail
           uv venv --python ${{ matrix.python-version }} .venv
-          for spec in ${{ inputs.test_extras }}; do
-            uv pip install --python .venv/bin/python -e "$spec" && break
-          done
-          [ -n "${{ inputs.extra_test_deps }}" ] && uv pip install --python .venv/bin/python ${{ inputs.extra_test_deps }}
+          uv pip install --python .venv/bin/python 'tomli>=2; python_version < "3.11"'
+          .venv/bin/python - <<'PY'
+          import os, re, sys
+          try:
+              import tomllib
+          except ModuleNotFoundError as error:
+              if error.name != 'tomllib':
+                  raise
+              import tomli as tomllib
+          profile = os.environ['RELEASE_TEST_PROFILE']
+          match = re.fullmatch(r'\.(?:\[([A-Za-z0-9_.-]+(?:,[A-Za-z0-9_.-]+)*)\])?', profile)
+          if match is None:
+              sys.exit('::error::test_extras must be one local profile, for example .[all,dev].')
+          with open('pyproject.toml', 'rb') as stream:
+              project = tomllib.load(stream)
+          normalize = lambda value: re.sub(r'[-_.]+', '-', value).lower()
+          declared = {normalize(name) for name in project.get('project', {}).get('optional-dependencies', {})}
+          requested = {normalize(name) for name in (match.group(1) or '').split(',') if name}
+          missing = requested - declared
+          if missing:
+              sys.exit('::error::Required test extras are undeclared: ' + ', '.join(sorted(missing)))
+          PY
+          uv pip install --python .venv/bin/python -e "$RELEASE_TEST_PROFILE"
+          if [ -n "$RELEASE_EXTRA_TEST_DEPS" ]; then
+            read -r -a extra_test_deps <<< "$RELEASE_EXTRA_TEST_DEPS"
+            uv pip install --python .venv/bin/python "${extra_test_deps[@]}"
+          fi
           export PYTEST_XDIST_AUTO_NUM_WORKERS="$(.venv/bin/python -c 'import os; print(len(os.sched_getaffinity(0)))')"
           PKG="${{ inputs.package_name }}"
           .venv/bin/python -m pytest tests/ -n auto --cov="src/$PKG" --cov-report=xml --cov-report=term
