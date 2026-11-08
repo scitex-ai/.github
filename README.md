@@ -24,6 +24,17 @@ writing one — it also shows up under *Actions → New workflow* in every repo.
 - `cla.yml` — CLA Assistant + owner direct-push bypass.
 - `auto-merge-to-develop.yml` — auto-merge green PRs targeting `develop`.
 
+### Storage native integration dependencies
+
+`fd-fclones-integration.yml` installs fd and fclones before running Storage's
+full test suite. On shared hosts, APT setup retries only exit status 100 with
+the explicit `E: Could not get lock` diagnostic, waiting up to 120 seconds for
+the owner to release its lock. Other errors and an exhausted lock-wait budget
+retain their original failure status. The workflow does not remove locks or
+terminate their owners; an installation that acquires its lock runs normally.
+The fclones download uses a unique file under `RUNNER_TEMP`, removed on exit.
+Admission, the declared package profile and the full pytest command are unchanged.
+
 ### PostgreSQL for tests
 
 Callers that need a disposable PostgreSQL 16 database pass `postgres: true` to
