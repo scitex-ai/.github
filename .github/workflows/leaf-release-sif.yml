@@ -262,7 +262,7 @@ jobs:
               ".github/ci/release-context.sh": "130f42eb7efbb511b0bcea962a84468e818e14ec3cf7498c2c45b9d145c430cc",
               ".github/ci/run-in-sif.sh": "ed4d90fa668c609e382a6050ca57b15ada47a4707ffb758084044d840604222f",
               ".github/ci/build-in-sif.sh": "8909563f08cc6727b33fcec9e82bc51fb4cc810539e4317453073101706ed58d",
-              ".github/ci/release-identity.py": "758813f60f78731df705f20bbd83c808556b6b8d3f874533fd86ab883ef9220e",
+              ".github/ci/release-identity.py": "f16b0c95d4d912257dcd914874bf557a56063a00e1b755d9c883868affbab277",
               ".github/ci/with-test-postgres.py": "61e6e0488fe5e4fab53f5dae40313eae0e740c9890e438101007797397b340c5",
               ".github/ci/probe-first-observer.py": "952ba02e30b0794e01f6385a2cd8565498bdd481ebcdf5bdcea3803218c299ed",
               ".github/ci/setup-node-owned.sh": "053fdbf23b2e166a384894afa0e3d0a9c04f81722eb0077b7cda239dcb2b6698"

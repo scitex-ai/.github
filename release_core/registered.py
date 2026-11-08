@@ -10,8 +10,25 @@ SCHOLAR_POLICY = PackagePolicy(
     distribution="scitex-scholar",
     package="scitex_scholar",
     source_mappings=(("src/scitex_scholar/", "scitex_scholar/"),),
+    file_mappings=(
+        (".scitex/dev/cli-audit-dict.yaml", "scitex_scholar/_cli_audit_dict.yaml"),
+    ),
     reviewed_build_json=json.dumps(
-        {"targets": {"wheel": {"packages": ["src/scitex_scholar"]}}},
+        {
+            "targets": {
+                "wheel": {
+                    "packages": ["src/scitex_scholar"],
+                    "force-include": {
+                        ".scitex/dev/cli-audit-dict.yaml": "scitex_scholar/_cli_audit_dict.yaml",
+                    },
+                },
+                "sdist": {
+                    "force-include": {
+                        ".scitex/dev/cli-audit-dict.yaml": ".scitex/dev/cli-audit-dict.yaml",
+                    },
+                },
+            },
+        },
         sort_keys=True,
     ),
     reviewed_backend_json=json.dumps(
@@ -20,6 +37,7 @@ SCHOLAR_POLICY = PackagePolicy(
     ),
     required_members=(
         "scitex_scholar/__init__.py",
+        "scitex_scholar/_cli_audit_dict.yaml",
         "scitex_scholar/_django/manifest.json",
         "scitex_scholar/_django/urls.py",
         "scitex_scholar/_django/templates/scholar/scholar.html",
