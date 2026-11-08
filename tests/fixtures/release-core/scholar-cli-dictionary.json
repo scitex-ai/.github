@@ -1,0 +1,50 @@
+{
+  "key": "scholar-cli-dictionary",
+  "commit": "c38430269eacfea84dae17b47c2b13ca70ee75fb",
+  "repository": "scitex-ai/scitex-scholar",
+  "distribution": "scitex-scholar",
+  "package": "scitex_scholar",
+  "source_mappings": [
+    [
+      "src/scitex_scholar/",
+      "scitex_scholar/"
+    ]
+  ],
+  "file_mappings": [
+    [
+      ".scitex/dev/cli-audit-dict.yaml",
+      "scitex_scholar/_cli_audit_dict.yaml"
+    ]
+  ],
+  "reviewed_build": {
+    "targets": {
+      "wheel": {
+        "packages": [
+          "src/scitex_scholar"
+        ],
+        "force-include": {
+          ".scitex/dev/cli-audit-dict.yaml": "scitex_scholar/_cli_audit_dict.yaml"
+        }
+      },
+      "sdist": {
+        "force-include": {
+          ".scitex/dev/cli-audit-dict.yaml": ".scitex/dev/cli-audit-dict.yaml"
+        }
+      }
+    }
+  },
+  "reviewed_backend": {
+    "requires": [
+      "hatchling"
+    ],
+    "build-backend": "hatchling.build"
+  },
+  "required_members": [
+    "scitex_scholar/__init__.py",
+    "scitex_scholar/_cli_audit_dict.yaml"
+  ],
+  "omitted_paths": [],
+  "omitted_prefixes": [],
+  "forbidden_sdist_paths": [],
+  "reviewed_sdist_links": []
+}

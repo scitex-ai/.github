@@ -41,6 +41,31 @@ runtime, full leaf tests, complete frontend closure and final remote identity
 revalidation remain mandatory caller responsibilities. A successful result from
 this library alone does not satisfy those gates.
 
+## Exact source-file mappings
+
+`PackagePolicy.file_mappings` optionally binds individual regular Git files to
+exact members inside the registered wheel namespace. This supports a canonical
+configuration file packaged under a different name without copying its maintained
+source. The mappings are immutable tuples supplied by the reviewed policy, not
+inferred from a wheel, build configuration or request.
+
+Mapped sources must exist as regular files in the verified Git commit. Their
+wheel bytes and source-archive bytes remain subject to the same complete
+membership, RECORD, metadata and Git-object checks. Missing sources, source
+symlinks, unsafe paths, duplicate or overlapping mappings, namespace escapes and
+rehashed artifact modifications are refused. The complete Hatch/backend policy
+still has to match its reviewed configuration.
+
+The Scholar CLI dictionary case in
+`tests/fixtures/release-core/scholar-cli-dictionary.json` is a test fixture only.
+This primitive does not update the production Scholar registry or any immutable
+consumer pin. Run its real source-build controls with the declared self-test
+profile:
+
+```bash
+.venv/bin/python -m pytest tests/test_release_core_file_mappings.py -q
+```
+
 ## Closed source-owned documentation links
 
 The default policy rejects every sdist symlink. Writer and IO retain that empty
