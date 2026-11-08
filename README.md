@@ -207,3 +207,16 @@ explicitly deployed to every runner service.
 - `main` — stable, what callers reference (`@main`).
 - `develop` — working branch for changes to these workflows, promoted to
   `main` the same way as the rest of the ecosystem.
+
+
+## Storage native dependency setup maintenance
+
+This maintenance line retains the repository-specific hosted admission gate from
+`442f4e5dcd938c0297e36a5f07461d809f9416ff`. Its fd/fclones installer retries only
+APT exit 100 with an explicit busy-lock diagnostic, for a 120-second lock-wait
+budget. Other errors and an exhausted budget remain failures; existing locks and
+their owners are left alone. Each job downloads fclones to its own temporary
+file under `RUNNER_TEMP` and removes it on exit.
+
+The package profile and whole test command are unchanged. This is an installer
+backport, separate from migration to the current shared runner-admission policy.
