@@ -305,22 +305,11 @@ jobs:
           # The steps below run ON the runner, not inside a container, so the
           # service is NOT reachable by its service name and the port has to be
           # published to the host. A skipped service publishes nothing.
-          #
-          # 5432, not the fleet's 55432: this is a throwaway cluster whose only
-          # client is the DSN written below, and 5432:5432 is the one mapping
-          # this org has actually run green (scitex-cards'
-          # postgres-backend-on-ubuntu-latest.yml). 55432 is the port of the
-          # per-host fleet instances, which this container is not one of.
-          #
-          # A FIXED HOST PORT IS A SHARED RESOURCE, same class as the shared
-          # $HOME and the shared tool cache documented below. On the self-hosted
-          # pool, where many runners share one machine, two concurrent jobs both
-          # opting in would contend for it. Callers that opt in should pass
-          # `runs_on: '["ubuntu-latest"]'`, where the runner is a fresh VM and
-          # the port is theirs alone. Stated rather than solved: no caller opts
-          # in yet, so this has never been observed, and inventing an untested
-          # dynamic-port mechanism is the thing #42 declined to do.
-          - 5432:5432
+          # Let Docker allocate a free host port for each matrix job. Resolve
+          # that exact mapping through job.services below; shared runners may
+          # already have a database or another matrix job on host port 5432.
+          # https://docs.github.com/en/actions/tutorials/use-containerized-services/use-docker-service-containers
+          - 5432
         # Without a health check the steps race the server's startup and fail
         # with a connection error that reads exactly like a real defect. GitHub
         # holds the job's steps until the service reports healthy, which is why
@@ -506,12 +495,19 @@ jobs:
       # canonical variable is a change in that repository, not this one.
       - name: Point the store at the service container
         if: inputs.postgres
+        env:
+          POSTGRES_SERVICE_PORT: ${{ job.services.postgres.ports['5432'] }}
         run: |
           set -euo pipefail
           # 127.0.0.1, not `postgres`: the service's hostname resolves only for
           # jobs that themselves run in a container, and this job runs directly
           # on the runner. The published port above is what makes it reachable.
-          echo "SCITEX_STORE_DSN=postgresql://scitex:scitex@127.0.0.1:5432/scitex" \
+          if ! [[ "${POSTGRES_SERVICE_PORT:-}" =~ ^[1-9][0-9]{0,4}$ ]] \
+              || (( POSTGRES_SERVICE_PORT > 65535 )); then
+            echo "PostgreSQL service has no valid published host port" >&2
+            exit 1
+          fi
+          echo "SCITEX_STORE_DSN=postgresql://scitex:scitex@127.0.0.1:${POSTGRES_SERVICE_PORT}/scitex" \
             >> "$GITHUB_ENV"
       - name: Install (.[all,dev]) + pytest
         env:
