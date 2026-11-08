@@ -99,10 +99,34 @@ jobs:
       - name: Install fd + fclones
         run: |
           set -euo pipefail
-          sudo apt-get update -y
-          sudo apt-get install -y fd-find
+          apt_retry_lock() {
+            local log code deadline=$((SECONDS + 120))
+            log=$(mktemp "${RUNNER_TEMP}/apt-lock.XXXXXX")
+            while true; do
+              if LC_ALL=C "$@" >"$log" 2>&1; then
+                cat "$log"
+                rm -f -- "$log"
+                return 0
+              else
+                code=$?
+              fi
+              cat "$log"
+              if [[ "$code" -ne 100 ]] ||
+                 ! grep -Eq '^E: Could not get lock ' "$log" ||
+                 [[ "$SECONDS" -ge "$deadline" ]]; then
+                rm -f -- "$log"
+                return "$code"
+              fi
+              echo '::notice::APT lock busy; waiting for its owner (maximum 120 seconds).' >&2
+              sleep 2
+            done
+          }
+          apt_retry_lock sudo apt-get update -y
+          apt_retry_lock sudo apt-get install -y fd-find
           FCLONES_VERSION=0.35.0
           FCLONES_URL="https://github.com/pkolaczk/fclones/releases/download/v${FCLONES_VERSION}/fclones_${FCLONES_VERSION}-1_amd64.deb"
+          FCLONES_DEB=$(mktemp "${RUNNER_TEMP}/fclones.XXXXXX.deb")
+          trap 'rm -f -- "$FCLONES_DEB"' EXIT
           # Retry: this is the ONLY job that exercises fd and fclones for real
           # (the matrix skips those tests -- see tests/conftest.py), so a
           # transient network blip here does not merely red a check, it means
@@ -110,7 +134,7 @@ jobs:
           # `curl -fsSL` died with "curl: (35) Recv failure: Connection reset
           # by peer" and the job never reached pytest at all.
           if ! curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors \
-                 -o /tmp/fclones.deb "$FCLONES_URL"; then
+                 -o "$FCLONES_DEB" "$FCLONES_URL"; then
             # Name the artifact and the URL. The bare exit code 35 that this
             # replaces looks identical to a test failure in the checks list,
             # which cost an investigation before anyone read the log.
@@ -119,7 +143,7 @@ jobs:
             echo "::error::This is a NETWORK failure in the install step, NOT a test failure."
             exit 1
           fi
-          sudo apt-get install -y /tmp/fclones.deb
+          apt_retry_lock sudo apt-get install -y "$FCLONES_DEB"
           fdfind --version
           fclones --version
       - name: Install scitex-storage[dev]
