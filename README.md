@@ -24,6 +24,19 @@ writing one — it also shows up under *Actions → New workflow* in every repo.
 - `cla.yml` — CLA Assistant + owner direct-push bypass.
 - `auto-merge-to-develop.yml` — auto-merge green PRs targeting `develop`.
 
+### PostgreSQL for tests
+
+Callers that need a disposable PostgreSQL 16 database pass `postgres: true` to
+`pytest-matrix.yml`. Each matrix job publishes container port 5432 on a free host
+port and exports `SCITEX_STORE_DSN` using its assigned mapping. Missing or invalid
+port mappings fail before installation or tests. Callers that leave the input
+false start no database and receive no DSN export from this workflow.
+
+The jobs run directly on their runner, so the DSN uses `127.0.0.1`, not the
+container service name. Free-port allocation allows concurrent jobs on a shared
+runner host without reserving its PostgreSQL port. See
+[GitHub's service-container networking documentation](https://docs.github.com/en/actions/tutorials/use-containerized-services/use-docker-service-containers).
+
 ## CLA attribution completeness
 
 The trusted helper binds attribution to immutable PR base/head SHAs. If the

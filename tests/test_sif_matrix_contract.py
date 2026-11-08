@@ -796,8 +796,10 @@ class SIFWorkflowSourceTests(unittest.TestCase):
             "import-smoke.yml": "7d5e5cf74f6535c8a5e724ffee20679f76aff2354f0b9c213c38df48735550d0",
             # Reviewed successor: same tag-bound normal merge; dated historical findings.
             "promote-develop-to-main-on-tag.yml": "01263b9fb92bb6305260eb8b530db692b09d2eb5e7a85145ec2f129fc881dbaa",
-            # Reviewed successor: strict install, bounded workers and fresh private job cache.
-            "pytest-matrix.yml": "9ba1d1964a7a10d4121e73536eb8639edcf715d366958190ecd5e134eb50e48d",
+            # Successor: per-job PostgreSQL port and validated DSN handoff.
+            # All other parsed fields match the prior pin; the exact-body guard
+            # remains in force. See test_pytest_postgres_port.py.
+            "pytest-matrix.yml": "caf3fe6624a4f7cd4fde11f42b5c5348bc470fbc8e9098b38f4325551e633988",
             "quality-audit.yml": "f44a2e6b5c479c2975d1cedf66738fdbf402a74cf1d8e26340bb9895524e7b4a",
             "rtd-sphinx-build.yml": "f7536adfb98bb9cb9862815d52b3d049f9c3032a4197a745f75bd62be5d7fa7e",
             "runner-admission.yml": "406b82aae0183da8bf35b3fcfa424f22231e3b132ba3e002f72e09c713828205",
