@@ -218,5 +218,17 @@ budget. Other errors and an exhausted budget remain failures; existing locks and
 their owners are left alone. Each job downloads fclones to its own temporary
 file under `RUNNER_TEMP` and removes it on exit.
 
-The package profile and whole test command are unchanged. This is an installer
-backport, separate from migration to the current shared runner-admission policy.
+The same `.[dev]` package profile is installed into a fresh virtual environment
+under `RUNNER_TEMP`, rather than the shared runner Python installation. The next
+step uses that environment's Playwright to install its matching Chromium
+headless shell (Playwright's default headless implementation) into a separate
+job-owned directory. It verifies that Chromium launches and sets
+`SCITEX_STORAGE_TEST_CHROMIUM` explicitly, so a missing executable is a failure
+instead of an optional browser-test skip. The runner cleans its temporary
+directory after the job.
+
+The whole test command and repository-specific admission policy are unchanged.
+This maintenance line does not migrate Storage to the current shared admission
+policy. Installing a matching browser addresses missing or mismatched test
+prerequisites; it does not establish the cause of an intermittent screenshot
+protocol error.
