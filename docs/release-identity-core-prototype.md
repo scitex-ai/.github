@@ -56,11 +56,17 @@ symlinks, unsafe paths, duplicate or overlapping mappings, namespace escapes and
 rehashed artifact modifications are refused. The complete Hatch/backend policy
 still has to match its reviewed configuration.
 
-The Scholar CLI dictionary case in
-`tests/fixtures/release-core/scholar-cli-dictionary.json` is a test fixture only.
-This primitive does not update the production Scholar registry or any immutable
-consumer pin. Run its real source-build controls with the declared self-test
-profile:
+The Scholar CLI dictionary source case in
+`tests/fixtures/release-core/scholar-cli-dictionary.json` exercises the explicit
+file mapping. The registered Scholar policy also requires this dictionary and
+its exact Hatch wheel/source-archive force-include configuration, retaining the
+existing required GUI assets. The registered CLI checks rehashed modifications
+to the dictionary against its Git source bytes.
+
+An older immutable consumer pin retains its older registry policy. Registry
+registration does not update consumer references or authorize a runtime/image
+profile, tag or publisher. Run the real source-build controls with the declared
+self-test profile:
 
 ```bash
 .venv/bin/python -m pytest tests/test_release_core_file_mappings.py -q

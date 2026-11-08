@@ -11,17 +11,28 @@ from _release_core_fixtures import OWNERS, build_owner, build_workspace, policy
 from release_core.registered import RELEASE_REGISTRY, SCHOLAR_POLICY
 
 ROOT = Path(__file__).resolve().parents[1]
+REGISTERED_SCHOLAR = json.loads(
+    (Path(__file__).parent / "fixtures/release-core/scholar-cli-dictionary.json").read_text()
+)
+# Preserve the registered GUI assets as required payloads alongside the dictionary.
+REGISTERED_SCHOLAR["required_members"] = [
+    "scitex_scholar/__init__.py",
+    "scitex_scholar/_cli_audit_dict.yaml",
+    "scitex_scholar/_django/manifest.json",
+    "scitex_scholar/_django/urls.py",
+    "scitex_scholar/_django/templates/scholar/scholar.html",
+]
 
 
 @pytest.fixture(scope="module")
 def scholar():
-    record = next(row for row in OWNERS if row["key"] == "scholar")
+    record = REGISTERED_SCHOLAR
     with build_workspace("registered-scholar") as root:
         yield build_owner(record, root)
 
 
 def test_registered_policy_matches_reviewed_actual_hatch_source():
-    record = next(row for row in OWNERS if row["key"] == "scholar")
+    record = REGISTERED_SCHOLAR
     assert SCHOLAR_POLICY == policy(record)
 
 
@@ -51,6 +62,22 @@ def test_registered_cli_rejects_artifact_byte_tampering(scholar, tmp_path):
     args = command(scholar)
     args[args.index("--wheel") + 1] = str(changed)
     actual = subprocess.run(args, cwd=ROOT, capture_output=True, text=True, timeout=30)
+    assert actual.returncode != 0 and "wheel public source bytes differ" in actual.stderr
+
+
+def test_registered_cli_rejects_rehashed_dictionary_tampering(scholar, tmp_path):
+    from _release_core_archives import pack_wheel, wheel_files
+
+    # Arrange
+    files = wheel_files(scholar["wheel"])
+    files["scitex_scholar/_cli_audit_dict.yaml"] += b"\n# foreign vocabulary\n"
+    changed = tmp_path / next(scholar["output"].glob("*.whl")).name
+    changed.write_bytes(pack_wheel(files, rehash=True))
+    args = command(scholar)
+    args[args.index("--wheel") + 1] = str(changed)
+    # Act
+    actual = subprocess.run(args, cwd=ROOT, capture_output=True, text=True, timeout=30)
+    # Assert
     assert actual.returncode != 0 and "wheel public source bytes differ" in actual.stderr
 
 
