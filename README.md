@@ -265,3 +265,17 @@ explicitly deployed to every runner service.
 - `main` — stable, what callers reference (`@main`).
 - `develop` — working branch for changes to these workflows, promoted to
   `main` the same way as the rest of the ecosystem.
+
+
+## Required Storage browser regressions
+
+The native fd/fclones workflow installs the same `.[dev]` dependencies into a
+fresh virtual environment under `RUNNER_TEMP`. Its Playwright installs the
+matching Chromium headless shell into a separate job-owned directory. A launch
+preflight sets `SCITEX_STORAGE_TEST_CHROMIUM` explicitly, so a missing executable
+fails the browser regressions instead of skipping them. The runner cleans its
+temporary directory after the job.
+
+Admission rules, the native dependency installer, the full pytest command and
+test deadlines are unchanged. Matching prerequisites do not establish the cause
+of every intermittent screenshot protocol failure.
