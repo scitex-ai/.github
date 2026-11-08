@@ -42,6 +42,19 @@ container service name. Free-port allocation allows concurrent jobs on a shared
 runner host without reserving its PostgreSQL port. See
 [GitHub's service-container networking documentation](https://docs.github.com/en/actions/tutorials/use-containerized-services/use-docker-service-containers).
 
+### Release test profiles
+
+`release-publish.yml` installs one local `test_extras` profile, defaulting to
+`.[all,dev]`. Callers may explicitly select another profile, such as `.[dev]`
+or `.`, rather than supplying a fallback list. Requested extras must be
+declared in `project.optional-dependencies`; an invalid profile or failed
+install stops the job before pytest. The TOML parser uses the standard library
+on Python 3.11+ and an explicit `tomli` compatibility dependency on older Python.
+
+`extra_test_deps` remains a whitespace-separated list of additional requirements.
+The job passes each requirement as a literal argument, preserving constraints
+such as `pytest-xdist>=3.0.0`.
+
 ## CLA attribution completeness
 
 The trusted helper binds attribution to immutable PR base/head SHAs. If the
