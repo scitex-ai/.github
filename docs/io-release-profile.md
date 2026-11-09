@@ -53,3 +53,20 @@ workflow invocations and user jobs can still compete for the same disk. A leaf
 must adopt an accepted immutable workflow revision containing this policy before
 it applies; changing this producer does not change an existing tag's pinned
 executor. Native qualification is required before claiming a recovered release.
+
+
+## Qualified host scope
+
+The registered company IO executor currently admits **compute-03 only** for
+native tests and builds. Its complete source qualification used
+`618e79b88615002cf3264435cf349911be34bb7c` on that host, with all three full
+Python suites, private first-citation persistence, verified teardown and the
+separate same-source build. The image, runtime, ten helper hashes and operation
+deadlines remain the existing qualified values.
+
+A generic organization CPU label alone does not qualify another host for this
+workload. Compute-04's initializer and first-save timeouts remain failed evidence;
+this routing correction does not repair that host or establish fleet-wide
+readiness. Another host needs complete qualification before admission is widened.
+The public IO library's platform support is separate from this company release
+configuration. Writer and Scholar retain their independent existing selections.
