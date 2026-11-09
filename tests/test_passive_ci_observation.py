@@ -255,3 +255,51 @@ def test_pilot_retains_original_contract_test_command_and_always_reports_missing
         if step.get("name") == "Report unavailable diagnostic upload"
     )
     assert warning["if"] == "always() && steps.observation-upload.outcome == 'failure'"
+
+
+def test_real_child_failure_receipt_includes_bounded_shared_pressure(tmp_path):
+    artifact = tmp_path / "pressure.json"
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--artifact", str(artifact), "--",
+         sys.executable, "-c", "import time;time.sleep(.4);raise SystemExit(23)"],
+        capture_output=True, text=True, timeout=5,
+    )
+    receipt = json.loads(artifact.read_text())
+    sensors = [row["host_pressure"] for row in receipt["samples"]]
+    assert (result.returncode, bool(sensors),
+            all(set(row) == {"cpu", "io", "scope"} and
+                row["scope"] == "host-shared-not-command-attributed" and
+                all(row[k]["state"] in {"observed", "unknown"}
+                    for k in ("cpu", "io")) for row in sensors),
+            receipt["resource_limits_changed"]) == (23, True, True, False)
+
+
+def test_real_child_sampling_reports_cpu_counters_and_states_without_arguments(tmp_path):
+    ready = tmp_path / "ready"
+    code = ("import time,pathlib;sum(i*i for i in range(2000000));"
+            f"pathlib.Path({str(ready)!r}).touch();time.sleep(30)")
+    child = subprocess.Popen([sys.executable, "-c", code])
+    try:
+        deadline = time.monotonic() + 3
+        while not ready.exists():
+            assert child.poll() is None and time.monotonic() < deadline
+            time.sleep(.01)
+        body = Path(f"/proc/{child.pid}/stat").read_text()
+        fields = body[body.rindex(")") + 2:].split()
+        birth = int(fields[19])
+        own_cpu_ticks = int(fields[11]) + int(fields[12])
+        sample = observer.process_tree_sample(child.pid, birth)
+    finally:
+        child.kill()
+        child.wait(timeout=5)
+    assert (sample["cpu_ticks"] >= own_cpu_ticks > 0,
+            sum(sample["process_states"].values()) == sample["processes"],
+            "time.sleep" not in json.dumps(sample)) == (True, True, True)
+
+
+def test_missing_or_oversized_pressure_remains_unknown_without_unbounded_read(tmp_path):
+    (tmp_path / "cpu").write_text("x" * 4097)
+    result = observer.host_pressure_snapshot(tmp_path)
+    assert (result["cpu"]["state"], result["io"]["state"],
+            "raw" in result["cpu"], "raw" in result["io"]) == (
+        "unknown", "unknown", False, False)

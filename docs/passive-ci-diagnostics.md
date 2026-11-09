@@ -10,6 +10,9 @@ actual useful pilot result and source review.
 The artifact records the repository, source SHA, run and attempt, logical job
 key, runner, original exit or signal, actual child wait, elapsed time, sampled
 descendant RSS, wait4 maximum RSS, and existing cgroup counters before/after.
+Each sample also records bounded CPU/I/O pressure reads from `/proc/pressure`,
+the sampled descendants' own cumulative CPU ticks, and counts of their kernel
+process states. The artifact records the clock tick frequency for those counters.
 Command arguments, environment, process command lines and original test output
 are excluded. The original stdout/stderr stay in the original job log.
 
@@ -23,6 +26,15 @@ OOM event deltas retain that scope: they do not prove that this command was an
 OOM victim. SIGKILL alone does not prove OOM. Missing evidence is `unknown`.
 Queue duration and a numeric GitHub API job ID are not observed by this wrapper.
 An optional `CI_MEMORY_REQUEST_MIB` is a recorded declaration, never enforced.
+Host pressure is shared across work on the host; it cannot establish which
+command caused a stall or why a particular child timed out. Descendant CPU ticks
+are not utilization percentages: membership changes as children exit, and
+short-lived processes may be missed. State counts are point-in-time observations,
+not a measured duration in that state. Missing, empty or oversized pressure
+reads remain `unknown`, rather than zero. These observations add no resource
+limits and do not change any command or test deadline.
+The metric definitions follow the kernel's [pressure interface](https://docs.kernel.org/accounting/psi.html)
+and [process stat fields](https://docs.kernel.org/filesystems/proc.html#process-specific-subdirectories).
 An externally requested TERM/INT is forwarded to this command's owned process
 group, with a two-second cancellation grace and actual direct-child wait.
 External cancellation and its cleanup signal are recorded separately from OOM.

@@ -23,6 +23,23 @@ def unavailable(reason: str) -> dict:
     return {"state": "unknown", "reason": reason}
 
 
+def host_pressure_snapshot(root: Path = Path("/proc/pressure")) -> dict:
+    """Read bounded host counters; they cannot attribute a command's delay."""
+    result = {"scope": "host-shared-not-command-attributed"}
+    for name in ("cpu", "io"):
+        try:
+            with (root / name).open() as stream:
+                raw = stream.read(4097)
+            result[name] = (
+                {"state": "observed", "raw": raw}
+                if raw and len(raw) <= 4096
+                else unavailable("pressure-empty-or-oversized")
+            )
+        except (OSError, UnicodeError):
+            result[name] = unavailable("host-pressure-unavailable")
+    return result
+
+
 def cgroup_snapshot(
     proc_root: Path = Path("/proc"), root: Path = Path("/sys/fs/cgroup")
 ) -> dict:
@@ -86,7 +103,10 @@ def process_tree_sample(pid: int, birth: int, proc_root: Path = Path("/proc")) -
             body = (entry / "stat").read_text()
             # comm can contain spaces and ')'; its last ')' ends field2.
             fields = body[body.rindex(")") + 2 :].split()
-            rows[int(entry.name)] = (int(fields[1]), int(fields[19]), int(fields[21]))
+            rows[int(entry.name)] = (
+                int(fields[1]), int(fields[19]), int(fields[21]),
+                int(fields[11]) + int(fields[12]), fields[0],
+            )
         except (OSError, ValueError, IndexError):
             unreadable += 1
     if pid not in rows or rows[pid][1] != birth:
@@ -96,8 +116,8 @@ def process_tree_sample(pid: int, birth: int, proc_root: Path = Path("/proc")) -
     while changed:
         additions = {
             child
-            for child, (parent, _, _) in rows.items()
-            if parent in members and child not in members
+            for child, row in rows.items()
+            if row[0] in members and child not in members
         }
         changed = bool(additions)
         members.update(additions)
@@ -106,6 +126,11 @@ def process_tree_sample(pid: int, birth: int, proc_root: Path = Path("/proc")) -
         "bytes": sum(max(0, rows[member][2]) for member in members)
         * os.sysconf("SC_PAGE_SIZE"),
         "processes": len(members),
+        "cpu_ticks": sum(rows[member][3] for member in members),
+        "process_states": {
+            state: sum(rows[member][4] == state for member in members)
+            for state in sorted({rows[member][4] for member in members})
+        },
         "unreadable_proc_entries": unreadable,
         "scope": "sampled-sum-process-rss-not-distinct-or-charged-memory",
     }
@@ -187,6 +212,9 @@ def summary(payload: dict) -> str:
         "Cgroup memory current/peak are shared runner counters, "
         "not this job's exclusive usage. OOM attribution is UNKNOWN "
         "even when a shared counter rises; SIGKILL alone does not prove OOM.\n\n"
+        "CPU and I/O pressure are sampled host-wide counters, not attributed "
+        "command delays. Descendant CPU ticks and process states are sampled; "
+        "ticks are cumulative counters, not utilization percentages.\n\n"
         f"External cancellation: **{payload['cancellation']['signal'] or 'none'}**. "
         "Cancellation is kept separate from OOM evidence.\n\n"
         "No resource limits, scheduling, registrations or command dependencies "
@@ -280,6 +308,7 @@ def main() -> int:
                 else unavailable("command-birth-unobserved")
             )
             sample["elapsed_seconds"] = round(time.monotonic() - started, 3)
+            sample["host_pressure"] = host_pressure_snapshot()
             samples.append(sample)
             time.sleep(0.25)
     finally:
@@ -300,6 +329,7 @@ def main() -> int:
         },
         "duration_seconds": round(time.monotonic() - started, 3),
         "sample_interval_seconds": 0.25,
+        "cpu_clock_ticks_per_second": os.sysconf("SC_CLK_TCK"),
         "samples": samples,
         "sampled_process_tree_rss_peak_bytes": max(observed) if observed else None,
         "wait4_maxrss_kib": usage.ru_maxrss,
