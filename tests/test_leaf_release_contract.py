@@ -113,8 +113,8 @@ def test_native_job_consumes_registered_selection_and_retains_existing_pool_fall
     assert ('fromJSON(needs.profile.outputs.plan).runner' in selection and '"group":"Organization","labels":["self-hosted","Linux","X64","scitex-org-cpu"]' in selection and '"ubuntu-latest"' in selection)
 
 
-def test_writer_and_io_do_not_inherit_scholar_host_restriction():
-    assert all('runner' not in dispatch(repository=repo)['plan'] for repo in ['scitex-ai/scitex-writer', 'scitex-ai/scitex-io'])
+def test_writer_keeps_its_existing_generic_pool_selection():
+    assert 'runner' not in dispatch(repository='scitex-ai/scitex-writer')['plan']
 
 
 def test_registered_worker_budget_is_passed_to_both_strict_driver_operations():
@@ -149,3 +149,10 @@ def test_native_version_admission_keeps_the_complete_matrix_after_a_failure():
     plan = dispatch()['plan']
     assert (strategy.get('max-parallel'), strategy['fail-fast'], plan['versions']) == (
         1, False, ['3.11', '3.12', '3.13'])
+
+
+def test_io_runner_scope_matches_its_complete_native_qualification_host():
+    plan = dispatch()['plan']
+    assert plan.get('runner') == {
+        'group': 'Organization',
+        'labels': ['self-hosted', 'Linux', 'X64', 'scitex-org-cpu', 'scitex-compute-03']}

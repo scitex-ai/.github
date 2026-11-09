@@ -175,6 +175,11 @@ jobs:
                 runtime, leafSources, pgImage: null, native: true};
             }
             const IO_PYTEST_WORKERS = 4;
+            // Whole IO profile qualified on compute-03; compute-04 failures
+            // remain unqualified. This is release admission, not library support.
+            const IO_RUNNER = Object.freeze({group: 'Organization', labels: Object.freeze([
+              'self-hosted', 'Linux', 'X64', 'scitex-org-cpu', 'scitex-compute-03'
+            ])});
             const IO_REGISTRATION = {
               "image": {
                 "sha256": "e8461fc77a2218b5f7e2c475bd601dddaec97c6335bee459a1b0d4e0ca374d83",
@@ -222,7 +227,7 @@ jobs:
             function ioPlan(repository, eventName, native, operation, sourceCommit, releaseTag, registration = IO_REGISTRATION) {
               const plan = registeredReleasePlan('io', repository, eventName, native, operation,
                 sourceCommit, releaseTag, registration, IO_LEAF_SOURCES);
-              return {...plan, pytestWorkers: IO_PYTEST_WORKERS};
+              return {...plan, pytestWorkers: IO_PYTEST_WORKERS, runner: IO_RUNNER};
             }
             // Qualified on compute-03: all three full suites and a separate fresh
             // same-source build. Other hosts remain outside this registration.
