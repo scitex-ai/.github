@@ -107,3 +107,13 @@ jobs:
         run: |
           echo '::warning title=CI diagnostic artifact unavailable::Upload failed. The original test verdict is retained; inspect the Job Summary and original failed-step logs.'
           printf '\nDiagnostic artifact upload failed; the original test verdict is retained.\n' >> "$GITHUB_STEP_SUMMARY"
+
+  organization-job-cache:
+    name: organization job cache scope
+    uses: ./.github/workflows/organization-job.yml
+    with:
+      command: |
+        expected="$RUNNER_TEMP/scitex-uv-cache"
+        test "$UV_CACHE_DIR" = "$expected"
+        test "$(uv cache dir)" = "$expected"
+        uv tool run --from ruff ruff --version

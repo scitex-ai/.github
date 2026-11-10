@@ -61,6 +61,9 @@ jobs:
         with:
           version: "0.11.29"
           enable-cache: true
+          # Keep restore, tool execution and post-job pruning inside this job.
+          # Native runners may inherit a shared operator UV_CACHE_DIR.
+          cache-local-path: ${{ runner.temp }}/scitex-uv-cache
           cache-dependency-glob: pyproject.toml
 
       - name: Run caller job
