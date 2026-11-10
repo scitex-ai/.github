@@ -24,6 +24,17 @@ writing one — it also shows up under *Actions → New workflow* in every repo.
 - `cla.yml` — CLA Assistant + owner direct-push bypass.
 - `auto-merge-to-develop.yml` — auto-merge green PRs targeting `develop`.
 
+### Organization job uv cache
+
+`organization-job.yml` gives setup-uv an explicit cache directory under
+`runner.temp`. Restore, caller tools and post-job pruning use that directory
+rather than an inherited operator cache. Cache restore/save and pruning stay
+enabled. This cache policy applies to the organization-job reusable workflow.
+
+The self-test workflow calls the reusable job and checks the exported cache
+path, uv's resolved path and a real Ruff invocation. Its final job result also
+covers setup-uv's post-job cleanup.
+
 ### Storage native integration dependencies
 
 `fd-fclones-integration.yml` installs fd and fclones before running Storage's
