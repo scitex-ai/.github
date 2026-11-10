@@ -107,6 +107,14 @@ on:
         type: string
         required: false
         default: ''
+      job_owned_environment:
+        description: >-
+          Stage the virtual environment in runner.temp and retain .venv as a
+          checkout symlink. Requires a normal checkout whose ignore rules cover
+          the .venv path, including symlinks. Default retains the checkout env.
+        type: boolean
+        required: false
+        default: false
       dependency_group:
         description: >-
           PEP 735 dependency-group holding the test requirements, installed
@@ -509,6 +517,48 @@ jobs:
           fi
           echo "SCITEX_STORE_DSN=postgresql://scitex:scitex@127.0.0.1:${POSTGRES_SERVICE_PORT}/scitex" \
             >> "$GITHUB_ENV"
+      - name: Stage job-owned virtual environment
+        if: inputs.job_owned_environment
+        run: |
+          set -euo pipefail
+          umask 077
+          job_parent="${RUNNER_TEMP:?RUNNER_TEMP must name existing job scratch}"
+          case "$job_parent" in
+            /*) ;;
+            *) echo '::error::RUNNER_TEMP must be absolute'; exit 1 ;;
+          esac
+          test -d "$job_parent" && test -w "$job_parent"
+          checkout=$(pwd -P)
+          if [ ! -d .git ] || [ -L .git ] \
+              || [ "$(git rev-parse --show-toplevel)" != "$checkout" ] \
+              || [ "$(git rev-parse --absolute-git-dir)" != "$checkout/.git" ]; then
+            echo '::error::Job-owned environment requires the normal caller checkout'
+            exit 1
+          fi
+          job_parent=$(cd "$job_parent" && pwd -P)
+          case "$job_parent/" in
+            "$checkout/"*)
+              echo '::error::Job scratch must remain outside the caller checkout'
+              exit 1
+              ;;
+          esac
+          if [ -e .venv ] || [ -L .venv ]; then
+            echo '::error::Refusing to overwrite an existing .venv'
+            exit 1
+          fi
+          job_venv=$(mktemp -d "$job_parent/scitex-pytest-venv.XXXXXXXX")
+          ln -s "$job_venv" .venv
+          if ! git check-ignore -q -- .venv; then
+            # Undo only our own link and empty directory. Keep source ignore
+            # rules and Git metadata unchanged, including explicit negations.
+            if [ -L .venv ] && [ "$(readlink .venv)" = "$job_venv" ]; then
+              rm -- .venv
+            fi
+            rmdir -- "$job_venv"
+            echo '::error::Ignore the .venv path (not only .venv/) before opting in'
+            exit 1
+          fi
+          printf 'Job-owned environment staged at %s; .venv commands are retained\n' "$job_venv"
       - name: Install (.[all,dev]) + pytest
         env:
           DEPENDENCY_GROUP: ${{ inputs.dependency_group }}

@@ -117,3 +117,14 @@ jobs:
         test "$UV_CACHE_DIR" = "$expected"
         test "$(uv cache dir)" = "$expected"
         uv tool run --from ruff ruff --version
+
+  pytest-job-environment:
+    name: pytest environment lifetime
+    uses: ./.github/workflows/organization-job.yml
+    with:
+      command: |
+        set -euo pipefail
+        export UV_PYTHON_INSTALL_DIR="$RUNNER_TEMP/scitex-env-python"
+        uv --version
+        uv run --no-project --python 3.12 --with pytest --with pyyaml \
+          python -m pytest tests/test_pytest_job_environment.py -v
