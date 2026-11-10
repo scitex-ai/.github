@@ -35,6 +35,35 @@ The self-test workflow calls the reusable job and checks the exported cache
 path, uv's resolved path and a real Ruff invocation. Its final job result also
 covers setup-uv's post-job cleanup.
 
+### Job-owned pytest environments (opt-in)
+
+`pytest-matrix.yml` accepts `job_owned_environment: true`. It creates the
+environment under `RUNNER_TEMP` and leaves a `.venv` symlink in the caller
+checkout, preserving the existing install, test and wheel commands. The runner's
+temporary-directory lifecycle removes that environment after the job. The
+default remains `false`, retaining the existing checkout environment behavior.
+
+```yaml
+jobs:
+  pytest-matrix:
+    uses: scitex-ai/.github/.github/workflows/pytest-matrix.yml@main
+    with:
+      job_owned_environment: true
+```
+
+An opting-in leaf must ignore the `.venv` path, which covers its symlink;
+a directory-only `.venv/` rule does not. Setup refuses existing `.venv` entries,
+redirected or linked Git checkouts, and scratch inside the checkout. It leaves
+source ignore rules and Git metadata unchanged. Existing runner workspaces,
+caches and environments are not cleaned by this option.
+
+The new controls execute the source staging step and original seeded-venv
+command with real Git, uv and Python, including job-end removal and refusal
+cases. Self-tests run them on hosted CI and through the admitted organization
+job. This qualifies the mechanism; each leaf still needs its own required CI
+before adopting the option. Preserve needed diagnostics through that job's
+artifact policy because the environment itself is temporary.
+
 ### Storage native integration dependencies
 
 `fd-fclones-integration.yml` installs fd and fclones before running Storage's

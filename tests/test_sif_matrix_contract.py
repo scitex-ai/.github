@@ -799,7 +799,10 @@ class SIFWorkflowSourceTests(unittest.TestCase):
             # Successor: per-job PostgreSQL port and validated DSN handoff.
             # All other parsed fields match the prior pin; the exact-body guard
             # remains in force. See test_pytest_postgres_port.py.
-            "pytest-matrix.yml": "caf3fe6624a4f7cd4fde11f42b5c5348bc470fbc8e9098b38f4325551e633988",
+            # Opt-in job-owned environment successor. Removing that input/step
+            # retains every legacy field, including the original install script;
+            # real uv/metadata/lifecycle controls: test_pytest_job_environment.py.
+            "pytest-matrix.yml": "281e66ab3244834ad635e748e04a09fb8370e3a179f8843287a5989ebd45b3fb",
             "quality-audit.yml": "f44a2e6b5c479c2975d1cedf66738fdbf402a74cf1d8e26340bb9895524e7b4a",
             "rtd-sphinx-build.yml": "f7536adfb98bb9cb9862815d52b3d049f9c3032a4197a745f75bd62be5d7fa7e",
             "runner-admission.yml": "406b82aae0183da8bf35b3fcfa424f22231e3b132ba3e002f72e09c713828205",
