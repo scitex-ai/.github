@@ -1,5 +1,7 @@
 """The aggregate verdict needs no native runner and remains fail-closed."""
 
+import hashlib
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -9,6 +11,25 @@ import yaml
 
 
 WORKFLOW = Path(__file__).parents[1] / ".github/workflows/pytest-matrix.yml"
+
+
+def test_only_reviewed_aggregate_fields_differ_from_native_baseline():
+    # Arrange: restore only the two reviewed metadata fields before hashing.
+    data = yaml.safe_load(WORKFLOW.read_text())
+    gate = data["jobs"]["pytest-aggregate"]
+    gate["runs-on"] = (
+        "${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)"
+        "\n    && fromJSON('[\"ubuntu-latest\"]')"
+        "\n    || fromJSON(needs.runner-admission.outputs.runs_on) }}"
+    )
+    gate.pop("permissions")
+    data["on"] = data.pop(True)
+    # Act
+    digest = hashlib.sha256(
+        json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    # Assert: every other field equals the complete pre-change source.
+    assert digest == "a5aa4a300456107819994b81cbb71579df823f5690a92a8628af4330825b1a73"
 
 
 def test_aggregate_uses_hosted_metadata_execution_without_token_permissions():
