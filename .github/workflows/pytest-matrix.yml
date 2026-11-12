@@ -786,10 +786,10 @@ jobs:
 
   pytest-aggregate:
     name: pytest aggregate gate
-    runs-on: >-
-      ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
-          && fromJSON('["ubuntu-latest"]')
-          || fromJSON(needs.runner-admission.outputs.runs_on) }}
+    # This job reads only the matrix verdict. It does not need a native test
+    # runner, a checkout, repository secrets or a GitHub token.
+    runs-on: ubuntu-latest
+    permissions: {}
     needs: [pytest-matrix, runner-admission]
     if: always()
     steps:

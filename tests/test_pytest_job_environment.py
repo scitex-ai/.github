@@ -93,7 +93,9 @@ def test_opt_in_preserves_every_legacy_workflow_field():
         False,
         False,
         "inputs.job_owned_environment",
-        "59e458ce61bea00b26d37d46fe610c683640854ee73478112df970f66552e513",
+        # Reviewed metadata-only aggregate route; native baseline is also
+        # protected independently by test_pytest_metadata_aggregate.py.
+        "391dd6376841acca4850992c5480546763ae52cc93527757ba2412b4695b2daf",
     )
 
 

@@ -24,6 +24,14 @@ writing one — it also shows up under *Actions → New workflow* in every repo.
 - `cla.yml` — CLA Assistant + owner direct-push bypass.
 - `auto-merge-to-develop.yml` — auto-merge green PRs targeting `develop`.
 
+### Pytest aggregate result
+
+The `pytest aggregate gate` runs on `ubuntu-latest` with no token permissions.
+It waits for runner admission and the selected test matrix, then accepts only
+a successful matrix result. This metadata-only step does not check out the
+caller or consume a native test runner. Test execution retains its existing
+runner admission, compatibility matrix, verified-image and resource controls.
+
 ### Organization job uv cache
 
 `organization-job.yml` gives setup-uv an explicit cache directory under
