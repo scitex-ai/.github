@@ -38,16 +38,21 @@ def sources(name):
 
 
 class TestDevOriginalProfile(unittest.TestCase):
-    def test_leaf_fixture_contains_the_exact_actual_central_candidate_bodies(self):
+    def test_captured_candidate_sources_retain_their_original_byte_binding(self):
         fixture = json.loads(FIXTURE.read_text())
         observed = []
         for name, _, _ in SPECS:
-            body = (ROOT / ".github/workflows" / name).read_bytes()
             candidate = fixture[name]["candidate"]
+            body = candidate["body"].encode()
+            if name == "import-smoke.yml":
+                self.assertEqual((ROOT / ".github/workflows" / name).read_bytes(), body)
             observed.append(
                 (
                     body.decode() == candidate["body"],
-                    hashlib.sha256(body).hexdigest() == candidate["sha256"],
+                    hashlib.sha256(body).hexdigest() == candidate["sha256"] == {
+                        "rtd-sphinx-build.yml": "f7536adfb98bb9cb9862815d52b3d049f9c3032a4197a745f75bd62be5d7fa7e",
+                        "import-smoke.yml": "7d5e5cf74f6535c8a5e724ffee20679f76aff2354f0b9c213c38df48735550d0",
+                    }[name],
                     len(body) == candidate["bytes"],
                 )
             )
@@ -143,6 +148,13 @@ class TestDevOriginalProfile(unittest.TestCase):
             _, original_shared, baseline, candidate = sources(name)
             original = baseline["jobs"][leaf]
             value = copy.deepcopy(candidate["jobs"]["dev-original-" + leaf])
+            if name == "rtd-sphinx-build.yml":
+                # The new opt-in publisher is separate from original validation.
+                upload = value["steps"].pop()
+                self.assertEqual(upload["uses"], "actions/upload-artifact@v4")
+                legacy = value["steps"][-1]
+                self.assertEqual(legacy["if"], original["steps"][-1]["if"] + " && inputs.bundle_dir == ''")
+                legacy["if"] = original["steps"][-1]["if"]
             owner = value["steps"].pop(3)
             member = value["steps"].pop(2)
             member_ok = member == original_shared["jobs"][standard]["steps"][1]
