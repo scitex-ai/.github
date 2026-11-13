@@ -3,6 +3,7 @@ name: leaf-release-sif
 # Fixed repository, preflight-resolved commit and retained full leaf drivers.
 # Writer retains its qualified registration; IO is registered after complete
 # native image/runtime/source, private-store and full-suite qualification.
+# Browser uses its qualified compute-03 image and a mandatory fresh-wheel probe.
 # Registration alone authorizes neither a release tag nor publication.
 on:
   workflow_call:
@@ -46,33 +47,34 @@ jobs:
           script: |
             // BEGIN WRITER_RELEASE_CONTRACT
             // Registration follows actual image/runtime qualification, never a placeholder.
-            const REGISTRATION =             {
-              "image": {
-                "sha256": "e8461fc77a2218b5f7e2c475bd601dddaec97c6335bee459a1b0d4e0ca374d83",
-                "bytes": 1381281792,
-                "producer_revision": "afda87ca15b9560410fff5f331223152df3410b4",
-                "source_manifest_sha256": "02f9fdd18cc953ea6b1eedebb862f376128cb6ccf7e9144d5e5ac06325f464eb",
-                "public_inventory_sha256": "997e7818bd7da34642a9e23a560ff18ccf5af62f1df011e6785ec0a09590ec88",
-                "delivery": null,
-                "capabilities": {
-                  "3.11": "3.11.17",
-                  "3.12": "3.12.15",
-                  "3.13": "3.13.16",
-                  "postgres": "postgres.16.15"
-                },
-                "native_paths": [
-                  "/home/ywatanabe/.scitex/dev/runtime/containers/ci-cpu-sha256-e8461fc77a2218b5f7e2c475bd601dddaec97c6335bee459a1b0d4e0ca374d83.sif"
-                ]
+            const CI_CPU_E846 = Object.freeze({
+              "sha256": "e8461fc77a2218b5f7e2c475bd601dddaec97c6335bee459a1b0d4e0ca374d83",
+              "bytes": 1381281792,
+              "producer_revision": "afda87ca15b9560410fff5f331223152df3410b4",
+              "source_manifest_sha256": "02f9fdd18cc953ea6b1eedebb862f376128cb6ccf7e9144d5e5ac06325f464eb",
+              "public_inventory_sha256": "997e7818bd7da34642a9e23a560ff18ccf5af62f1df011e6785ec0a09590ec88",
+              "delivery": null,
+              "capabilities": {
+                "3.11": "3.11.17",
+                "3.12": "3.12.15",
+                "3.13": "3.13.16",
+                "postgres": "postgres.16.15"
               },
-              "runtime": {
-                "path": "/usr/bin/apptainer",
-                "sha256": "7bdb501fdddbb7264b4e4d6038e0ec27201f63e217519e5f7f0db950c9285ddd",
-                "bytes": 48096048,
-                "qualification_sha256": "6a178f0d27be734a74df28f5d392f3f54e2bb4b6b2c2aced560ba6b091d08cec",
-                "user_namespace": true,
-                "sif_mount": true,
-                "hosted_delivery_sha256": null
-              }
+              "native_paths": [
+                "/home/ywatanabe/.scitex/dev/runtime/containers/ci-cpu-sha256-e8461fc77a2218b5f7e2c475bd601dddaec97c6335bee459a1b0d4e0ca374d83.sif"
+              ]
+            });
+            const APPTAINER_7BDB = Object.freeze({
+              "path": "/usr/bin/apptainer",
+              "sha256": "7bdb501fdddbb7264b4e4d6038e0ec27201f63e217519e5f7f0db950c9285ddd",
+              "bytes": 48096048,
+              "user_namespace": true,
+              "sif_mount": true,
+              "hosted_delivery_sha256": null
+            });
+            const REGISTRATION =             {
+              "image": CI_CPU_E846,
+              "runtime": {...APPTAINER_7BDB, qualification_sha256: "6a178f0d27be734a74df28f5d392f3f54e2bb4b6b2c2aced560ba6b091d08cec"}
             };
             const LEAF_SOURCES = Object.freeze({
               ".github/ci/exec-in-sif.sh": "c07c3bb883b35c7260636f60cc718bad02fffb6bdea6ab5b9002f5e606eeec12",
@@ -111,7 +113,9 @@ jobs:
               requireContract(typeof value.producer_revision === 'string'
                 && /^[a-f0-9]{40}$/.test(value.producer_revision)
                 && digest(value.source_manifest_sha256) && digest(value.public_inventory_sha256), 'image-producer-unqualified');
-              const keys = kind === 'pg' ? ['postgres'] : ['3.11', '3.12', '3.13', 'postgres'];
+              const keys = kind === 'pg' ? ['postgres'] : kind === 'browser'
+              ? ['3.11', '3.12', '3.13', 'postgres', 'chromium', 'playwright']
+              : ['3.11', '3.12', '3.13', 'postgres'];
               requireContract(exactKeys(value.capabilities, keys)
                 && keys.every(key => typeof value.capabilities[key] === 'string'), 'image-capabilities-unqualified');
               requireContract(value.delivery === null || publicDelivery(value.delivery), 'image-delivery-invalid');
@@ -137,7 +141,7 @@ jobs:
             }
 
             function registeredReleasePlan(profile, repository, eventName, native, operation, sourceCommit, releaseTag, registration, leafSources) {
-              const repositories = {writer: 'scitex-ai/scitex-writer', io: 'scitex-ai/scitex-io', scholar: 'scitex-ai/scitex-scholar'};
+              const repositories = {writer: 'scitex-ai/scitex-writer', io: 'scitex-ai/scitex-io', scholar: 'scitex-ai/scitex-scholar', browser: 'scitex-ai/scitex-browser'};
               requireContract(Object.hasOwn(repositories, profile), 'release-profile-refused');
               requireContract(repository === repositories[profile], profile + '-repository-refused');
               requireContract(['push', 'workflow_dispatch'].includes(eventName), profile + '-release-event-refused');
@@ -148,7 +152,7 @@ jobs:
               requireContract(typeof releaseTag === 'string' && releaseTag === releaseTag.trim()
                 && /^v[0-9]+\.[0-9]+\.[0-9]+$/.test(releaseTag), profile + '-release-tag-refused');
               requireContract(exactKeys(registration, ['image', 'runtime']), profile + '-runtime-unregistered');
-              const image = qualifyImage(registration.image, false);
+              const image = qualifyImage(registration.image, false, profile === 'browser' ? 'browser' : 'ci');
               const versions = operation === 'test' ? ['3.11', '3.12', '3.13'] : ['3.12'];
               for (const version of versions) {
                 requireContract(image.capabilities[version].startsWith(version + '.'), profile + '-image-python-unqualified');
@@ -164,6 +168,18 @@ jobs:
                    '.github/ci/publish-in-sif.sh', '.github/ci/release-identity.py',
                    '.github/ci/_release_artifacts.py', '.github/ci/_release_source.py',
                    '.github/ci/probe-first-observer.py', '.github/ci/io_test_store.py']
+                : profile === 'browser' ? [
+                  ".github/ci/build-in-sif.sh",
+                  ".github/ci/ci-browser.def",
+                  ".github/ci/exec-in-sif.sh",
+                  ".github/ci/probe-interactions.py",
+                  ".github/ci/probe-wheel-in-sif.sh",
+                  ".github/ci/publish-in-sif.sh",
+                  ".github/ci/release-identity.py",
+                  ".github/ci/release-source.py",
+                  ".github/ci/run-in-sif.sh",
+                  ".github/ci/verify-release-in-sif.sh"
+                ]
                 : ['.github/ci/exec-in-sif.sh', '.github/ci/release-context.sh',
                    '.github/ci/run-in-sif.sh', '.github/ci/build-in-sif.sh',
                    '.github/ci/release-identity.py', '.github/ci/with-test-postgres.py',
@@ -181,32 +197,8 @@ jobs:
               'self-hosted', 'Linux', 'X64', 'scitex-org-cpu', 'scitex-compute-03'
             ])});
             const IO_REGISTRATION = {
-              "image": {
-                "sha256": "e8461fc77a2218b5f7e2c475bd601dddaec97c6335bee459a1b0d4e0ca374d83",
-                "bytes": 1381281792,
-                "producer_revision": "afda87ca15b9560410fff5f331223152df3410b4",
-                "source_manifest_sha256": "02f9fdd18cc953ea6b1eedebb862f376128cb6ccf7e9144d5e5ac06325f464eb",
-                "public_inventory_sha256": "997e7818bd7da34642a9e23a560ff18ccf5af62f1df011e6785ec0a09590ec88",
-                "delivery": null,
-                "capabilities": {
-                  "3.11": "3.11.17",
-                  "3.12": "3.12.15",
-                  "3.13": "3.13.16",
-                  "postgres": "postgres.16.15"
-                },
-                "native_paths": [
-                  "/home/ywatanabe/.scitex/dev/runtime/containers/ci-cpu-sha256-e8461fc77a2218b5f7e2c475bd601dddaec97c6335bee459a1b0d4e0ca374d83.sif"
-                ]
-              },
-              "runtime": {
-                "path": "/usr/bin/apptainer",
-                "sha256": "7bdb501fdddbb7264b4e4d6038e0ec27201f63e217519e5f7f0db950c9285ddd",
-                "bytes": 48096048,
-                "qualification_sha256": "6a178f0d27be734a74df28f5d392f3f54e2bb4b6b2c2aced560ba6b091d08cec",
-                "user_namespace": true,
-                "sif_mount": true,
-                "hosted_delivery_sha256": null
-              }
+              "image": CI_CPU_E846,
+              "runtime": {...APPTAINER_7BDB, qualification_sha256: "6a178f0d27be734a74df28f5d392f3f54e2bb4b6b2c2aced560ba6b091d08cec"}
             };
             const IO_LEAF_SOURCES = Object.freeze({
               ".github/ci/exec-in-sif.sh": "698e91c18b7c9c6b0631aa8ce9a62c6b681ad8f40e515925ac640efc4e4acfc9",
@@ -235,32 +227,8 @@ jobs:
               'self-hosted', 'Linux', 'X64', 'scitex-org-cpu', 'scitex-compute-03'
             ])});
             const SCHOLAR_REGISTRATION = Object.freeze({
-              "image": {
-                "sha256": "e8461fc77a2218b5f7e2c475bd601dddaec97c6335bee459a1b0d4e0ca374d83",
-                "bytes": 1381281792,
-                "producer_revision": "afda87ca15b9560410fff5f331223152df3410b4",
-                "source_manifest_sha256": "02f9fdd18cc953ea6b1eedebb862f376128cb6ccf7e9144d5e5ac06325f464eb",
-                "public_inventory_sha256": "997e7818bd7da34642a9e23a560ff18ccf5af62f1df011e6785ec0a09590ec88",
-                "delivery": null,
-                "capabilities": {
-                  "3.11": "3.11.17",
-                  "3.12": "3.12.15",
-                  "3.13": "3.13.16",
-                  "postgres": "postgres.16.15"
-                },
-                "native_paths": [
-                  "/home/ywatanabe/.scitex/dev/runtime/containers/ci-cpu-sha256-e8461fc77a2218b5f7e2c475bd601dddaec97c6335bee459a1b0d4e0ca374d83.sif"
-                ]
-              },
-              "runtime": {
-                "path": "/usr/bin/apptainer",
-                "sha256": "7bdb501fdddbb7264b4e4d6038e0ec27201f63e217519e5f7f0db950c9285ddd",
-                "bytes": 48096048,
-                "qualification_sha256": "3b842983d34ba0b354836048cdf49b899583f871567ad78ebc1968f04ffaf786",
-                "user_namespace": true,
-                "sif_mount": true,
-                "hosted_delivery_sha256": null
-              }
+              "image": CI_CPU_E846,
+              "runtime": {...APPTAINER_7BDB, qualification_sha256: "3b842983d34ba0b354836048cdf49b899583f871567ad78ebc1968f04ffaf786"}
             });
             const SCHOLAR_LEAF_SOURCES = Object.freeze({
               ".github/ci/exec-in-sif.sh": "9be3e2a4645e95cf073f59d93dc03e2f5c03e377cfd049b8548862e7ac881b3a",
@@ -277,10 +245,51 @@ jobs:
                 sourceCommit, releaseTag, registration, SCHOLAR_LEAF_SOURCES);
               return {...plan, pytestWorkers: 4, runner: SCHOLAR_RUNNER};
             }
+            const BROWSER_IMAGE = Object.freeze({
+              "sha256": "7ad96b28e3485528fe13d8bbac6b7c514219d755361e99a7d13022e888e953c0",
+              "bytes": 1891598336,
+              "producer_revision": "fefce61f9cfc706258047cfb96bfe43ba94ffcaf",
+              "source_manifest_sha256": "d5de213e255fd0de2cd59be34e8f7d45cb3f61de21511256601d5a86bb724314",
+              "public_inventory_sha256": "547534123d79deb4e46606d990b200311d3c88c34be94623ab71c8ee7d871a78",
+              "delivery": null,
+              "capabilities": {
+                "3.11": "3.11.17",
+                "3.12": "3.12.15",
+                "3.13": "3.13.16",
+                "postgres": "postgres.16.15",
+                "chromium": "158.0.8127.18",
+                "playwright": "1.65.1"
+              },
+              "native_paths": [
+                "/home/ywatanabe/.scitex/dev/runtime/containers/ci-browser-sha256-7ad96b28e3485528fe13d8bbac6b7c514219d755361e99a7d13022e888e953c0.sif"
+              ]
+            });
+            const BROWSER_REGISTRATION = Object.freeze({image: BROWSER_IMAGE, runtime: {...APPTAINER_7BDB, qualification_sha256: "ad0bf6a6b3dd8ddc96194f0f67642199cc25e97bb2d7077717c73bfbbe9779bd"}});
+            const BROWSER_LEAF_SOURCES = Object.freeze({
+              ".github/ci/build-in-sif.sh": "fb3fd2b1b1cc62b36f56a867abe8f1093b446090c90b358894660cd5399082b5",
+              ".github/ci/ci-browser.def": "8124dc13216d229842990d19da4e2b0a255be6527ddfa04e1cee6720d06f33e6",
+              ".github/ci/exec-in-sif.sh": "0cd9a39968a414d56479a03761314ef2e808d444985ba7a5486564128fb8cbfc",
+              ".github/ci/probe-interactions.py": "d1b3a11a0ae7838748710b875b4dfc4001473d4ef39579b927bf54f706e08117",
+              ".github/ci/probe-wheel-in-sif.sh": "f4a3797fab9f16a5eee73feeffe99c8992d6b3af07ae3f331e04acad85a78260",
+              ".github/ci/publish-in-sif.sh": "e89aebbff100e0bec6cf59905614b11ab948aaf426f39f35a2846bb8c2d76e13",
+              ".github/ci/release-identity.py": "fd554650d99281a4f18f96edb8fd2758779fed82590f8e6a60f15407e5fada30",
+              ".github/ci/release-source.py": "83691adbfeeec4bec3a736d58c61b357d366806447c19b0e6c8268b597707bbd",
+              ".github/ci/run-in-sif.sh": "4dff72e9bc2e54842566d9569a4f7cb7b69005627275658b31a701ee9ef1b8c3",
+              ".github/ci/verify-release-in-sif.sh": "e67649a5bb00223c6423d8f098cda7f554dfa5346549ad24d4ba0b280ea8bbd6"
+            });
+            const BROWSER_RUNNER = Object.freeze({group: 'Organization', labels: Object.freeze([
+              'self-hosted', 'Linux', 'X64', 'scitex-org-cpu', 'scitex-compute-03'
+            ])});
+            function browserPlan(repository, eventName, native, operation, sourceCommit, releaseTag, registration = BROWSER_REGISTRATION) {
+              const plan = registeredReleasePlan('browser', repository, eventName, native, operation,
+                sourceCommit, releaseTag, registration, BROWSER_LEAF_SOURCES);
+              return {...plan, runner: BROWSER_RUNNER};
+            }
             function leafReleasePlan(repository, ...args) {
               if (repository === 'scitex-ai/scitex-writer') return writerPlan(repository, ...args);
               if (repository === 'scitex-ai/scitex-io') return ioPlan(repository, ...args);
               if (repository === 'scitex-ai/scitex-scholar') return scholarPlan(repository, ...args);
+              if (repository === 'scitex-ai/scitex-browser') return browserPlan(repository, ...args);
               throw new Error('release-repository-refused');
             }
                         // END WRITER_RELEASE_CONTRACT
@@ -342,7 +351,7 @@ jobs:
         id: inputs
         env:
           PLAN: ${{ needs.profile.outputs.plan }}
-          NATIVE_CI_SIF: ${{ vars.SCITEX_CI_SIF }}
+          NATIVE_CI_SIF: ${{ fromJSON(needs.profile.outputs.plan).profile == 'browser' && fromJSON(needs.profile.outputs.plan).image.native_paths[0] || vars.SCITEX_CI_SIF }}
         with:
           script: |
             // BEGIN SIF_FILE_GATE
@@ -474,6 +483,15 @@ jobs:
           SCITEX_CI_APPTAINER: ${{ steps.inputs.outputs.apptainer }}
           SCITEX_CI_APPTAINER_SHA256: ${{ fromJSON(needs.profile.outputs.plan).runtime.sha256 }}
         run: bash .github/ci/exec-in-sif.sh build-in-sif.sh 3.12
+      - name: Verify the installed Browser wheel with the image browser
+        if: inputs.operation == 'build' && fromJSON(needs.profile.outputs.plan).profile == 'browser'
+        env:
+          SCITEX_CI_SIF: ${{ steps.inputs.outputs.sif }}
+          SCITEX_CI_SIF_SHA256: ${{ fromJSON(needs.profile.outputs.plan).image.sha256 }}
+          SCITEX_CI_APPTAINER: ${{ steps.inputs.outputs.apptainer }}
+          SCITEX_BROWSER_RELEASE_SOURCE_SHA: ${{ inputs.source_commit }}
+          SCITEX_BROWSER_RELEASE_VERSION: ${{ inputs.release_tag }}
+        run: bash .github/ci/exec-in-sif.sh probe-wheel-in-sif.sh 3.12
       - uses: actions/upload-artifact@v4
         if: inputs.operation == 'build'
         with:

@@ -1,0 +1,44 @@
+{
+  "registration": {
+    "image": {
+      "sha256": "7ad96b28e3485528fe13d8bbac6b7c514219d755361e99a7d13022e888e953c0",
+      "bytes": 1891598336,
+      "producer_revision": "fefce61f9cfc706258047cfb96bfe43ba94ffcaf",
+      "source_manifest_sha256": "d5de213e255fd0de2cd59be34e8f7d45cb3f61de21511256601d5a86bb724314",
+      "public_inventory_sha256": "547534123d79deb4e46606d990b200311d3c88c34be94623ab71c8ee7d871a78",
+      "delivery": null,
+      "capabilities": {
+        "3.11": "3.11.17",
+        "3.12": "3.12.15",
+        "3.13": "3.13.16",
+        "postgres": "postgres.16.15",
+        "chromium": "158.0.8127.18",
+        "playwright": "1.65.1"
+      },
+      "native_paths": [
+        "/home/ywatanabe/.scitex/dev/runtime/containers/ci-browser-sha256-7ad96b28e3485528fe13d8bbac6b7c514219d755361e99a7d13022e888e953c0.sif"
+      ]
+    },
+    "runtime": {
+      "path": "/usr/bin/apptainer",
+      "sha256": "7bdb501fdddbb7264b4e4d6038e0ec27201f63e217519e5f7f0db950c9285ddd",
+      "bytes": 48096048,
+      "qualification_sha256": "ad0bf6a6b3dd8ddc96194f0f67642199cc25e97bb2d7077717c73bfbbe9779bd",
+      "user_namespace": true,
+      "sif_mount": true,
+      "hosted_delivery_sha256": null
+    }
+  },
+  "leaf_sources": {
+    ".github/ci/build-in-sif.sh": "fb3fd2b1b1cc62b36f56a867abe8f1093b446090c90b358894660cd5399082b5",
+    ".github/ci/ci-browser.def": "8124dc13216d229842990d19da4e2b0a255be6527ddfa04e1cee6720d06f33e6",
+    ".github/ci/exec-in-sif.sh": "0cd9a39968a414d56479a03761314ef2e808d444985ba7a5486564128fb8cbfc",
+    ".github/ci/probe-interactions.py": "d1b3a11a0ae7838748710b875b4dfc4001473d4ef39579b927bf54f706e08117",
+    ".github/ci/probe-wheel-in-sif.sh": "f4a3797fab9f16a5eee73feeffe99c8992d6b3af07ae3f331e04acad85a78260",
+    ".github/ci/publish-in-sif.sh": "e89aebbff100e0bec6cf59905614b11ab948aaf426f39f35a2846bb8c2d76e13",
+    ".github/ci/release-identity.py": "fd554650d99281a4f18f96edb8fd2758779fed82590f8e6a60f15407e5fada30",
+    ".github/ci/release-source.py": "83691adbfeeec4bec3a736d58c61b357d366806447c19b0e6c8268b597707bbd",
+    ".github/ci/run-in-sif.sh": "4dff72e9bc2e54842566d9569a4f7cb7b69005627275658b31a701ee9ef1b8c3",
+    ".github/ci/verify-release-in-sif.sh": "e67649a5bb00223c6423d8f098cda7f554dfa5346549ad24d4ba0b280ea8bbd6"
+  }
+}
