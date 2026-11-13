@@ -41,6 +41,11 @@ def test_rtd_bundle_publication_is_opt_in_and_push_only():
         if step.get("uses", "").startswith("peter-evans/create-pull-request@")
     )
     assert create_pr["with"]["base"] == "${{ github.ref_name }}"
-    assert "format('ci/sphinx-bundle/{0}', github.ref_name)" in create_pr["with"]["branch"]
+    assert create_pr["with"]["branch"] == "ci/sphinx-bundle/${{ github.ref_name }}"
     assert create_pr["with"]["add-paths"] == "${{ inputs.bundle_dir }}"
-    assert not any("git push" in step.get("run", "") for step in publish["steps"])
+    assert create_pr["if"] == "${{ !inputs.dev_original_commands }}"
+    pushes = [step for step in publish["steps"] if "git push" in step.get("run", "")]
+    assert len(pushes) == 1 and pushes[0]["id"] == "dev-docs-commit"
+    assert pushes[0]["if"] == "inputs.dev_original_commands"
+    assert 'git push origin "HEAD:refs/heads/$PR_BRANCH"' in pushes[0]["run"]
+    assert "--force" not in pushes[0]["run"] and "--no-verify" not in pushes[0]["run"]

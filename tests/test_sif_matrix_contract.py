@@ -804,11 +804,11 @@ class SIFWorkflowSourceTests(unittest.TestCase):
             # real uv/metadata/lifecycle controls: test_pytest_job_environment.py.
             "pytest-matrix.yml": "281e66ab3244834ad635e748e04a09fb8370e3a179f8843287a5989ebd45b3fb",
             "quality-audit.yml": "f44a2e6b5c479c2975d1cedf66738fdbf402a74cf1d8e26340bb9895524e7b4a",
-            # Reviewed opt-in draft-PR publisher successor. Original producer and
+            # Reviewed Dev ordinary-push successor (real Git/refusal controls). Original producer and
             # other jobs stay checked against frozen source by
             # test_dev_docs_pr_publisher.py; the historical RTD byte pin remains
             # verified in test_dev_original_docs_import_profile.py.
-            "rtd-sphinx-build.yml": "461fe90171d6e265176dbf59b0ffab4b62815cbe85379ece13c09548f87a96d3",
+            "rtd-sphinx-build.yml": "a4c2aea4655e0a4a6048e06d9d226d936411ff4a8bfbc455650a08649049f324",
             "runner-admission.yml": "406b82aae0183da8bf35b3fcfa424f22231e3b132ba3e002f72e09c713828205",
         }
         # Act
