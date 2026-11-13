@@ -336,7 +336,8 @@ jobs:
   publish-sphinx-bundle:
     if: >-
       ${{ always() && !cancelled() && inputs.bundle_dir != '' && github.event_name == 'push' &&
-          ((inputs.dev_original_commands && needs['dev-original-sphinx'].result == 'success') ||
+          ((inputs.dev_original_commands && github.ref == 'refs/heads/develop' &&
+            needs['dev-original-sphinx'].result == 'success') ||
            (!inputs.dev_original_commands && needs['docs-sphinx'].result == 'success')) }}
     needs: [docs-sphinx, dev-original-sphinx]
     runs-on: ubuntu-latest
