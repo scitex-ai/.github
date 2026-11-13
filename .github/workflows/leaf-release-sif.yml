@@ -141,12 +141,12 @@ jobs:
             }
 
             function registeredReleasePlan(profile, repository, eventName, native, operation, sourceCommit, releaseTag, registration, leafSources) {
-              const repositories = {writer: 'scitex-ai/scitex-writer', io: 'scitex-ai/scitex-io', scholar: 'scitex-ai/scitex-scholar', browser: 'scitex-ai/scitex-browser'};
+              const repositories = {writer: 'scitex-ai/scitex-writer', io: 'scitex-ai/scitex-io', scholar: 'scitex-ai/scitex-scholar', browser: 'scitex-ai/scitex-browser', stats: 'scitex-ai/scitex-stats'};
               requireContract(Object.hasOwn(repositories, profile), 'release-profile-refused');
               requireContract(repository === repositories[profile], profile + '-repository-refused');
               requireContract(['push', 'workflow_dispatch'].includes(eventName), profile + '-release-event-refused');
               requireContract(native === true, profile + '-release-membership-required');
-              requireContract(['test', 'build'].includes(operation), profile + '-release-operation-refused');
+              requireContract(profile === 'stats' ? operation === 'test' : ['test', 'build'].includes(operation), profile + '-release-operation-refused');
               requireContract(typeof sourceCommit === 'string' && sourceCommit.length === 40
                 && /^[a-f0-9]{40}$/.test(sourceCommit), profile + '-source-commit-refused');
               requireContract(typeof releaseTag === 'string' && releaseTag === releaseTag.trim()
@@ -168,6 +168,7 @@ jobs:
                    '.github/ci/publish-in-sif.sh', '.github/ci/release-identity.py',
                    '.github/ci/_release_artifacts.py', '.github/ci/_release_source.py',
                    '.github/ci/probe-first-observer.py', '.github/ci/io_test_store.py']
+                : profile === 'stats' ? [".github/ci/build-in-sif.sh", ".github/ci/exec-in-sif.sh", ".github/ci/probe-statistics.py", ".github/ci/probe-wheel-in-sif.sh", ".github/ci/probe-wheel.py", ".github/ci/publish-in-sif.sh", ".github/ci/release-context.sh", ".github/ci/release-identity.py", ".github/ci/run-in-sif.sh", ".github/ci/run-owned-in-sif.sh"]
                 : profile === 'browser' ? [
                   ".github/ci/build-in-sif.sh",
                   ".github/ci/ci-browser.def",
@@ -285,11 +286,42 @@ jobs:
                 sourceCommit, releaseTag, registration, BROWSER_LEAF_SOURCES);
               return {...plan, runner: BROWSER_RUNNER};
             }
+            // Stats admits the qualified full test matrix only. Build and upload stay refused.
+            const STATS_RUNNER = Object.freeze({group: 'Organization', labels: Object.freeze([
+              'self-hosted', 'Linux', 'X64', 'scitex-org-cpu', 'scitex-compute-03'
+            ])});
+            const STATS_REGISTRATION = Object.freeze({image: CI_CPU_E846,
+              runtime: {...APPTAINER_7BDB, qualification_sha256: "db34efd2cf9b3f625163f20e61a677c4eac939eec0bcbfabb6bd725c2cd7e6a0"}});
+            const STATS_LEAF_SOURCES = Object.freeze({
+              ".github/ci/build-in-sif.sh": "41ee0f25d71c278a3cd63e374b40da5da7ed61000356e07124af63f44e3a8061",
+              ".github/ci/exec-in-sif.sh": "d501a1999c7187604e97bb28b4bac7566e7cd0beeba34d8e84231d3f494131f8",
+              ".github/ci/probe-statistics.py": "913dae70d33325e7baedd3ef77c4e5320a6013522937b2889401f48a370acd98",
+              ".github/ci/probe-wheel-in-sif.sh": "adec10bd70abf9bb02a79a252cbd4b5f70fb0fe7ad38be89df99719f62f208e6",
+              ".github/ci/probe-wheel.py": "29e874cc45126051540b4f2566c77c94b7208b9902e8c2696ad426c9916aa246",
+              ".github/ci/publish-in-sif.sh": "7b4cf2cab1d85104974e20899d28e03be23c80456a2981f2716c82342ec43027",
+              ".github/ci/release-context.sh": "eed61678096b87c2a84dc60ea3581bcdc0406abd90677c14673b5e72eedbdacc",
+              ".github/ci/release-identity.py": "9464ce1a931f9b8376faf5bc46be7f729a693f2c42580bfe82c749b163495c93",
+              ".github/ci/run-in-sif.sh": "d8aea3ef8c6984dd19eabe33eb81fb0caf465fbb5a58018faecbc107dc10b9bf",
+              ".github/ci/run-owned-in-sif.sh": "aefca7a6229d2b36d63fffb67a0d1f7851ae047c5ebf0c55b4d484c5fc5d7f33"
+            });
+            const STATS_SHARED_RESOURCE = Object.freeze({
+              "kind": "owned-context-v1",
+              "revision": "4e14fe28571617ccf7b6fffd9cff0e15a7bfc38c",
+              "stager_sha256": "554ee91a86a0fc36da302dc0e97cf7324df940f122ff68856ca0190aa80fea04",
+              "source_sha256": "a795678455d409e076a1c93a4a810b50c89499fcb83ae4c90a8d31a19e90e5d1"
+            });
+            function statsPlan(repository, eventName, native, operation, sourceCommit, releaseTag, registration = STATS_REGISTRATION) {
+              const plan = registeredReleasePlan('stats', repository, eventName, native, operation,
+                sourceCommit, releaseTag, registration, STATS_LEAF_SOURCES);
+              return {...plan, runner: STATS_RUNNER, timeoutMinutes: 30,
+                sharedResource: STATS_SHARED_RESOURCE};
+            }
             function leafReleasePlan(repository, ...args) {
               if (repository === 'scitex-ai/scitex-writer') return writerPlan(repository, ...args);
               if (repository === 'scitex-ai/scitex-io') return ioPlan(repository, ...args);
               if (repository === 'scitex-ai/scitex-scholar') return scholarPlan(repository, ...args);
               if (repository === 'scitex-ai/scitex-browser') return browserPlan(repository, ...args);
+              if (repository === 'scitex-ai/scitex-stats') return statsPlan(repository, ...args);
               throw new Error('release-repository-refused');
             }
                         // END WRITER_RELEASE_CONTRACT
@@ -308,7 +340,7 @@ jobs:
           || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
           && fromJSON('["ubuntu-latest"]')
           || fromJSON('{"group":"Organization","labels":["self-hosted","Linux","X64","scitex-org-cpu"]}') }}
-    timeout-minutes: ${{ inputs.operation == 'build' && 30 || 60 }}
+    timeout-minutes: ${{ fromJSON(needs.profile.outputs.plan).timeoutMinutes || (inputs.operation == 'build' && 30 || 60) }}
     strategy:
       # Each normal native profile creates a large fresh dependency environment.
       # Admit one version at a time; keep all versions and their original limits.
@@ -351,7 +383,7 @@ jobs:
         id: inputs
         env:
           PLAN: ${{ needs.profile.outputs.plan }}
-          NATIVE_CI_SIF: ${{ fromJSON(needs.profile.outputs.plan).profile == 'browser' && fromJSON(needs.profile.outputs.plan).image.native_paths[0] || vars.SCITEX_CI_SIF }}
+          NATIVE_CI_SIF: ${{ (fromJSON(needs.profile.outputs.plan).profile == 'browser' || fromJSON(needs.profile.outputs.plan).profile == 'stats') && fromJSON(needs.profile.outputs.plan).image.native_paths[0] || vars.SCITEX_CI_SIF }}
         with:
           script: |
             // BEGIN SIF_FILE_GATE

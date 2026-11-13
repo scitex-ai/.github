@@ -120,4 +120,4 @@ def test_browser_uses_approved_content_path_without_changing_other_profile_locat
     gate = next(s for s in workflow["jobs"]["native"]["steps"] if s.get("id") == "inputs")
     locator = gate["env"]["NATIVE_CI_SIF"]
     # Assert
-    assert locator == "${{ fromJSON(needs.profile.outputs.plan).profile == 'browser' && fromJSON(needs.profile.outputs.plan).image.native_paths[0] || vars.SCITEX_CI_SIF }}"
+    assert locator == "${{ (fromJSON(needs.profile.outputs.plan).profile == 'browser' || fromJSON(needs.profile.outputs.plan).profile == 'stats') && fromJSON(needs.profile.outputs.plan).image.native_paths[0] || vars.SCITEX_CI_SIF }}"

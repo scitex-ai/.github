@@ -19,9 +19,9 @@ never recursively removes RUNNER_TEMP or a leaf application root. Cleanup runs
 before artifact upload, so a cleanup failure also blocks that transfer. Each
 optional step has a one-minute cap within the existing job budget.
 
-Current registered profiles omit the descriptor. Their plans and operations
-remain unchanged; both optional steps skip. Transport support registers no new
-runtime, release tag or publisher.
+Stats supplies the pinned descriptor for its test-only native profile. Writer,
+IO, Scholar and Browser omit it, retain their existing plans and skip both
+optional steps. Resource transport grants no release tag or publisher.
 
 Tests execute actual script blocks with Node, immutable public HTTPS inputs,
 the real Dev Python helper and filesystem objects. The Actions-core adapter

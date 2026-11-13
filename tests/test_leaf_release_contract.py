@@ -14,7 +14,7 @@ def dispatch(**changes):
     code = writer.blocks('WRITER_RELEASE_CONTRACT')[0] + '''
 const x = JSON.parse(process.argv[1]);
 try { const plan = Object.hasOwn(x, 'registration')
- ? ({'scitex-ai/scitex-io':ioPlan,'scitex-ai/scitex-scholar':scholarPlan,'scitex-ai/scitex-writer':writerPlan,'scitex-ai/scitex-browser':browserPlan}[x.repository])(x.repository,x.event,x.native,x.operation,x.source,x.tag,x.registration)
+ ? ({'scitex-ai/scitex-io':ioPlan,'scitex-ai/scitex-scholar':scholarPlan,'scitex-ai/scitex-writer':writerPlan,'scitex-ai/scitex-browser':browserPlan,'scitex-ai/scitex-stats':statsPlan}[x.repository])(x.repository,x.event,x.native,x.operation,x.source,x.tag,x.registration)
  : leafReleasePlan(x.repository,x.event,x.native,x.operation,x.source,x.tag);
  console.log(JSON.stringify({ok:true,plan})); }
 catch (e) {console.log(JSON.stringify({ok:false,reason:e.message}));}
