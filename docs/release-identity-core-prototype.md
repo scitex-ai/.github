@@ -18,8 +18,9 @@ belongs to a pinned reviewed registry; it must never come from request inputs.
 The owner records under `tests/fixtures/release-core` are test fixtures, not
 production registrations. `DEFAULT_REGISTRY` remains empty and refuses every
 owner. The separate `release_core.registered.RELEASE_REGISTRY` contains the
-reviewed Scholar package mapping only; this read-only identity policy does not
-register its native image, admit a tag or grant publication. `PolicyRegistry` accepts only an explicit immutable tuple of unique owner
+reviewed Scholar and Browser package mappings; these read-only identity policies
+do not register native images, admit tags or grant publication. Browser remains
+refused by the runtime dispatcher; see [its artifact qualification](browser-artifact-identity.md). `PolicyRegistry` accepts only an explicit immutable tuple of unique owner
 policies and resolves exact repository strings; there is no prefix guess or
 implicit FigRecipe mode. Policy mappings/path selections are immutable tuples.
 
