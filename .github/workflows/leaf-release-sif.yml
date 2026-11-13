@@ -465,6 +465,86 @@ jobs:
             timeFence();
             core.setOutput('apptainer', plan.runtime.path);
             // END SIF_FILE_GATE
+      - name: Stage the registered shared CI resource
+        if: fromJSON(needs.profile.outputs.plan).sharedResource != null
+        id: resources
+        timeout-minutes: 1
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          PLAN: ${{ needs.profile.outputs.plan }}
+        with:
+          script: |
+            // BEGIN CI_RESOURCE_STAGE
+            const fs = require('fs'), fsp = fs.promises, path = require('path');
+            const crypto = require('crypto'), cp = require('child_process');
+            const value = JSON.parse(process.env.PLAN).sharedResource;
+            function check(ok, reason) { if (!ok) throw new Error(reason); }
+            check(process.platform === 'linux', 'resource-platform-refused');
+            check(value && Object.keys(value).sort().join('|') ===
+              'kind|revision|source_sha256|stager_sha256', 'resource-contract-invalid');
+            check(value.kind === 'owned-context-v1'
+              && ['revision','stager_sha256','source_sha256'].every(k => typeof value[k] === 'string'
+                && value[k].length === (k === 'revision' ? 40 : 64))
+              && /^[a-f0-9]{40}$/.test(value.revision)
+              && /^[a-f0-9]{64}$/.test(value.stager_sha256)
+              && /^[a-f0-9]{64}$/.test(value.source_sha256), 'resource-contract-invalid');
+            const base = await fsp.realpath(process.env.RUNNER_TEMP);
+            check((await fsp.lstat(base)).isDirectory(), 'resource-parent-invalid');
+            const root = await fsp.mkdtemp(path.join(base, 'scitex-resource-'));
+            await fsp.chmod(root, 0o700);
+            const initial = await fsp.lstat(root);
+            check(initial.isDirectory() && initial.uid === process.getuid()
+              && (initial.mode & 0o777) === 0o700, 'resource-root-invalid');
+            function exactIdentity(s) { return ['dev','ino','uid'].every(k => Number.isSafeInteger(s[k]) && s[k] >= 0); }
+            check(exactIdentity(initial), 'resource-identity-not-exact');
+            const owned = {root, base, dev:initial.dev, ino:initial.ino, uid:initial.uid, files:[]};
+            function record() { core.setOutput('owned', JSON.stringify(owned)); }
+            record();
+            async function create(name, raw) {
+              const handle = await fsp.open(path.join(root, name), 'wx', 0o600);
+              try {
+                await handle.chmod(0o600);
+                const s = await handle.stat();
+                check(exactIdentity(s), 'resource-identity-not-exact');
+                owned.files.push({name,dev:s.dev,ino:s.ino,uid:s.uid});
+                record();
+                await handle.writeFile(raw);
+                await handle.sync();
+              } finally { await handle.close(); }
+            }
+            async function download(relative, digest) {
+              const url = 'https://raw.githubusercontent.com/scitex-ai/scitex-dev/' +
+                value.revision + '/src/scitex_dev/ci/' + relative;
+              const response = await fetch(url, {redirect:'manual', credentials:'omit',
+                signal:AbortSignal.timeout(15000)});
+              check(response.status === 200 && response.url === url && response.body,
+                'resource-download-refused');
+              const parts = []; let size = 0;
+              for await (const part of response.body) {
+                size += part.length; check(size <= 1024 * 1024, 'resource-size-refused');
+                parts.push(Buffer.from(part));
+              }
+              const raw = Buffer.concat(parts);
+              check(crypto.createHash('sha256').update(raw).digest('hex') === digest,
+                'resource-digest-refused');
+              return raw;
+            }
+            await create('stager.py', await download('_stage_resource.py', value.stager_sha256));
+            await create('producer.sh', await download('owned_context.sh', value.source_sha256));
+            const target = path.join(root, 'context.sh');
+            cp.execFileSync('/usr/bin/python3', ['-I', path.join(root,'stager.py'),
+              '--source', path.join(root,'producer.sh'), '--destination',target,
+              '--sha256',value.source_sha256], {timeout:15000,
+              env:{PATH:'/usr/bin:/bin',HOME:root},stdio:'pipe'});
+            const staged = await fsp.lstat(target);
+            check(staged.isFile() && !staged.isSymbolicLink() && staged.uid === owned.uid
+              && (staged.mode & 0o777) === 0o600, 'staged-resource-invalid');
+            check(exactIdentity(staged), 'resource-identity-not-exact');
+            owned.files.push({name:'context.sh',dev:staged.dev,ino:staged.ino,uid:staged.uid});
+            record();
+            core.setOutput('context', target);
+            core.exportVariable('SCITEX_CI_OWNED_CONTEXT', target);
+            // END CI_RESOURCE_STAGE
       - name: Run the registered complete leaf suite
         if: inputs.operation == 'test'
         env:
@@ -492,6 +572,68 @@ jobs:
           SCITEX_BROWSER_RELEASE_SOURCE_SHA: ${{ inputs.source_commit }}
           SCITEX_BROWSER_RELEASE_VERSION: ${{ inputs.release_tag }}
         run: bash .github/ci/exec-in-sif.sh probe-wheel-in-sif.sh 3.12
+      - name: Remove only the owned resource bootstrap files
+        timeout-minutes: 1
+        if: always() && steps.resources.outputs.owned != ''
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          OWNED: ${{ steps.resources.outputs.owned }}
+        with:
+          script: |
+            // BEGIN CI_RESOURCE_CLEANUP
+            const fs = require('fs'), fsp = fs.promises, path = require('path');
+            function check(ok, reason) { if (!ok) throw new Error(reason); }
+            check(process.platform === 'linux', 'resource-platform-refused');
+            const owned = JSON.parse(process.env.OWNED);
+            check(owned && Object.keys(owned).sort().join('|') === 'base|dev|files|ino|root|uid'
+              && Array.isArray(owned.files), 'resource-cleanup-contract-invalid');
+            const exactIdentity = s => s && ['dev','ino','uid'].every(k => Number.isSafeInteger(s[k]) && s[k] >= 0);
+            check(exactIdentity(owned) && owned.files.every(exactIdentity), 'resource-cleanup-contract-invalid');
+            check(path.isAbsolute(owned.root) && path.dirname(owned.root) === owned.base
+              && /^scitex-resource-[A-Za-z0-9]{6}$/.test(path.basename(owned.root))
+              && owned.base === await fsp.realpath(process.env.RUNNER_TEMP),
+              'resource-cleanup-path-invalid');
+            const allowed = new Set(['stager.py','producer.sh','context.sh']);
+            check(new Set(owned.files.map(f=>f.name)).size === owned.files.length
+              && owned.files.every(f=>allowed.has(f.name)), 'resource-cleanup-files-invalid');
+            const parent = await fsp.open(owned.base,
+              fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+            let directory;
+            try {
+              directory = await fsp.open(owned.root,
+                fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+              const current = await directory.stat();
+              check(current.dev === owned.dev && current.ino === owned.ino
+                && current.uid === owned.uid && current.uid === process.getuid()
+                && (current.mode & 0o777) === 0o700, 'resource-cleanup-root-changed');
+              // Anchor all entry operations to the held Linux directory descriptor.
+              const anchor = '/proc/self/fd/' + directory.fd;
+              const names = (await fsp.readdir(anchor)).sort();
+              check(JSON.stringify(names) === JSON.stringify(owned.files.map(f=>f.name).sort()),
+                'resource-cleanup-unknown-entry');
+              async function verify(file) {
+                const s = await fsp.lstat(path.join(anchor,file.name));
+                check(s.isFile() && !s.isSymbolicLink() && s.dev === file.dev
+                  && s.ino === file.ino && s.uid === file.uid && s.uid === owned.uid
+                  && (s.mode & 0o777) === 0o600, 'resource-cleanup-file-changed');
+              }
+              for (const file of owned.files) await verify(file);
+              for (const file of owned.files) {
+                await verify(file);
+                await fsp.unlink(path.join(anchor,file.name));
+              }
+              const entry = path.join('/proc/self/fd/' + parent.fd, path.basename(owned.root));
+              const beforeRemoval = await fsp.lstat(entry);
+              check(beforeRemoval.isDirectory() && beforeRemoval.dev === owned.dev
+                && beforeRemoval.ino === owned.ino && beforeRemoval.uid === owned.uid
+                && (beforeRemoval.mode & 0o777) === 0o700,
+                'resource-cleanup-root-changed');
+              await fsp.rmdir(entry);
+            } finally {
+              if (directory) await directory.close();
+              await parent.close();
+            }
+            // END CI_RESOURCE_CLEANUP
       - uses: actions/upload-artifact@v4
         if: inputs.operation == 'build'
         with:

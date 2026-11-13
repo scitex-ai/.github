@@ -1,0 +1,290 @@
+{
+  "base": "ab781bd43d0cb2090d4d567daccc984abdf93ba2",
+  "cases": [
+    {
+      "inputs": {
+        "repository": "scitex-ai/scitex-writer",
+        "event": "workflow_dispatch",
+        "native": true,
+        "operation": "test",
+        "source": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "tag": "v0.4.2"
+      },
+      "result": {
+        "ok": true,
+        "plan": {
+          "profile": "writer",
+          "operation": "test",
+          "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "releaseTag": "v0.4.2",
+          "versions": [
+            "3.11",
+            "3.12",
+            "3.13"
+          ],
+          "image": {
+            "sha256": "e8461fc77a2218b5f7e2c475bd601dddaec97c6335bee459a1b0d4e0ca374d83",
+            "bytes": 1381281792,
+            "producer_revision": "afda87ca15b9560410fff5f331223152df3410b4",
+            "source_manifest_sha256": "02f9fdd18cc953ea6b1eedebb862f376128cb6ccf7e9144d5e5ac06325f464eb",
+            "public_inventory_sha256": "997e7818bd7da34642a9e23a560ff18ccf5af62f1df011e6785ec0a09590ec88",
+            "delivery": null,
+            "capabilities": {
+              "3.11": "3.11.17",
+              "3.12": "3.12.15",
+              "3.13": "3.13.16",
+              "postgres": "postgres.16.15"
+            },
+            "native_paths": [
+              "/home/ywatanabe/.scitex/dev/runtime/containers/ci-cpu-sha256-e8461fc77a2218b5f7e2c475bd601dddaec97c6335bee459a1b0d4e0ca374d83.sif"
+            ]
+          },
+          "runtime": {
+            "path": "/usr/bin/apptainer",
+            "sha256": "7bdb501fdddbb7264b4e4d6038e0ec27201f63e217519e5f7f0db950c9285ddd",
+            "bytes": 48096048,
+            "user_namespace": true,
+            "sif_mount": true,
+            "hosted_delivery_sha256": null,
+            "qualification_sha256": "6a178f0d27be734a74df28f5d392f3f54e2bb4b6b2c2aced560ba6b091d08cec"
+          },
+          "leafSources": {
+            ".github/ci/exec-in-sif.sh": "c07c3bb883b35c7260636f60cc718bad02fffb6bdea6ab5b9002f5e606eeec12",
+            ".github/ci/run-in-sif.sh": "bab01584c10e87e6e904d71992c7120a1001e1376af3c88cc7d32750168e4f6a",
+            ".github/ci/with-test-postgres.py": "14bff890c251ea5d2dca13e42e8290f9b37ed29b69159258f36aab24c9b82de2",
+            ".github/ci/writer_ci_postgres.py": "41269b47454d99baff3459ef830da9312c53716000b386fa92471957cb8bd2e9",
+            ".github/ci/build-in-sif.sh": "5c094b4280b4caeb3172449d3a45a440937ed42023add24e4de4f9b9ec97ba89",
+            ".github/ci/publish-in-sif.sh": "d7fd488c417a58c01b736072d2ec4da7c00c5475cbb6e5a2759992b3e13794a6",
+            ".github/ci/release-identity.py": "5d8abc813d07163ba1551df18e130a71b7a60f025ed0b364370b952792945ffb"
+          },
+          "pgImage": null,
+          "native": true
+        }
+      }
+    },
+    {
+      "inputs": {
+        "repository": "scitex-ai/scitex-io",
+        "event": "workflow_dispatch",
+        "native": true,
+        "operation": "test",
+        "source": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "tag": "v0.4.2"
+      },
+      "result": {
+        "ok": true,
+        "plan": {
+          "profile": "io",
+          "operation": "test",
+          "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "releaseTag": "v0.4.2",
+          "versions": [
+            "3.11",
+            "3.12",
+            "3.13"
+          ],
+          "image": {
+            "sha256": "e8461fc77a2218b5f7e2c475bd601dddaec97c6335bee459a1b0d4e0ca374d83",
+            "bytes": 1381281792,
+            "producer_revision": "afda87ca15b9560410fff5f331223152df3410b4",
+            "source_manifest_sha256": "02f9fdd18cc953ea6b1eedebb862f376128cb6ccf7e9144d5e5ac06325f464eb",
+            "public_inventory_sha256": "997e7818bd7da34642a9e23a560ff18ccf5af62f1df011e6785ec0a09590ec88",
+            "delivery": null,
+            "capabilities": {
+              "3.11": "3.11.17",
+              "3.12": "3.12.15",
+              "3.13": "3.13.16",
+              "postgres": "postgres.16.15"
+            },
+            "native_paths": [
+              "/home/ywatanabe/.scitex/dev/runtime/containers/ci-cpu-sha256-e8461fc77a2218b5f7e2c475bd601dddaec97c6335bee459a1b0d4e0ca374d83.sif"
+            ]
+          },
+          "runtime": {
+            "path": "/usr/bin/apptainer",
+            "sha256": "7bdb501fdddbb7264b4e4d6038e0ec27201f63e217519e5f7f0db950c9285ddd",
+            "bytes": 48096048,
+            "user_namespace": true,
+            "sif_mount": true,
+            "hosted_delivery_sha256": null,
+            "qualification_sha256": "6a178f0d27be734a74df28f5d392f3f54e2bb4b6b2c2aced560ba6b091d08cec"
+          },
+          "leafSources": {
+            ".github/ci/exec-in-sif.sh": "698e91c18b7c9c6b0631aa8ce9a62c6b681ad8f40e515925ac640efc4e4acfc9",
+            ".github/ci/release-context.sh": "130f42eb7efbb511b0bcea962a84468e818e14ec3cf7498c2c45b9d145c430cc",
+            ".github/ci/run-in-sif.sh": "cc406adce05d14b920df78fc59789c6eb7ddf590d4573c7c88b58d59f45e006f",
+            ".github/ci/build-in-sif.sh": "226ffa167e746a24fc259f50e01181ea19fc1f234e2ad19bcdcd49eca17fd0de",
+            ".github/ci/publish-in-sif.sh": "a724de1c4019535e4248c771cfcd6c9382d0cfafff9da7732e17c3560e6cbcf0",
+            ".github/ci/release-identity.py": "997d87ea46f452684eae9fe2d5bc3f4cfda5371cce3c7f6c11efa3b15ee2ec4f",
+            ".github/ci/_release_artifacts.py": "2d83d570507ac055124b9bf4116a55ca81c86221c5bb7f4efbfb9be951e13ed6",
+            ".github/ci/_release_source.py": "fe6db73431025dcbd3ae45fa2f1de309fd2e90f257780da86458ae5b3c687cee",
+            ".github/ci/probe-first-observer.py": "5759229d222d6492f211d47c56c723181e28c5d16fdefebe3914a5bfe305a98f",
+            ".github/ci/io_test_store.py": "e1be5f3cfa849d4a8802b6a10b890731ca51be869330040cbbfd2c756f447a4d"
+          },
+          "pgImage": null,
+          "native": true,
+          "pytestWorkers": 4,
+          "runner": {
+            "group": "Organization",
+            "labels": [
+              "self-hosted",
+              "Linux",
+              "X64",
+              "scitex-org-cpu",
+              "scitex-compute-03"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "inputs": {
+        "repository": "scitex-ai/scitex-scholar",
+        "event": "workflow_dispatch",
+        "native": true,
+        "operation": "test",
+        "source": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "tag": "v0.4.2"
+      },
+      "result": {
+        "ok": true,
+        "plan": {
+          "profile": "scholar",
+          "operation": "test",
+          "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "releaseTag": "v0.4.2",
+          "versions": [
+            "3.11",
+            "3.12",
+            "3.13"
+          ],
+          "image": {
+            "sha256": "e8461fc77a2218b5f7e2c475bd601dddaec97c6335bee459a1b0d4e0ca374d83",
+            "bytes": 1381281792,
+            "producer_revision": "afda87ca15b9560410fff5f331223152df3410b4",
+            "source_manifest_sha256": "02f9fdd18cc953ea6b1eedebb862f376128cb6ccf7e9144d5e5ac06325f464eb",
+            "public_inventory_sha256": "997e7818bd7da34642a9e23a560ff18ccf5af62f1df011e6785ec0a09590ec88",
+            "delivery": null,
+            "capabilities": {
+              "3.11": "3.11.17",
+              "3.12": "3.12.15",
+              "3.13": "3.13.16",
+              "postgres": "postgres.16.15"
+            },
+            "native_paths": [
+              "/home/ywatanabe/.scitex/dev/runtime/containers/ci-cpu-sha256-e8461fc77a2218b5f7e2c475bd601dddaec97c6335bee459a1b0d4e0ca374d83.sif"
+            ]
+          },
+          "runtime": {
+            "path": "/usr/bin/apptainer",
+            "sha256": "7bdb501fdddbb7264b4e4d6038e0ec27201f63e217519e5f7f0db950c9285ddd",
+            "bytes": 48096048,
+            "user_namespace": true,
+            "sif_mount": true,
+            "hosted_delivery_sha256": null,
+            "qualification_sha256": "3b842983d34ba0b354836048cdf49b899583f871567ad78ebc1968f04ffaf786"
+          },
+          "leafSources": {
+            ".github/ci/exec-in-sif.sh": "9be3e2a4645e95cf073f59d93dc03e2f5c03e377cfd049b8548862e7ac881b3a",
+            ".github/ci/release-context.sh": "130f42eb7efbb511b0bcea962a84468e818e14ec3cf7498c2c45b9d145c430cc",
+            ".github/ci/run-in-sif.sh": "ed4d90fa668c609e382a6050ca57b15ada47a4707ffb758084044d840604222f",
+            ".github/ci/build-in-sif.sh": "8909563f08cc6727b33fcec9e82bc51fb4cc810539e4317453073101706ed58d",
+            ".github/ci/release-identity.py": "f16b0c95d4d912257dcd914874bf557a56063a00e1b755d9c883868affbab277",
+            ".github/ci/with-test-postgres.py": "61e6e0488fe5e4fab53f5dae40313eae0e740c9890e438101007797397b340c5",
+            ".github/ci/probe-first-observer.py": "952ba02e30b0794e01f6385a2cd8565498bdd481ebcdf5bdcea3803218c299ed",
+            ".github/ci/setup-node-owned.sh": "053fdbf23b2e166a384894afa0e3d0a9c04f81722eb0077b7cda239dcb2b6698"
+          },
+          "pgImage": null,
+          "native": true,
+          "pytestWorkers": 4,
+          "runner": {
+            "group": "Organization",
+            "labels": [
+              "self-hosted",
+              "Linux",
+              "X64",
+              "scitex-org-cpu",
+              "scitex-compute-03"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "inputs": {
+        "repository": "scitex-ai/scitex-browser",
+        "event": "workflow_dispatch",
+        "native": true,
+        "operation": "test",
+        "source": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "tag": "v0.4.2"
+      },
+      "result": {
+        "ok": true,
+        "plan": {
+          "profile": "browser",
+          "operation": "test",
+          "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "releaseTag": "v0.4.2",
+          "versions": [
+            "3.11",
+            "3.12",
+            "3.13"
+          ],
+          "image": {
+            "sha256": "7ad96b28e3485528fe13d8bbac6b7c514219d755361e99a7d13022e888e953c0",
+            "bytes": 1891598336,
+            "producer_revision": "fefce61f9cfc706258047cfb96bfe43ba94ffcaf",
+            "source_manifest_sha256": "d5de213e255fd0de2cd59be34e8f7d45cb3f61de21511256601d5a86bb724314",
+            "public_inventory_sha256": "547534123d79deb4e46606d990b200311d3c88c34be94623ab71c8ee7d871a78",
+            "delivery": null,
+            "capabilities": {
+              "3.11": "3.11.17",
+              "3.12": "3.12.15",
+              "3.13": "3.13.16",
+              "postgres": "postgres.16.15",
+              "chromium": "158.0.8127.18",
+              "playwright": "1.65.1"
+            },
+            "native_paths": [
+              "/home/ywatanabe/.scitex/dev/runtime/containers/ci-browser-sha256-7ad96b28e3485528fe13d8bbac6b7c514219d755361e99a7d13022e888e953c0.sif"
+            ]
+          },
+          "runtime": {
+            "path": "/usr/bin/apptainer",
+            "sha256": "7bdb501fdddbb7264b4e4d6038e0ec27201f63e217519e5f7f0db950c9285ddd",
+            "bytes": 48096048,
+            "user_namespace": true,
+            "sif_mount": true,
+            "hosted_delivery_sha256": null,
+            "qualification_sha256": "ad0bf6a6b3dd8ddc96194f0f67642199cc25e97bb2d7077717c73bfbbe9779bd"
+          },
+          "leafSources": {
+            ".github/ci/build-in-sif.sh": "fb3fd2b1b1cc62b36f56a867abe8f1093b446090c90b358894660cd5399082b5",
+            ".github/ci/ci-browser.def": "8124dc13216d229842990d19da4e2b0a255be6527ddfa04e1cee6720d06f33e6",
+            ".github/ci/exec-in-sif.sh": "0cd9a39968a414d56479a03761314ef2e808d444985ba7a5486564128fb8cbfc",
+            ".github/ci/probe-interactions.py": "d1b3a11a0ae7838748710b875b4dfc4001473d4ef39579b927bf54f706e08117",
+            ".github/ci/probe-wheel-in-sif.sh": "f4a3797fab9f16a5eee73feeffe99c8992d6b3af07ae3f331e04acad85a78260",
+            ".github/ci/publish-in-sif.sh": "e89aebbff100e0bec6cf59905614b11ab948aaf426f39f35a2846bb8c2d76e13",
+            ".github/ci/release-identity.py": "fd554650d99281a4f18f96edb8fd2758779fed82590f8e6a60f15407e5fada30",
+            ".github/ci/release-source.py": "83691adbfeeec4bec3a736d58c61b357d366806447c19b0e6c8268b597707bbd",
+            ".github/ci/run-in-sif.sh": "4dff72e9bc2e54842566d9569a4f7cb7b69005627275658b31a701ee9ef1b8c3",
+            ".github/ci/verify-release-in-sif.sh": "e67649a5bb00223c6423d8f098cda7f554dfa5346549ad24d4ba0b280ea8bbd6"
+          },
+          "pgImage": null,
+          "native": true,
+          "runner": {
+            "group": "Organization",
+            "labels": [
+              "self-hosted",
+              "Linux",
+              "X64",
+              "scitex-org-cpu",
+              "scitex-compute-03"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
