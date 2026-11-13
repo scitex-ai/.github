@@ -67,9 +67,28 @@ def test_only_selected_successful_producer_can_publish(dev, state):
 @pytest.mark.parametrize('event', ['push', 'pull_request', 'workflow_dispatch'])
 @pytest.mark.parametrize('cancelled', [False, True])
 def test_publication_refuses_nonpush_and_cancellation(event, cancelled):
-    github = {'event_name': event}
+    github = {'event_name': event, 'ref': 'refs/heads/develop'}
     assert evaluate(workflow()['jobs']['publish-sphinx-bundle']['if'], github=github,
                     cancelled=cancelled) == (event == 'push' and not cancelled)
+
+
+@pytest.mark.parametrize('dev', [False, True])
+@pytest.mark.parametrize('ref', [
+    'refs/heads/develop', 'refs/heads/main', 'refs/heads/feature',
+    'refs/tags/v0.62.30',
+])
+def test_dev_staging_selects_only_develop_and_preserves_generic_pushes(dev, ref):
+    # Exercise the actual job expression, including the main-push context
+    # that previously selected a job its own source guard must refuse.
+    inputs = {'bundle_dir': 'src/scitex_dev/_sphinx_html',
+              'dev_original_commands': dev}
+    selected = 'dev-original-sphinx' if dev else 'docs-sphinx'
+    other = 'docs-sphinx' if dev else 'dev-original-sphinx'
+    needs = {selected: {'result': 'success'}, other: {'result': 'skipped'}}
+    github = {'event_name': 'push', 'ref': ref}
+    assert evaluate(workflow()['jobs']['publish-sphinx-bundle']['if'],
+                    inputs=inputs, github=github, needs=needs) == (
+                        not dev or ref == 'refs/heads/develop')
 
 
 @pytest.mark.parametrize('dev', [False, True])
