@@ -64,6 +64,28 @@ BROWSER_POLICY = PackagePolicy(
     ),
 )
 
+STATS_POLICY = PackagePolicy(
+    repository="scitex-ai/scitex-stats",
+    distribution="scitex-stats",
+    package="scitex_stats",
+    source_mappings=(("src/scitex_stats/", "scitex_stats/"),),
+    reviewed_build_json=json.dumps(
+        {"targets": {"wheel": {"packages": ["src/scitex_stats"]}}},
+        sort_keys=True,
+    ),
+    reviewed_backend_json=json.dumps(
+        {"build-backend": "hatchling.build", "requires": ["hatchling"]},
+        sort_keys=True,
+    ),
+    required_members=(
+        "scitex_stats/__init__.py",
+        "scitex_stats/_skills/scitex-stats/SKILL.md",
+        "scitex_stats/_sphinx_html/index.html",
+        "scitex_stats/_django/manifest.json",
+        "scitex_stats/_django/urls.py",
+    ),
+)
+
 # This exact owner table is separate from the empty algorithm-default registry.
 # A package policy alone cannot select an image, authorize a tag or mint OIDC.
-RELEASE_REGISTRY = PolicyRegistry((SCHOLAR_POLICY, BROWSER_POLICY))
+RELEASE_REGISTRY = PolicyRegistry((SCHOLAR_POLICY, BROWSER_POLICY, STATS_POLICY))

@@ -1,0 +1,38 @@
+{
+  "key": "stats",
+  "repository": "scitex-ai/scitex-stats",
+  "commit": "fdaf5de3445cf6f9345aed27c61b848a98472a41",
+  "distribution": "scitex-stats",
+  "package": "scitex_stats",
+  "source_mappings": [
+    [
+      "src/scitex_stats/",
+      "scitex_stats/"
+    ]
+  ],
+  "required_members": [
+    "scitex_stats/__init__.py",
+    "scitex_stats/_skills/scitex-stats/SKILL.md",
+    "scitex_stats/_sphinx_html/index.html",
+    "scitex_stats/_django/manifest.json",
+    "scitex_stats/_django/urls.py"
+  ],
+  "omitted_paths": [],
+  "omitted_prefixes": [],
+  "forbidden_sdist_paths": [],
+  "reviewed_build": {
+    "targets": {
+      "wheel": {
+        "packages": [
+          "src/scitex_stats"
+        ]
+      }
+    }
+  },
+  "reviewed_backend": {
+    "build-backend": "hatchling.build",
+    "requires": [
+      "hatchling"
+    ]
+  }
+}
