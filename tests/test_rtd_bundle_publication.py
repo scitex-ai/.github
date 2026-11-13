@@ -24,7 +24,7 @@ def test_rtd_bundle_publication_is_opt_in_and_push_only():
 
     publish = workflow["jobs"]["publish-sphinx-bundle"]
     assert "github.event_name == 'push'" in publish["if"]
-    assert publish["needs"] == ["docs-sphinx"]
+    assert publish["needs"] == ["docs-sphinx", "dev-original-sphinx"]
     assert publish["runs-on"] == "ubuntu-latest"
     assert publish["permissions"] == {
         "contents": "write",
@@ -41,6 +41,6 @@ def test_rtd_bundle_publication_is_opt_in_and_push_only():
         if step.get("uses", "").startswith("peter-evans/create-pull-request@")
     )
     assert create_pr["with"]["base"] == "${{ github.ref_name }}"
-    assert create_pr["with"]["branch"] == "ci/sphinx-bundle/${{ github.ref_name }}"
+    assert "format('ci/sphinx-bundle/{0}', github.ref_name)" in create_pr["with"]["branch"]
     assert create_pr["with"]["add-paths"] == "${{ inputs.bundle_dir }}"
     assert not any("git push" in step.get("run", "") for step in publish["steps"])

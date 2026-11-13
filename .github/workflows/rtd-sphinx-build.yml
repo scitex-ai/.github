@@ -334,13 +334,44 @@ jobs:
           if-no-files-found: error
 
   publish-sphinx-bundle:
-    if: ${{ inputs.bundle_dir != '' && github.event_name == 'push' }}
-    needs: [docs-sphinx]
+    if: >-
+      ${{ always() && !cancelled() && inputs.bundle_dir != '' && github.event_name == 'push' &&
+          ((inputs.dev_original_commands && needs['dev-original-sphinx'].result == 'success') ||
+           (!inputs.dev_original_commands && needs['docs-sphinx'].result == 'success')) }}
+    needs: [docs-sphinx, dev-original-sphinx]
     runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.dev_original_commands && 5 || 360 }}
     permissions:
       contents: write
       pull-requests: write
     steps:
+      - name: Require the exact Dev docs source before publication
+        if: inputs.dev_original_commands
+        id: dev-docs-source
+        timeout-minutes: 1
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          BUNDLE_DIR: ${{ inputs.bundle_dir }}
+        with:
+          script: |
+            // BEGIN DEV_DOCS_SOURCE
+            function qualifyDevDocsSource(repository, event, ref, source, destination, branch) {
+              if (repository !== 'scitex-ai/scitex-dev' || event !== 'push'
+                  || ref !== 'refs/heads/develop' || typeof source !== 'string'
+                  || !/^[a-f0-9]{40}$/.test(source) || source.length !== 40
+                  || destination !== 'src/scitex_dev/_sphinx_html') {
+                throw new Error('dev-docs-source-contract-refused');
+              }
+              if (!branch || branch.name !== 'develop' || !branch.commit
+                  || branch.commit.sha !== source) throw new Error('dev-docs-source-advanced');
+              return source;
+            }
+            // END DEV_DOCS_SOURCE
+            const before = (await github.rest.repos.getBranch({
+              ...context.repo, branch: 'develop', request: {timeout: 10000}
+            })).data;
+            core.setOutput('source', qualifyDevDocsSource(context.payload.repository.full_name,
+              context.eventName, context.ref, context.sha, process.env.BUNDLE_DIR, before));
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
@@ -368,13 +399,35 @@ jobs:
       - name: Open or update a PR for the refreshed bundle
         uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
         with:
-          branch: ci/sphinx-bundle/${{ github.ref_name }}
+          branch: ${{ inputs.dev_original_commands && format('ci/dev-sphinx-{0}-{1}', github.sha, github.run_id) || format('ci/sphinx-bundle/{0}', github.ref_name) }}
           base: ${{ github.ref_name }}
+          draft: ${{ inputs.dev_original_commands }}
           add-paths: ${{ inputs.bundle_dir }}
           commit-message: "docs(sphinx_html): refresh from CI build"
-          title: "docs: refresh generated Sphinx bundle"
-          body: "Updates the checked-in Sphinx HTML bundle from the successful centralized docs build."
+          title: >-
+            ${{ inputs.dev_original_commands && 'docs(sphinx_html): refresh from CI build' || 'docs: refresh generated Sphinx bundle' }}
+          body: >-
+            ${{ inputs.dev_original_commands && format('Generated from source {0} by workflow run {1}. Review source binding, HTML content and original CI before merging.', github.sha, github.run_id) || 'Updates the checked-in Sphinx HTML bundle from the successful centralized docs build.' }}
           delete-branch: true
+      - name: Require the Dev docs base to remain unchanged
+        if: inputs.dev_original_commands
+        timeout-minutes: 1
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          EXPECTED_SOURCE: ${{ steps.dev-docs-source.outputs.source }}
+        with:
+          script: |
+            // BEGIN DEV_DOCS_AFTER
+            const after = (await github.rest.repos.getBranch({
+              ...context.repo, branch: 'develop', request: {timeout: 10000}
+            })).data;
+            const expected = process.env.EXPECTED_SOURCE;
+            if (typeof expected !== 'string' || expected.length !== 40 || !/^[a-f0-9]{40}$/.test(expected)
+                || !after || after.name !== 'develop' || !after.commit
+                || after.commit.sha !== expected) {
+              throw new Error('dev-docs-source-advanced');
+            }
+            // END DEV_DOCS_AFTER
 
   dev-original-sphinx:
     name: sphinx
@@ -494,7 +547,7 @@ jobs:
 
       - name: Commit refreshed HTML if it changed (develop push only)
         continue-on-error: true
-        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && inputs.bundle_dir == ''
         run: |
           if [ -n "$(git status --porcelain src/scitex_dev/_sphinx_html)" ]; then
             git config user.name "github-actions[bot]"
@@ -503,3 +556,11 @@ jobs:
             git commit -m "docs(sphinx_html): refresh from CI build"
             git push
           fi
+
+      - name: Stage the complete original Dev docs bundle for PR publication
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && inputs.bundle_dir != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: src/scitex_dev/_sphinx_html
+          if-no-files-found: error
