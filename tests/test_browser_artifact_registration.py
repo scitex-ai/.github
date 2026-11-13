@@ -90,6 +90,9 @@ def test_browser_registration_is_exact_repository_only(repository):
 
 
 def test_browser_artifact_registration_does_not_admit_runtime():
-    assert dispatch(repository=RECORD["repository"]) == {
-        "ok": False, "reason": "release-repository-refused",
-    }
+    # Arrange: the genuine artifact policy is not a native image/runtime record.
+    artifact_only = RECORD
+    # Act
+    result = dispatch(repository=RECORD["repository"], registration=artifact_only)
+    # Assert
+    assert result == {"ok": False, "reason": "browser-runtime-unregistered"}
