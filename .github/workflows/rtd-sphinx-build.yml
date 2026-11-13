@@ -396,19 +396,87 @@ jobs:
           cp -a .rtd-sphinx-html/. "$BUNDLE_DIR/"
           rm -rf -- "$BUNDLE_DIR/.doctrees"
           touch "$BUNDLE_DIR/.nojekyll"
-      - name: Open or update a PR for the refreshed bundle
-        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
+      - name: Commit and push a fresh Dev docs branch
+        if: inputs.dev_original_commands
+        id: dev-docs-commit
+        timeout-minutes: 1
+        env:
+          BUNDLE_DIR: ${{ inputs.bundle_dir }}
+          EXPECTED_SOURCE: ${{ steps.dev-docs-source.outputs.source }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          PR_BRANCH: ${{ format('ci/dev-sphinx-{0}-{1}', github.sha, github.run_id) }}
+        run: |
+          set -euo pipefail
+          test "$BUNDLE_DIR" = src/scitex_dev/_sphinx_html
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          test "$PR_BRANCH" = "ci/dev-sphinx-${EXPECTED_SOURCE}-${WORKFLOW_RUN_ID}"
+          git check-ref-format --branch "$PR_BRANCH" >/dev/null
+          existing=$(git ls-remote --heads origin "refs/heads/$PR_BRANCH")
+          test -z "$existing"
+          git diff --cached --quiet
+          git add -- "$BUNDLE_DIR"
+          status=0
+          git diff --cached --quiet || status=$?
+          case "$status" in
+            0) printf 'changed=false\n' >> "$GITHUB_OUTPUT"; exit 0 ;;
+            1) ;;
+            *) exit "$status" ;;
+          esac
+          git checkout -b "$PR_BRANCH"
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m 'docs(sphinx_html): refresh from CI build'
+          git push origin "HEAD:refs/heads/$PR_BRANCH"
+          printf 'changed=true\nbranch=%s\nhead=%s\n' "$PR_BRANCH" "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Report the fresh Dev docs review branch
+        if: inputs.dev_original_commands && steps.dev-docs-commit.outputs.changed == 'true'
+        id: dev-docs-review
+        timeout-minutes: 1
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          PR_BRANCH: ${{ steps.dev-docs-commit.outputs.branch }}
+          EXPECTED_HEAD: ${{ steps.dev-docs-commit.outputs.head }}
         with:
-          branch: ${{ inputs.dev_original_commands && format('ci/dev-sphinx-{0}-{1}', github.sha, github.run_id) || format('ci/sphinx-bundle/{0}', github.ref_name) }}
+          script: |
+            // BEGIN DEV_DOCS_REVIEW
+            function qualifyDevDocsReview(repository, source, run, branch, head, ref) {
+              if (repository !== 'scitex-ai/scitex-dev' || typeof source !== 'string'
+                  || source.length !== 40 || !/^[a-f0-9]{40}$/.test(source)
+                  || !Number.isSafeInteger(run) || run <= 0
+                  || branch !== `ci/dev-sphinx-${source}-${run}`
+                  || typeof head !== 'string' || head.length !== 40 || !/^[a-f0-9]{40}$/.test(head)
+                  || !ref || ref.ref !== `refs/heads/${branch}` || !ref.object
+                  || ref.object.type !== 'commit' || ref.object.sha !== head) {
+                throw new Error('dev-docs-review-contract-refused');
+              }
+              return {branch, head, source, run,
+                compare_url: `https://github.com/scitex-ai/scitex-dev/compare/develop...${branch}?quick_pull=1`};
+            }
+            const ref = (await github.rest.git.getRef({
+              ...context.repo, ref: `heads/${process.env.PR_BRANCH}`, request: {timeout: 10000}
+            })).data;
+            const review = qualifyDevDocsReview(context.payload.repository.full_name,
+              context.sha, context.runId, process.env.PR_BRANCH, process.env.EXPECTED_HEAD, ref);
+            core.setOutput('branch', review.branch);
+            core.setOutput('head', review.head);
+            core.setOutput('compare-url', review.compare_url);
+            await core.summary.addHeading('Review generated Dev documentation')
+              .addRaw(`Source: ${review.source}\n\nRun: ${review.run}\n\nHead: ${review.head}\n\n`)
+              .addLink('Open a PR after source/content review', review.compare_url)
+              .addRaw('\n\nA maintainer accepted by runner admission opens the PR; bot staging does not grant private CI admission.').write();
+            core.notice(`Staged review branch ${review.branch}`);
+            // END DEV_DOCS_REVIEW
+      - name: Open or update a PR for the refreshed bundle
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676
+        with:
+          branch: ci/sphinx-bundle/${{ github.ref_name }}
           base: ${{ github.ref_name }}
-          draft: ${{ inputs.dev_original_commands }}
           add-paths: ${{ inputs.bundle_dir }}
-          commit-message: "docs(sphinx_html): refresh from CI build"
-          title: >-
-            ${{ inputs.dev_original_commands && 'docs(sphinx_html): refresh from CI build' || 'docs: refresh generated Sphinx bundle' }}
-          body: >-
-            ${{ inputs.dev_original_commands && format('Generated from source {0} by workflow run {1}. Review source binding, HTML content and original CI before merging.', github.sha, github.run_id) || 'Updates the checked-in Sphinx HTML bundle from the successful centralized docs build.' }}
+          commit-message: 'docs(sphinx_html): refresh from CI build'
+          title: 'docs: refresh generated Sphinx bundle'
+          body: Updates the checked-in Sphinx HTML bundle from the successful centralized docs build.
           delete-branch: true
+        if: ${{ !inputs.dev_original_commands }}
       - name: Require the Dev docs base to remain unchanged
         if: inputs.dev_original_commands
         timeout-minutes: 1

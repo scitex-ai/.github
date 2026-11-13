@@ -83,10 +83,16 @@ def test_branch_draft_title_and_budget_preserve_generic_or_bind_dev_source(dev):
     job = workflow()['jobs']['publish-sphinx-bundle']
     action = next(s for s in job['steps'] if s.get('uses', '').startswith('peter-evans/'))
     inputs = {'bundle_dir': 'src/scitex_dev/_sphinx_html', 'dev_original_commands': dev}
-    actual = tuple(evaluate(action['with'][k], inputs=inputs) for k in ['branch', 'draft', 'title'])
-    assert actual == ((f'ci/dev-sphinx-{SOURCE}-12345', True,
-                       'docs(sphinx_html): refresh from CI build') if dev else (
-                       'ci/sphinx-bundle/develop', False, 'docs: refresh generated Sphinx bundle'))
+    assert evaluate(action['if'], inputs=inputs) == (not dev)
+    if dev:
+        prepare = next(s for s in job['steps'] if s.get('id') == 'dev-docs-commit')
+        assert evaluate(prepare['env']['PR_BRANCH'], inputs=inputs) == f'ci/dev-sphinx-{SOURCE}-12345'
+        assert prepare['timeout-minutes'] == 1
+    else:
+        actual = (action['with']['branch'].replace('${{ github.ref_name }}',
+                  evaluate('${{ github.ref_name }}', inputs=inputs)),
+                  action['with'].get('draft', False), action['with']['title'])
+        assert actual == ('ci/sphinx-bundle/develop', False, 'docs: refresh generated Sphinx bundle')
     assert evaluate(job['timeout-minutes'], inputs=inputs) == (5 if dev else 360)
     assert action['with']['base'] == '${{ github.ref_name }}'
     assert action['with']['add-paths'] == '${{ inputs.bundle_dir }}'
@@ -146,6 +152,11 @@ def test_only_publication_adapter_changes_the_captured_rtd_contract():
     assert {k: v for k, v in current.items() if k != 'jobs'} == {
         k: v for k, v in original.items() if k != 'jobs'}
     assert set(current['jobs']) == set(original['jobs'])
+    generic = next(copy.deepcopy(x) for x in current['jobs']['publish-sphinx-bundle']['steps']
+                   if x.get('uses', '').startswith('peter-evans/'))
+    assert generic.pop('if') == '${{ !inputs.dev_original_commands }}'
+    assert generic == next(x for x in original['jobs']['publish-sphinx-bundle']['steps']
+                           if x.get('uses', '').startswith('peter-evans/'))
     changed = {k for k in current['jobs'] if current['jobs'][k] != original['jobs'][k]}
     assert changed == {'publish-sphinx-bundle', 'dev-original-sphinx'}
     old = original['jobs']['dev-original-sphinx']
