@@ -1,0 +1,36 @@
+{
+  "key": "browser",
+  "repository": "scitex-ai/scitex-browser",
+  "commit": "486e229d58c3b17abc23c9519818fdbffac6821c",
+  "distribution": "scitex-browser",
+  "package": "scitex_browser",
+  "source_mappings": [
+    [
+      "src/scitex_browser/",
+      "scitex_browser/"
+    ]
+  ],
+  "required_members": [
+    "scitex_browser/__init__.py",
+    "scitex_browser/_skills/scitex-browser/SKILL.md",
+    "scitex_browser/_sphinx_html/index.html"
+  ],
+  "omitted_paths": [],
+  "omitted_prefixes": [],
+  "forbidden_sdist_paths": [],
+  "reviewed_build": {
+    "targets": {
+      "wheel": {
+        "packages": [
+          "src/scitex_browser"
+        ]
+      }
+    }
+  },
+  "reviewed_backend": {
+    "build-backend": "hatchling.build",
+    "requires": [
+      "hatchling"
+    ]
+  }
+}

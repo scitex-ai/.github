@@ -44,6 +44,26 @@ SCHOLAR_POLICY = PackagePolicy(
     ),
 )
 
+BROWSER_POLICY = PackagePolicy(
+    repository="scitex-ai/scitex-browser",
+    distribution="scitex-browser",
+    package="scitex_browser",
+    source_mappings=(("src/scitex_browser/", "scitex_browser/"),),
+    reviewed_build_json=json.dumps(
+        {"targets": {"wheel": {"packages": ["src/scitex_browser"]}}},
+        sort_keys=True,
+    ),
+    reviewed_backend_json=json.dumps(
+        {"build-backend": "hatchling.build", "requires": ["hatchling"]},
+        sort_keys=True,
+    ),
+    required_members=(
+        "scitex_browser/__init__.py",
+        "scitex_browser/_skills/scitex-browser/SKILL.md",
+        "scitex_browser/_sphinx_html/index.html",
+    ),
+)
+
 # This exact owner table is separate from the empty algorithm-default registry.
 # A package policy alone cannot select an image, authorize a tag or mint OIDC.
-RELEASE_REGISTRY = PolicyRegistry((SCHOLAR_POLICY,))
+RELEASE_REGISTRY = PolicyRegistry((SCHOLAR_POLICY, BROWSER_POLICY))
