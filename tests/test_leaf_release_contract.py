@@ -14,7 +14,7 @@ def dispatch(**changes):
     code = writer.blocks('WRITER_RELEASE_CONTRACT')[0] + '''
 const x = JSON.parse(process.argv[1]);
 try { const plan = Object.hasOwn(x, 'registration')
- ? ({'scitex-ai/scitex-io':ioPlan,'scitex-ai/scitex-scholar':scholarPlan,'scitex-ai/scitex-writer':writerPlan}[x.repository])(x.repository,x.event,x.native,x.operation,x.source,x.tag,x.registration)
+ ? ({'scitex-ai/scitex-io':ioPlan,'scitex-ai/scitex-scholar':scholarPlan,'scitex-ai/scitex-writer':writerPlan,'scitex-ai/scitex-browser':browserPlan}[x.repository])(x.repository,x.event,x.native,x.operation,x.source,x.tag,x.registration)
  : leafReleasePlan(x.repository,x.event,x.native,x.operation,x.source,x.tag);
  console.log(JSON.stringify({ok:true,plan})); }
 catch (e) {console.log(JSON.stringify({ok:false,reason:e.message}));}
@@ -120,7 +120,9 @@ def test_writer_keeps_its_existing_generic_pool_selection():
 def test_registered_worker_budget_is_passed_to_both_strict_driver_operations():
     workflow = yaml.safe_load((ROOT/'.github/workflows/leaf-release-sif.yml').read_text())
     steps = workflow['jobs']['native']['steps']
-    drivers = [row for row in steps if row.get('run', '').startswith('bash .github/ci/exec-in-sif.sh')]
+    drivers = [row for row in steps if row.get('name') in (
+        'Run the registered complete leaf suite',
+        'Build and verify the retained whole wheel and sdist')]
     assert len(drivers) == 2 and all(row['env']['CI_XDIST_WORKERS'] == "${{ fromJSON(needs.profile.outputs.plan).pytestWorkers || '' }}" for row in drivers)
 
 
