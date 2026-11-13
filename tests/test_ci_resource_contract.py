@@ -141,8 +141,8 @@ def test_resource_hooks_are_conditional_and_leave_operations_unchanged():
       "bash .github/ci/exec-in-sif.sh run-in-sif.sh "+chr(36)+"{{ matrix.python-version }}")
 
 
-def test_optional_transport_does_not_admit_stats_runtime():
-    assert leaf.dispatch(repository="scitex-ai/scitex-stats")["reason"] == "release-repository-refused"
+def test_stats_resource_admission_cannot_enable_build_or_upload():
+    assert leaf.dispatch(repository="scitex-ai/scitex-stats", operation="build")["reason"] == "stats-release-operation-refused"
 
 
 def test_cleanup_refuses_symlink_without_touching_target(tmp_path):

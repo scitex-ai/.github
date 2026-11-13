@@ -1,0 +1,49 @@
+{
+  "source": "59afa4678e1ff8270a465d1f67e4e2fc347df1ad",
+  "equivalent_merge": "9eb22bd3a7a785bf561ab0b6add148d613415d29",
+  "tree": "1825ba94e3de9ec22172524992b4e892ba0b3a86",
+  "versions": [
+    {
+      "python": "3.11",
+      "summary": "3217 passed, 19 skipped",
+      "seconds": 220.578,
+      "cleanup_removal": [
+        [
+          "0",
+          "3"
+        ]
+      ]
+    },
+    {
+      "python": "3.12",
+      "summary": "3217 passed, 19 skipped",
+      "seconds": 268.155,
+      "cleanup_removal": [
+        [
+          "0",
+          "3"
+        ]
+      ]
+    },
+    {
+      "python": "3.13",
+      "summary": "3217 passed, 19 skipped",
+      "seconds": 217.531,
+      "cleanup_removal": [
+        [
+          "0",
+          "6"
+        ]
+      ]
+    }
+  ],
+  "runtime_sha256": "7bdb501fdddbb7264b4e4d6038e0ec27201f63e217519e5f7f0db950c9285ddd",
+  "image_sha256": "e8461fc77a2218b5f7e2c475bd601dddaec97c6335bee459a1b0d4e0ca374d83",
+  "host": "scitex-compute-03",
+  "workers": 32,
+  "scope_seconds": 1800,
+  "scope_memory_gib": 64,
+  "user_namespace": true,
+  "sif_mount": true,
+  "limits": "Native aggregate results; individual audit cases verified in original source and post-merge CI separately. Test-only registration; no build or publisher."
+}

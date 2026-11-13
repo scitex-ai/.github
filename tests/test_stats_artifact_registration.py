@@ -89,10 +89,10 @@ def test_stats_registration_is_exact_repository_only(repository):
         RELEASE_REGISTRY.resolve(repository)
 
 
-def test_stats_artifact_registration_does_not_admit_runtime():
-    # Arrange: artifact ownership is registered, while no runtime profile is.
+def test_stats_artifact_ownership_cannot_admit_build_or_upload():
+    # Arrange: artifact ownership and test-only runtime admission are separate.
     artifact_only = RELEASE_REGISTRY.resolve(RECORD["repository"])
     # Act: exercise the actual workflow router, without a test-helper override.
-    result = dispatch(repository=artifact_only.repository)
+    result = dispatch(repository=artifact_only.repository, operation="build")
     # Assert
-    assert result == {"ok": False, "reason": "release-repository-refused"}
+    assert result == {"ok": False, "reason": "stats-release-operation-refused"}
