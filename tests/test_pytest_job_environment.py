@@ -73,6 +73,10 @@ def test_opt_in_preserves_every_legacy_workflow_field():
     workflow = _workflow()
     events = workflow.get("on", workflow.get(True))
     declared = events["workflow_call"]["inputs"].pop("job_owned_environment")
+    # The later timeout_minutes successor is reverted to its prior literal so
+    # this digest keeps covering only the job-owned-environment change.
+    events["workflow_call"]["inputs"].pop("timeout_minutes")
+    workflow["jobs"]["pytest-matrix"]["timeout-minutes"] = 30
     steps = workflow["jobs"]["pytest-matrix"]["steps"]
     stage = next(s for s in steps if s.get("name") == STEP)
     # Act
