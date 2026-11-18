@@ -115,6 +115,14 @@ on:
         type: boolean
         required: false
         default: false
+      timeout_minutes:
+        description: >-
+          Per-leg job timeout in minutes for the pytest-matrix legs only. The
+          default keeps the historical 30. A caller whose suite runs longer at
+          its CI_XDIST_WORKERS cap raises it here instead of forking the job.
+        type: number
+        required: false
+        default: 30
       dependency_group:
         description: >-
           PEP 735 dependency-group holding the test requirements, installed
@@ -281,7 +289,7 @@ jobs:
       ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
           && fromJSON('["ubuntu-latest"]')
           || fromJSON(needs.runner-admission.outputs.runs_on) }}
-    timeout-minutes: 30
+    timeout-minutes: ${{ inputs.timeout_minutes }}
     strategy:
       fail-fast: false
       matrix:

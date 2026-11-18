@@ -802,7 +802,10 @@ class SIFWorkflowSourceTests(unittest.TestCase):
             # Opt-in job-owned environment successor. Removing that input/step
             # retains every legacy field, including the original install script;
             # real uv/metadata/lifecycle controls: test_pytest_job_environment.py.
-            "pytest-matrix.yml": "281e66ab3244834ad635e748e04a09fb8370e3a179f8843287a5989ebd45b3fb",
+            # Per-leg timeout_minutes input successor (default 30 = prior
+            # literal); input contract: test_pytest_timeout_input.py; prior
+            # body pinned by test_pytest_job_environment.py.
+            "pytest-matrix.yml": "f667d6d74d58ca28aee26685dc96b9032ec2baa081933062bedf6e4f695d5b11",
             "quality-audit.yml": "f44a2e6b5c479c2975d1cedf66738fdbf402a74cf1d8e26340bb9895524e7b4a",
             # Dev develop-only staging successor (actual branch/Git/refusal controls). Original producer and
             # other jobs stay checked against frozen source by
