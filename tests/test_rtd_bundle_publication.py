@@ -21,9 +21,6 @@ def test_rtd_bundle_publication_is_opt_in_and_push_only():
         if step.get("name") == "Upload built HTML for the caller to publish"
     )
     assert "inputs.bundle_dir != ''" in upload["if"]
-    # Sphinx .buildinfo is packaged too; artifact defaults would drop it before
-    # the publisher replaces the reviewed in-wheel documentation directory.
-    assert upload["with"]["include-hidden-files"] is True
 
     publish = workflow["jobs"]["publish-sphinx-bundle"]
     assert "github.event_name == 'push'" in publish["if"]

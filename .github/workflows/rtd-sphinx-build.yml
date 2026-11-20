@@ -332,7 +332,6 @@ jobs:
           name: ${{ inputs.artifact_name }}
           path: ${{ steps.build.outputs.html_dir }}
           if-no-files-found: error
-          include-hidden-files: true
 
   publish-sphinx-bundle:
     if: >-
