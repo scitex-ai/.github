@@ -1,0 +1,156 @@
+name: rtd-publish
+
+# Call after rtd-sphinx-build succeeds. HTML bundled in wheels and served by
+# the Hub Docs app remains the output of rtd-sphinx-build's bundle PR.
+on:
+  workflow_call:
+    inputs:
+      project:
+        description: Existing public Read the Docs project slug.
+        type: string
+        required: true
+      version:
+        description: RTD version tracking the caller branch (usually latest).
+        type: string
+        default: latest
+      page:
+        description: Relative HTML page whose published contents must be checked.
+        type: string
+        default: index.html
+      expected_text:
+        description: Required text in the published HTML, beyond a successful HTTP status.
+        type: string
+        required: true
+    secrets:
+      RTD_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rtd-${{ github.repository }}-${{ inputs.project }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # No checkout, conf.py execution, or PR secrets in this job. Only the
+    # reviewed workflow implementation receives the explicitly named token.
+    if: >-
+      ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+          (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Publish and verify Read the Docs
+        shell: python
+        env:
+          RTD_TOKEN: ${{ secrets.RTD_TOKEN }}
+          RTD_PROJECT: ${{ inputs.project }}
+          RTD_VERSION: ${{ inputs.version }}
+          RTD_PAGE: ${{ inputs.page }}
+          RTD_EXPECTED_TEXT: ${{ inputs.expected_text }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_BRANCH: ${{ github.ref_name }}
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          import json
+          import os
+          import re
+          import time
+          import urllib.error
+          import urllib.request
+          from pathlib import Path, PurePosixPath
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          def publish(env, *, opener=None, now=time.monotonic, sleep=time.sleep):
+              project, version = env['RTD_PROJECT'], env['RTD_VERSION']
+              for value in (project, version):
+                  if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', value):
+                      raise ValueError('Invalid RTD project or version slug')
+              page = env['RTD_PAGE']
+              if (not page.endswith('.html') or page.startswith('/') or
+                      any(part in ('', '.', '..') for part in page.split('/')) or
+                      any(c in page for c in '\\?#') or str(PurePosixPath(page)) != page):
+                  raise ValueError('Expected a relative HTML page')
+              expected = env['RTD_EXPECTED_TEXT'].strip()
+              commit = env['SOURCE_COMMIT']
+              if not expected or not re.fullmatch(r'[0-9a-f]{40}', commit):
+                  raise ValueError('Expected text and full source commit are required')
+              token = env.get('RTD_TOKEN', '')
+              if not token:
+                  raise ValueError('RTD_TOKEN is required')
+              opener = opener or urllib.request.build_opener(NoRedirect())
+              base = f'https://app.readthedocs.org/api/v3/projects/{project}/'
+              deadline = now() + 600
+
+              def api(path, method='GET'):
+                  request = urllib.request.Request(
+                      base + path, data=b'{}' if method == 'POST' else None,
+                      headers={'Authorization': 'Token ' + token,
+                               'Content-Type': 'application/json'}, method=method)
+                  with opener.open(request, timeout=30) as response:
+                      return json.load(response)
+
+              metadata = api('')
+              repo = metadata['repository']['url'].removesuffix('.git').rstrip('/')
+              if repo != 'https://github.com/' + env['SOURCE_REPOSITORY']:
+                  raise ValueError('RTD project does not belong to the caller repository')
+              tracking = api(f'versions/{version}/')
+              branch = metadata['default_branch'] if version == 'latest' else tracking['identifier']
+              if tracking['type'] != 'branch' or branch != env['SOURCE_BRANCH']:
+                  raise ValueError('RTD version does not track the caller branch')
+              # POST is performed once. An uncertain response fails rather than
+              # submitting duplicate builds. RTD chooses the current branch head;
+              # matching its completed commit is mandatory before reporting success.
+              triggered = api(f'versions/{version}/builds/', 'POST')
+              build_id = triggered['build']['id']
+              if not isinstance(build_id, int) or isinstance(build_id, bool) or build_id <= 0:
+                  raise ValueError('RTD did not return a valid build ID')
+              while now() < deadline:
+                  build = api(f'builds/{build_id}/')
+                  state = build['state']['code']
+                  if state in ('finished', 'cancelled'):
+                      if state != 'finished' or build.get('success') is not True:
+                          raise RuntimeError(f'RTD build {build_id} failed; inspect its build log')
+                      if build.get('commit') != commit:
+                          raise RuntimeError('RTD built a different commit; rerun on the current branch head')
+                      break
+                  sleep(10)
+              else:
+                  raise TimeoutError('RTD build did not finish within 600 seconds')
+
+              url = f'https://{project}.readthedocs.io/en/{version}/{page}'
+              # Public GET has no API token. Cache propagation can briefly return
+              # 403/404; the same bounded deadline covers build and publication.
+              while now() < deadline:
+                  try:
+                      with opener.open(urllib.request.Request(url), timeout=30) as response:
+                          html = response.read().decode('utf-8')
+                          if response.status == 200 and '<html' in html.lower() and expected in html:
+                              return {'project': project, 'version': version, 'build_id': build_id,
+                                      'source_commit': commit, 'verified_url': url}
+                  except urllib.error.HTTPError as error:
+                      if error.code not in (403, 404, 429, 502, 503):
+                          raise
+                  sleep(10)
+              raise TimeoutError('Published HTML did not contain the expected contents')
+
+          def main():
+              receipt = publish(os.environ)
+              Path(os.environ['RUNNER_TEMP'], 'rtd-publication.json').write_text(
+                  json.dumps(receipt, indent=2) + '\n')
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+                  summary.write('Read the Docs publication verified:\n\n```json\n' +
+                                json.dumps(receipt, indent=2) + '\n```\n')
+
+          if __name__ == '__main__':
+              main()
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rtd-publication
+          path: ${{ runner.temp }}/rtd-publication.json
+          if-no-files-found: error
