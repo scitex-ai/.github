@@ -20,7 +20,10 @@ writing one — it also shows up under *Actions → New workflow* in every repo.
 - `pytest-matrix.yml` — pytest across the supported Python versions.
 - `import-smoke.yml` — bare-install import smoke test.
 - `quality-audit.yml` — `scitex-dev ecosystem audit-all` quality gate.
-- `rtd-sphinx-build.yml` — local `sphinx-build` smoke check.
+- `rtd-sphinx-build.yml` — Sphinx build and optional bundled-HTML PR.
+- `rtd-publish.yml` — publish to Read the Docs and verify the exact source commit
+  and public page contents. See [documentation publishing](docs/documentation-publishing.md)
+  for the shared path to RTD and both SciTeX Docs app deployments.
 - `cla.yml` — CLA Assistant + owner direct-push bypass.
 - `auto-merge-to-develop.yml` — auto-merge green PRs targeting `develop`.
 
