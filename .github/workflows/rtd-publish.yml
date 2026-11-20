@@ -85,12 +85,14 @@ jobs:
                   raise ValueError('RTD_TOKEN is required')
               opener = opener or urllib.request.build_opener(NoRedirect())
               base = f'https://app.readthedocs.org/api/v3/projects/{project}/'
+              agent = 'SciTeX-Documentation-Publisher/1.0 (+https://github.com/scitex-ai/.github)'
               deadline = now() + 600
 
               def api(path, method='GET'):
                   request = urllib.request.Request(
                       base + path, data=b'{}' if method == 'POST' else None,
                       headers={'Authorization': 'Token ' + token,
+                               'User-Agent': agent,
                                'Content-Type': 'application/json'}, method=method)
                   with opener.open(request, timeout=30) as response:
                       return json.load(response)
@@ -128,7 +130,7 @@ jobs:
               # 403/404; the same bounded deadline covers build and publication.
               while now() < deadline:
                   try:
-                      with opener.open(urllib.request.Request(url), timeout=30) as response:
+                      with opener.open(urllib.request.Request(url, headers={'User-Agent': agent}), timeout=30) as response:
                           html = response.read().decode('utf-8')
                           if response.status == 200 and '<html' in html.lower() and expected in html:
                               return {'project': project, 'version': version, 'build_id': build_id,

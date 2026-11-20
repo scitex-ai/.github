@@ -34,6 +34,9 @@ class Server:
         self.requests.append(request)
         if '.readthedocs.io/' in request.full_url:
             assert request.get_header('Authorization') is None
+            # RTD's public Cloudflare endpoint rejects Python-urllib's default
+            # agent with 1010; identify our client explicitly instead.
+            assert request.get_header('User-agent').startswith('SciTeX-Documentation-Publisher/')
             return Response(self.html.encode())
         assert request.get_header('Authorization') == 'Token synthetic-test-token'
         if request.get_method() == 'POST':
