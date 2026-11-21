@@ -5,6 +5,23 @@ const OID = /^[0-9a-f]{40}$/;
 const LOGIN = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/;
 const ACTION_LOGIN = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}(?:\[bot\])?$/;
 const MAX_COMMITS = 2000;
+const LEGACY_ACTION_REF = 'scitex-ai/github-action@114064adf09afb0c8c04703c060862a29ae82c7d';
+const FULL_ACTION_REF = 'scitex-ai/github-action@6a20f5856a730d19a19b3130fe94c7af8a3a9ba8';
+// These are reviewed immutable source/build contracts, NOT runtime attestations.
+// A matching tree or an untrusted capability claim cannot select another ref.
+const ACTION_CONTRACTS = new Map([
+  [LEGACY_ACTION_REF, Object.freeze({ref: LEGACY_ACTION_REF, coverage: 'first-100',
+    tree: '767f241c3869c61cb3a64ffbec4974b014b45b6b',
+    bundleSha256: 'a44111084c0d4782206c04b4276292f7fec6d1f7a33525512fbeef3242079dfb'})],
+  [FULL_ACTION_REF, Object.freeze({ref: FULL_ACTION_REF, coverage: 'full-immutable-pr-attribution-v1',
+    tree: 'df1a03635c93ea06e9924debd111577c48cc99bb',
+    bundleSha256: '6eaab719f46f0ed4b2d7cff57022b745f1bb4d239c7d715c7d77c88967c69662'})],
+]);
+
+function actionCoverageContract(actionRef = LEGACY_ACTION_REF) {
+  if (!ACTION_CONTRACTS.has(actionRef)) throw new Error('Unsupported immutable CLA action contract');
+  return ACTION_CONTRACTS.get(actionRef);
+}
 const MODES = new Map([
   ['100644', 'blob'], ['100755', 'blob'], ['120000', 'blob'], ['160000', 'commit'],
 ]);
@@ -159,8 +176,13 @@ function actionIdentity(commit) {
   return user.databaseId + ':' + user.login;
 }
 
-function requireActionCoverage(commits) {
-  if (commits.length <= 100) return;
+function requireActionCoverage(commits, actionRef = LEGACY_ACTION_REF) {
+  const contract = actionCoverageContract(actionRef);
+  if (contract.coverage === 'first-100' && commits.length <= 100) return;
+  if (!Array.isArray(commits) || !commits.length || commits.length > MAX_COMMITS) {
+    throw new Error('Invalid complete CLA action coverage count');
+  }
+  if (contract.coverage === 'full-immutable-pr-attribution-v1') commits.forEach(commitProof);
   const identities = commits.map(actionIdentity);
   const logins = new Map();
   const ids = new Map();
@@ -173,6 +195,10 @@ function requireActionCoverage(commits) {
     logins.set(login, id);
     ids.set(id, login);
   }
+  // The full collector has independently qualified source/bundle and signature
+  // witnesses. It covers every validated identity, not just its original page.
+  // Collection completeness and snapshot binding remain separate prerequisites.
+  if (contract.coverage === 'full-immutable-pr-attribution-v1') return;
   const covered = new Set(identities.slice(0, 100));
   if (identities.some(identity => !covered.has(identity))) {
     throw new Error('Pinned CLA action cannot cover every contributor');
@@ -252,7 +278,8 @@ async function compareComplete(before, nodes, getComparePage, getCommitObjects) 
   return [...covered, ...ids.filter(id => !prefix.has(id)).map(id => canonical.get(id))];
 }
 
-async function completeCommits(before, repo, getPage, fallback = {}) {
+async function completeCommits(before, repo, getPage, fallback = {}, actionRef = LEGACY_ACTION_REF) {
+  actionCoverageContract(actionRef);
   if (!Number.isInteger(before.commits) || before.commits < 0 ||
       before.commits > MAX_COMMITS) throw new Error('PR exceeds complete attribution budget');
   if (!OID.test(before.base?.sha) || !OID.test(before.head?.sha) ||
@@ -285,7 +312,7 @@ async function completeCommits(before, repo, getPage, fallback = {}) {
       const commits = checkedCommits(before, {...pull, commits: {
         totalCount: connection.totalCount, nodes: complete, pageInfo: {hasNextPage: false},
       }}, repo);
-      requireActionCoverage(commits);
+      requireActionCoverage(commits, actionRef);
       return commits;
     }
     const next = connection.pageInfo.endCursor;
@@ -299,24 +326,29 @@ async function completeCommits(before, repo, getPage, fallback = {}) {
   throw new Error('PR attribution page budget exhausted');
 }
 
-function snapshotFor(before, commits, baselineProtected) {
+function snapshotFor(before, commits, baselineProtected, actionRef = LEGACY_ACTION_REF) {
   const identities = commits.map(c => ({oid: c.oid, author: c.author, committer: c.committer}));
   return {
     base: before.base.sha, head: before.head.sha, baseRef: before.base.ref,
     repository: before.base.repo.full_name, baselineProtected,
+    action: actionCoverageContract(actionRef),
     identities: createHash('sha256').update(JSON.stringify(identities)).digest('hex'),
   };
 }
 
-async function verifyFinalBinding({github, context, snapshot}) {
+async function verifyFinalBinding({github, context, snapshot, actionRef = LEGACY_ACTION_REF}) {
+  const contract = actionCoverageContract(actionRef);
+  if (JSON.stringify(snapshot?.action) !== JSON.stringify(contract)) {
+    throw new Error('CLA action contract changed during attribution');
+  }
   const repo = context.repo;
   const {read, query} = boundedReaders(github, repo);
   const before = await read(github.rest.pulls.get, {pull_number: context.issue.number});
   const transport = attributionTransports(github, before, repo, context.issue.number, read, query);
-  const commits = await completeCommits(before, repo, transport.getPage, transport);
+  const commits = await completeCommits(before, repo, transport.getPage, transport, actionRef);
   const after = await read(github.rest.pulls.get, {pull_number: context.issue.number});
   if (!samePull(before, after)) throw new Error('PR changed during final attribution');
-  const current = snapshotFor(before, commits, snapshot.baselineProtected);
+  const current = snapshotFor(before, commits, snapshot.baselineProtected, actionRef);
   if (before.state !== 'open' || JSON.stringify(current) !== JSON.stringify(snapshot)) {
     throw new Error('CLA attribution snapshot changed during action');
   }
@@ -328,7 +360,8 @@ async function verifyFinalBinding({github, context, snapshot}) {
   }
 }
 
-async function qualify({github, context, core, ownerAllowlist}) {
+async function qualify({github, context, core, ownerAllowlist, actionRef = LEGACY_ACTION_REF}) {
+  actionCoverageContract(actionRef);
   const original = ownerAllowlist;
   const repo = context.repo;
   const number = context.issue.number;
@@ -343,7 +376,7 @@ async function qualify({github, context, core, ownerAllowlist}) {
     throw new Error('Triggered PR head no longer current');
   }
   const transport = attributionTransports(github, before, repo, number, read, query);
-  const commits = await completeCommits(before, repo, transport.getPage, transport);
+  const commits = await completeCommits(before, repo, transport.getPage, transport, actionRef);
   const proofs = new Map();
   const treeCache = new Map();
   async function getTree(oid) {
@@ -394,10 +427,11 @@ async function qualify({github, context, core, ownerAllowlist}) {
   }
   const extras = transportOnlyLogins(commits, proofs);
   core.setOutput('allowlist', [original, ...extras].filter(Boolean).join(','));
-  core.setOutput('proof', JSON.stringify(snapshotFor(before, commits, baselineProtected)));
+  core.setOutput('proof', JSON.stringify(snapshotFor(before, commits, baselineProtected, actionRef)));
   core.info('Qualified baseline-only transport actors: ' + extras.length);
 }
 
 module.exports = {leafTree, isBaselineTransport, attributedLogin, transportOnlyLogins,
   samePull, checkedCommits, snapshotFor, verifyFinalBinding, qualify,
-  actionIdentity, requireActionCoverage, completeCommits, PULL_QUERY, commitObjectQuery};
+  actionIdentity, requireActionCoverage, completeCommits, PULL_QUERY, commitObjectQuery,
+  actionCoverageContract, LEGACY_ACTION_REF, FULL_ACTION_REF};

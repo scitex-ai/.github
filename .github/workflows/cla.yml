@@ -225,7 +225,7 @@ jobs:
             const response = await github.rest.repos.getContent({
               owner: 'scitex-ai', repo: '.github',
               path: '.github/cla/baseline-transports.js',
-              ref: 'e1ff896b66571029e0d0777917ba4776a6b36a77',
+              ref: '8af3254b1b66e668c8e1e1ddbbb160aad8fdb5d0',
               request: {timeout: 4000},
             });
             const source = response.data;
@@ -233,9 +233,9 @@ jobs:
               throw new Error('Trusted CLA helper source unavailable');
             }
             const bytes = Buffer.from(source.content, 'base64');
-            if (bytes.length !== 19063 ||
+            if (bytes.length !== 21380 ||
                 require('crypto').createHash('sha256').update(bytes).digest('hex') !==
-                  'c6db3ce009949e1eaf5fce18fd942b32364b0fd7873785275cfac6dd50ca59ab') {
+                  '3b3af4cf343898bf5d60c3692696f1f6ab7b29a8c668893472fa529547ebbf93') {
               throw new Error('Trusted CLA helper source mismatch');
             }
             const helper = {exports: {}};
@@ -243,11 +243,12 @@ jobs:
               helper, helper.exports, require);
             await helper.exports.qualify({
               github, context, core, ownerAllowlist: process.env.CLA_OWNER_ALLOWLIST,
+              actionRef: 'scitex-ai/github-action@6a20f5856a730d19a19b3130fe94c7af8a3a9ba8',
             });
       - name: CLA Assistant
-        # Upstream v2.6.1 still declares node20. This SciTeX fork changes only
-        # action.yml to node24; pin the reviewed commit, not a mutable branch.
-        uses: scitex-ai/github-action@114064adf09afb0c8c04703c060862a29ae82c7d
+        # Reviewed full immutable collector: source, signature-policy witnesses,
+        # and both CI-rebuilt bundle hashes bind this exact accepted action ref.
+        uses: scitex-ai/github-action@6a20f5856a730d19a19b3130fe94c7af8a3a9ba8
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PERSONAL_ACCESS_TOKEN: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
@@ -284,7 +285,7 @@ jobs:
             const response = await github.rest.repos.getContent({
               owner: 'scitex-ai', repo: '.github',
               path: '.github/cla/baseline-transports.js',
-              ref: 'e1ff896b66571029e0d0777917ba4776a6b36a77',
+              ref: '8af3254b1b66e668c8e1e1ddbbb160aad8fdb5d0',
               request: {timeout: 4000},
             });
             const source = response.data;
@@ -292,9 +293,9 @@ jobs:
               throw new Error('Trusted CLA helper source unavailable');
             }
             const bytes = Buffer.from(source.content, 'base64');
-            if (bytes.length !== 19063 ||
+            if (bytes.length !== 21380 ||
                 require('crypto').createHash('sha256').update(bytes).digest('hex') !==
-                  'c6db3ce009949e1eaf5fce18fd942b32364b0fd7873785275cfac6dd50ca59ab') {
+                  '3b3af4cf343898bf5d60c3692696f1f6ab7b29a8c668893472fa529547ebbf93') {
               throw new Error('Trusted CLA helper source mismatch');
             }
             const helper = {exports: {}};
@@ -302,4 +303,5 @@ jobs:
               helper, helper.exports, require);
             await helper.exports.verifyFinalBinding({
               github, context, snapshot: JSON.parse(process.env.CLA_ATTRIBUTION_PROOF),
+              actionRef: 'scitex-ai/github-action@6a20f5856a730d19a19b3130fe94c7af8a3a9ba8',
             });
