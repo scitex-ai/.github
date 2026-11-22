@@ -89,7 +89,7 @@ class WriterReleaseContract(unittest.TestCase):
     def test_private_postgres_driver_and_transitive_helpers_are_registered(self):
         # Arrange
         expected = {
-            ".github/ci/run-in-sif.sh": "bab01584c10e87e6e904d71992c7120a1001e1376af3c88cc7d32750168e4f6a",
+            ".github/ci/run-in-sif.sh": "94dece623dc6a4c90b22413ff2b9806ca7e72b6e29752c18a74bc0ab3fc0cabf",
             ".github/ci/build-in-sif.sh": "5c094b4280b4caeb3172449d3a45a440937ed42023add24e4de4f9b9ec97ba89",
             ".github/ci/publish-in-sif.sh": "d7fd488c417a58c01b736072d2ec4da7c00c5475cbb6e5a2759992b3e13794a6",
             ".github/ci/with-test-postgres.py": "14bff890c251ea5d2dca13e42e8290f9b37ed29b69159258f36aab24c9b82de2",
