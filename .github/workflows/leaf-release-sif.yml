@@ -72,9 +72,25 @@ jobs:
               "sif_mount": true,
               "hosted_delivery_sha256": null
             });
+            // Apptainer 1.5.5 (apptainer 1.5.5-1~noble) as installed on compute-02.
+            const APPTAINER_5DC0 = Object.freeze({
+              "path": "/usr/bin/apptainer",
+              "sha256": "5dc04ef6490f8349a3b5db2a07a3447ac492320078e14b11eace14caa3230aba",
+              "bytes": 47822320,
+              "user_namespace": true,
+              "sif_mount": true,
+              "hosted_delivery_sha256": null
+            });
+            // Writer qualified on compute-02 with Apptainer 1.5.5: all three full
+            // suites and the 3.12 build (docs/qualifications/
+            // writer-apptainer-1.5.5-20261126.json; qualification_sha256 is its
+            // sha256). Other hosts keep their own Apptainer and are not admitted.
+            const WRITER_RUNNER = Object.freeze({group: 'Organization', labels: Object.freeze([
+              'self-hosted', 'Linux', 'X64', 'scitex-org-cpu', 'scitex-compute-02'
+            ])});
             const REGISTRATION =             {
               "image": CI_CPU_E846,
-              "runtime": {...APPTAINER_7BDB, qualification_sha256: "6a178f0d27be734a74df28f5d392f3f54e2bb4b6b2c2aced560ba6b091d08cec"}
+              "runtime": {...APPTAINER_5DC0, qualification_sha256: "74389ff1d85a8e7b4e26e420c726e3d3bc3543445297e4fc396113d6bd0863fa"}
             };
             const LEAF_SOURCES = Object.freeze({
               ".github/ci/exec-in-sif.sh": "c07c3bb883b35c7260636f60cc718bad02fffb6bdea6ab5b9002f5e606eeec12",
@@ -214,8 +230,9 @@ jobs:
               ".github/ci/io_test_store.py": "e1be5f3cfa849d4a8802b6a10b890731ca51be869330040cbbfd2c756f447a4d"
             });
             function writerPlan(repository, eventName, native, operation, sourceCommit, releaseTag, registration = REGISTRATION) {
-              return registeredReleasePlan('writer', repository, eventName, native, operation,
+              const plan = registeredReleasePlan('writer', repository, eventName, native, operation,
                 sourceCommit, releaseTag, registration, LEAF_SOURCES);
+              return {...plan, runner: WRITER_RUNNER};
             }
             function ioPlan(repository, eventName, native, operation, sourceCommit, releaseTag, registration = IO_REGISTRATION) {
               const plan = registeredReleasePlan('io', repository, eventName, native, operation,

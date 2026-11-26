@@ -1,4 +1,5 @@
 """Exercise the registered dispatcher with real Node and its Writer adapter."""
+import hashlib
 import json
 import subprocess
 from pathlib import Path
@@ -113,8 +114,34 @@ def test_native_job_consumes_registered_selection_and_retains_existing_pool_fall
     assert ('fromJSON(needs.profile.outputs.plan).runner' in selection and '"group":"Organization","labels":["self-hosted","Linux","X64","scitex-org-cpu"]' in selection and '"ubuntu-latest"' in selection)
 
 
-def test_writer_keeps_its_existing_generic_pool_selection():
-    assert 'runner' not in dispatch(repository='scitex-ai/scitex-writer')['plan']
+WRITER_QUALIFICATION = ROOT / 'docs/qualifications/writer-apptainer-1.5.5-20261126.json'
+
+
+def test_writer_runner_scope_matches_its_runtime_qualification_host():
+    plan = dispatch(repository='scitex-ai/scitex-writer', tag='v2.44.4')['plan']
+    receipt = json.loads(WRITER_QUALIFICATION.read_text())
+    assert plan['runner'] == {
+        'group': 'Organization',
+        'labels': ['self-hosted', 'Linux', 'X64', 'scitex-org-cpu', receipt['host']]}
+
+
+def test_writer_runtime_pin_is_the_qualified_apptainer_binary():
+    runtime = dispatch(repository='scitex-ai/scitex-writer', tag='v2.44.4')['plan']['runtime']
+    receipt = json.loads(WRITER_QUALIFICATION.read_text())['runtime']
+    assert (runtime['path'], runtime['sha256'], runtime['bytes']) == (
+        receipt['path'], receipt['sha256'], receipt['bytes'])
+
+
+def test_writer_qualification_digest_is_the_committed_receipt():
+    runtime = dispatch(repository='scitex-ai/scitex-writer', tag='v2.44.4')['plan']['runtime']
+    assert runtime['qualification_sha256'] == hashlib.sha256(WRITER_QUALIFICATION.read_bytes()).hexdigest()
+
+
+def test_writer_qualification_receipt_records_passing_suites_and_build():
+    receipt = json.loads(WRITER_QUALIFICATION.read_text())
+    outcomes = [(row['python'], row['returncode']) for row in receipt['test']['versions']]
+    assert (outcomes, receipt['build']['returncode'], receipt['build']['wheel_import_check_passed']) == (
+        [('3.11', 0), ('3.12', 0), ('3.13', 0)], 0, True)
 
 
 def test_registered_worker_budget_is_passed_to_both_strict_driver_operations():

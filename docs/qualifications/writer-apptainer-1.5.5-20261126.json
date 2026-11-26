@@ -1,0 +1,80 @@
+{
+  "kind": "writer-native-runtime-qualification",
+  "profile": "writer",
+  "source_repository": "scitex-ai/scitex-writer",
+  "source_commit": "2988a51ae06de3768a3aac58963b830eeff61fc8",
+  "release_tag": "v2.44.4",
+  "host": "scitex-compute-02",
+  "runtime": {
+    "path": "/usr/bin/apptainer",
+    "version": "1.5.5",
+    "package": "apptainer 1.5.5-1~noble",
+    "sha256": "5dc04ef6490f8349a3b5db2a07a3447ac492320078e14b11eace14caa3230aba",
+    "bytes": 47822320,
+    "user_namespace": true,
+    "sif_mount": true
+  },
+  "image": {
+    "path": "/home/ywatanabe/.scitex/dev/runtime/containers/ci-cpu-sha256-e8461fc77a2218b5f7e2c475bd601dddaec97c6335bee459a1b0d4e0ca374d83.sif",
+    "sha256": "e8461fc77a2218b5f7e2c475bd601dddaec97c6335bee459a1b0d4e0ca374d83",
+    "bytes": 1381281792
+  },
+  "leaf_sources": {
+    ".github/ci/exec-in-sif.sh": "c07c3bb883b35c7260636f60cc718bad02fffb6bdea6ab5b9002f5e606eeec12",
+    ".github/ci/run-in-sif.sh": "94dece623dc6a4c90b22413ff2b9806ca7e72b6e29752c18a74bc0ab3fc0cabf",
+    ".github/ci/with-test-postgres.py": "14bff890c251ea5d2dca13e42e8290f9b37ed29b69159258f36aab24c9b82de2",
+    ".github/ci/writer_ci_postgres.py": "41269b47454d99baff3459ef830da9312c53716000b386fa92471957cb8bd2e9",
+    ".github/ci/build-in-sif.sh": "5c094b4280b4caeb3172449d3a45a440937ed42023add24e4de4f9b9ec97ba89",
+    ".github/ci/publish-in-sif.sh": "d7fd488c417a58c01b736072d2ec4da7c00c5475cbb6e5a2759992b3e13794a6",
+    ".github/ci/release-identity.py": "5d8abc813d07163ba1551df18e130a71b7a60f025ed0b364370b952792945ffb"
+  },
+  "test": {
+    "command": "bash .github/ci/exec-in-sif.sh run-in-sif.sh <version>",
+    "versions": [
+      {
+        "python": "3.11",
+        "interpreter": "3.11.17",
+        "summary": "3415 passed, 72 skipped, 1 xfailed",
+        "returncode": 0,
+        "seconds": 255.283,
+        "log_sha256": "4b7c8714dc5e5f8a12824740b1f2bd3aade1252cea45edbcd37d511515f5727a"
+      },
+      {
+        "python": "3.12",
+        "interpreter": "3.12.15",
+        "summary": "3415 passed, 72 skipped, 1 xfailed",
+        "returncode": 0,
+        "seconds": 255.84,
+        "log_sha256": "2b91a2cccfbb54db31e587941aeaf1c6f3262c8db7c9e28efbbbe0d45648eee3"
+      },
+      {
+        "python": "3.13",
+        "interpreter": "3.13.16",
+        "summary": "3415 passed, 72 skipped, 1 xfailed",
+        "returncode": 0,
+        "seconds": 211.79,
+        "log_sha256": "6271a5af90629ceeb625f44111e8681f6d5fb1097be7f5c2e9e11a591f568d56"
+      }
+    ]
+  },
+  "build": {
+    "command": "bash .github/ci/exec-in-sif.sh build-in-sif.sh 3.12",
+    "returncode": 0,
+    "log_sha256": "7d9c8cd3fcfe921fdd9af82f68bcf9c5eacad868e51fe011a7af8c018e29d945",
+    "wheel_import_check_passed": true,
+    "release_proof_sha256": "c22ba25a357d32b2adf78164fa9e6fa0c39a1c6211651dbb9f7cb8fa79381c5c",
+    "files": [
+      {
+        "name": "scitex_writer-2.44.4-py3-none-any.whl",
+        "bytes": 14398659,
+        "sha256": "afeedd0a1a4c4ad710bc0785c26b3508711fa67c2658975af398f48cc18c0e1a"
+      },
+      {
+        "name": "scitex_writer-2.44.4.tar.gz",
+        "bytes": 13760487,
+        "sha256": "21ce1a4ad1f894af17b4edb0383e9a7c640566d91c2fc29e27b90c12839ef361"
+      }
+    ]
+  },
+  "limits": "Measured outside Actions with the exact native driver commands and environment of leaf-release-sif.yml; GITHUB_RUN_ID/ATTEMPT were local numeric stand-ins used only for scratch names and the build proof. Qualifies the writer profile on scitex-compute-02 only; other profiles and hosts are unchanged."
+}
