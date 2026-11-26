@@ -83,11 +83,15 @@ jobs:
                   native_paths: ['/home/ywatanabe/.scitex/dev/runtime/containers/ci-cpu-sha256-aa5836a6c317640d7e20f01eb79aa7385b3dca2f369b595065c50ba3dd34a7d5.sif'],
                 },
                 nativePgImage: null,
+                // Apptainer 1.5.5 on scitex-compute-02: all three full suites and
+                // the 3.12 release build measured there (docs/qualifications/
+                // dev-apptainer-1.5.5-20261126.json; qualification_sha256 is its
+                // sha256). The caller scopes runners to compute-02.
                 nativeRuntime: {
                   path: '/usr/bin/apptainer',
-                  sha256: '7bdb501fdddbb7264b4e4d6038e0ec27201f63e217519e5f7f0db950c9285ddd',
-                  bytes: 48096048,
-                  qualification_sha256: '22362dd8da22aa93653613d899e9ab6232d3a099576d7da646ea617a35f2e036',
+                  sha256: '5dc04ef6490f8349a3b5db2a07a3447ac492320078e14b11eace14caa3230aba',
+                  bytes: 47822320,
+                  qualification_sha256: '1ca41e146944927179812d7b89aee7b94e341f13b0d783a48db7dfc5d9795385',
                   user_namespace: true, sif_mount: true, hosted_delivery_sha256: null,
                 },
                 hostedRuntime: null,

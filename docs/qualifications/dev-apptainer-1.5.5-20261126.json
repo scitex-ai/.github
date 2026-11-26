@@ -1,0 +1,88 @@
+{
+  "kind": "dev-native-runtime-qualification",
+  "profile": "dev",
+  "source_repository": "scitex-ai/scitex-dev",
+  "source_commit": "746a96d4b6b5618db11f78a54f0f416132487b4a",
+  "release_tag": "v0.66.1",
+  "host": "scitex-compute-02",
+  "runtime": {
+    "path": "/usr/bin/apptainer",
+    "version": "1.5.5",
+    "package": "apptainer 1.5.5-1~noble",
+    "sha256": "5dc04ef6490f8349a3b5db2a07a3447ac492320078e14b11eace14caa3230aba",
+    "bytes": 47822320,
+    "user_namespace": true,
+    "sif_mount": true
+  },
+  "image": {
+    "path": "/home/ywatanabe/.scitex/dev/runtime/containers/ci-cpu-sha256-aa5836a6c317640d7e20f01eb79aa7385b3dca2f369b595065c50ba3dd34a7d5.sif",
+    "sha256": "aa5836a6c317640d7e20f01eb79aa7385b3dca2f369b595065c50ba3dd34a7d5",
+    "bytes": 1328443392
+  },
+  "postgresql": {
+    "bin": "/usr/lib/postgresql/16/bin",
+    "version": "16.15"
+  },
+  "leaf_sources": {
+    ".github/ci/exec-in-sif.sh": "dffc356c99c0deb8c031580ea667f6e4ea695dd1ce000d19a1a127442b8c9cf0",
+    ".github/ci/run-in-sif.sh": "7efa7c7737bb536f03b822a08186e093030ef8b48e0cc9bce811e11785cfdf01",
+    ".github/ci/release-context.sh": "d7433cacdd9098bdbe77994ba7a78d91b90edc7164a00a40450db19978ac57f8",
+    ".github/ci/verify-postgres-capability.py": "af610a811b19f746c9a717fbebbc67639b16df962544acac9b51a3dd38a43455",
+    ".github/ci/build-in-sif.sh": "0d5eda34cef716182332aed79b30dab1557d7149c9b20600b504de4916a38bf7",
+    ".github/ci/release-identity.py": "0c80f6631f00190ccb24833d95a800af3d979e69c720aa66bb2b5ae0c61f220a",
+    ".github/ci/publish-in-sif.sh": "8c1aee030d76b05f650dba88c9508e6241e8fa6c779df6df9aa3c629254dac02"
+  },
+  "test": {
+    "command": "bash .github/ci/exec-in-sif.sh run-in-sif.sh <version>",
+    "versions": [
+      {
+        "python": "3.11",
+        "interpreter": "3.11.16",
+        "summary": "10295 passed, 116 skipped, 1 xfailed, 65 warnings",
+        "returncode": 0,
+        "seconds": 260.22,
+        "postgres_readiness": true,
+        "log_sha256": "3fc4ea0de106668c5234f690c567e9b8d4545404e7de3341e296e7f9683c730f"
+      },
+      {
+        "python": "3.12",
+        "interpreter": "3.12.14",
+        "summary": "10295 passed, 116 skipped, 1 xfailed, 65 warnings",
+        "returncode": 0,
+        "seconds": 613.103,
+        "postgres_readiness": true,
+        "log_sha256": "9f591434fcf23cb0a139b3970ccefbd21a2e17fae3e3c91f4924ccaeb440571c"
+      },
+      {
+        "python": "3.13",
+        "interpreter": "3.13.15",
+        "summary": "10295 passed, 116 skipped, 1 xpassed, 89 warnings",
+        "returncode": 0,
+        "seconds": 330.575,
+        "postgres_readiness": true,
+        "log_sha256": "4f13d6ee220840d3701f0939de58f4629c51cbdad635763f26cb434814531a40"
+      }
+    ]
+  },
+  "build": {
+    "command": "bash .github/ci/exec-in-sif.sh build-in-sif.sh 3.12",
+    "returncode": 0,
+    "seconds": 23.807,
+    "log_sha256": "7be059319d76c40ddbbb4a25c5a430984eb8006702f62d770156516c3ad277ff",
+    "wheel_import_check_passed": true,
+    "release_manifest_sha256": "53e9f64772ac19de32a75be52e3120565a3d6bb97540cfcdde4a625306febfc0",
+    "files": [
+      {
+        "name": "scitex_dev-0.66.1-py3-none-any.whl",
+        "bytes": 11829972,
+        "sha256": "d298fadafce7dbadf9f5a5310c1e3cab174b9e85e8890d9ac8f6ab6455d84dcf"
+      },
+      {
+        "name": "scitex_dev-0.66.1.tar.gz",
+        "bytes": 14982448,
+        "sha256": "ff10b3a3764c51307150156096a548e9eaa5c348506e7e899793486e7ed162d6"
+      }
+    ]
+  },
+  "limits": "Measured outside Actions on scitex-compute-02 with the exact native driver commands and environment of ci-sif-matrix.yml (test-dev legs and build-dev-release) in a credential-free env -i, each leg on a clean checkout of the release commit; GITHUB_RUN_ID/ATTEMPT were local numeric stand-ins used only for scratch names and the build proof. Qualifies the dev profile on scitex-compute-02 only; the sac profile and other hosts are unchanged."
+}
