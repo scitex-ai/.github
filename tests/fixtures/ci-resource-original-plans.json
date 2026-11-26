@@ -41,12 +41,12 @@
           },
           "runtime": {
             "path": "/usr/bin/apptainer",
-            "sha256": "7bdb501fdddbb7264b4e4d6038e0ec27201f63e217519e5f7f0db950c9285ddd",
-            "bytes": 48096048,
+            "sha256": "5dc04ef6490f8349a3b5db2a07a3447ac492320078e14b11eace14caa3230aba",
+            "bytes": 47822320,
             "user_namespace": true,
             "sif_mount": true,
             "hosted_delivery_sha256": null,
-            "qualification_sha256": "6a178f0d27be734a74df28f5d392f3f54e2bb4b6b2c2aced560ba6b091d08cec"
+            "qualification_sha256": "74389ff1d85a8e7b4e26e420c726e3d3bc3543445297e4fc396113d6bd0863fa"
           },
           "leafSources": {
             ".github/ci/exec-in-sif.sh": "c07c3bb883b35c7260636f60cc718bad02fffb6bdea6ab5b9002f5e606eeec12",
@@ -58,7 +58,17 @@
             ".github/ci/release-identity.py": "5d8abc813d07163ba1551df18e130a71b7a60f025ed0b364370b952792945ffb"
           },
           "pgImage": null,
-          "native": true
+          "native": true,
+          "runner": {
+            "group": "Organization",
+            "labels": [
+              "self-hosted",
+              "Linux",
+              "X64",
+              "scitex-org-cpu",
+              "scitex-compute-02"
+            ]
+          }
         }
       }
     },
